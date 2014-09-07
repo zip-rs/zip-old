@@ -1,0 +1,8 @@
+[package]
+
+name = "zip"
+version = "0.0.1"
+authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>"]
+
+[dependencies.flatestream]
+git = "https://github.com/mvdnes/flatestream-rs.git"
