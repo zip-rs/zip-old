@@ -62,6 +62,7 @@ pub struct Crc32Reader<R>
 {
     inner: R,
     crc: u32,
+    check: Option<u32>,
 }
 
 impl<R: Reader> Crc32Reader<R>
@@ -72,6 +73,17 @@ impl<R: Reader> Crc32Reader<R>
         {
             inner: inner,
             crc: 0,
+            check: None,
+        }
+    }
+
+    pub fn new_with_check(inner: R, checksum: u32) -> Crc32Reader<R>
+    {
+        Crc32Reader
+        {
+            inner: inner,
+            crc: 0,
+            check: Some(checksum),
         }
     }
 
@@ -79,13 +91,32 @@ impl<R: Reader> Crc32Reader<R>
     {
         self.crc
     }
+
+    fn check_matches(&self) -> bool
+    {
+        match self.check
+        {
+            None => true,
+            Some(check) => check == self.crc
+        }
+    }
 }
 
 impl<R: Reader> Reader for Crc32Reader<R>
 {
     fn read(&mut self, buf: &mut [u8]) -> io::IoResult<uint>
     {
-        let count = try!(self.inner.read(buf));
+        let count = match self.inner.read(buf)
+        {
+            Ok(n) => n,
+            Err(ref e) if e.kind == io::EndOfFile =>
+            {
+                return
+                if self.check_matches() { Err(e.clone()) }
+                else { Err(io::IoError { kind: io::OtherIoError, desc: "Invalid checksum", detail: None, }) }
+            },
+            Err(e) => return Err(e),
+        };
         self.crc = crc32(self.crc, buf.slice_to(count));
         Ok(count)
     }

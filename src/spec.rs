@@ -34,29 +34,29 @@ pub enum CompressionMethod
 #[deriving(Show)]
 pub struct LocalFileHeader
 {
-    extract_version: u16,
+    pub extract_version: u16,
 
     // general purpose flags
-    encrypted: bool, // bit 0
+    pub encrypted: bool, // bit 0
     // bit 1 & 2 unused
-    has_descriptor: bool, // bit 3
+    pub has_descriptor: bool, // bit 3
     // bit 4 unused
-    is_compressed_patch: bool, // bit 5
-    strong_encryption: bool, // bit 6
+    pub is_compressed_patch: bool, // bit 5
+    pub strong_encryption: bool, // bit 6
     // bit 7 - 10 unused
-    is_utf8: bool, // bit 11
+    pub is_utf8: bool, // bit 11
     // bit 12 unused
-    is_masked: bool, // bit 13
+    pub is_masked: bool, // bit 13
     // bit 14 & 15 unused
-    
-    compression_method: CompressionMethod,
-    last_modified: Tm,
+
+    pub compression_method: CompressionMethod,
+    pub last_modified: Tm,
     pub crc32: u32,
-    compressed_size: u32,
-    uncompressed_size: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
     pub file_name: Vec<u8>,
-    extra_field: Vec<u8>,
-    header_end: u64,
+    pub extra_field: Vec<u8>,
+    pub header_end: u64,
 }
 
 
@@ -107,11 +107,11 @@ impl LocalFileHeader
     }
 }
 
-struct DataDescriptor
+pub struct DataDescriptor
 {
-    compressed_size: u32,
-    uncompressed_size: u32,
-    crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub crc32: u32,
 }
 
 impl DataDescriptor
