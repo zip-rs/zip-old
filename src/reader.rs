@@ -19,15 +19,15 @@ struct ZipFile
 
 pub struct ZipFileItems<'a, T:'a>
 {
-    container: &'a mut ZipContainer<T>,
+    container: &'a ZipContainer<T>,
     pos: uint,
 }
 
-pub struct ZipFileItem<'a>
+pub struct ZipFileItem
 {
-    pub name: String,
+    pub name: Vec<u8>,
     pub size: uint,
-    pub reader: Box<Reader+'a>,
+    index: uint,
 }
 
 fn unsupported_zip_error<T>(detail: String) -> IoResult<T>
@@ -73,9 +73,27 @@ impl<T: Reader+Seek> ZipContainer<T>
         result
     }
 
-    pub fn files<'a>(&'a mut self) -> ZipFileItems<'a, T>
+    pub fn files(&mut self) -> ZipFileItems<T>
     {
         ZipFileItems { container: self, pos: 0 }
+    }
+
+    pub fn read_file(&mut self, item: &ZipFileItem) -> IoResult<Box<Reader>>
+    {
+        let file = self.files.get_mut(item.index);
+        let reader = &mut self.inner;
+        let pos = file.local_header.header_end as i64;
+
+        try!(reader.seek(pos, io::SeekSet));
+        let lreader = io::util::LimitReader::new(reader.by_ref(), file.central_header.compressed_size as uint);
+
+        let reader = match file.central_header.compression_method
+        {
+            spec::Stored => box Crc32Reader::new_with_check(lreader, file.central_header.crc32) as Box<Reader>,
+            spec::Deflated => box Crc32Reader::new_with_check(lreader.deflate_decode(), file.central_header.crc32) as Box<Reader>,
+            _ => return unsupported_zip_error("Compression method not supported".to_string()),
+        };
+        Ok(reader)
     }
 }
 
@@ -97,31 +115,21 @@ impl ZipFile
     }
 }
 
-impl<'a> ZipFileItem<'a>
+impl ZipFileItem
 {
-    fn new<S: Reader+Seek>(reader: &mut S, file: &ZipFile) -> IoResult<ZipFileItem<'a>>
+    fn new<T>(container: &ZipContainer<T>, index: uint) -> IoResult<ZipFileItem>
     {
-        let fname = file.central_header.file_name.clone();
-        let name = String::from_utf8(fname).unwrap_or("???".to_string());
-        let pos = file.local_header.header_end as i64;
+        let file = &container.files[index];
 
-        try!(reader.seek(pos, io::SeekSet));
-        let lreader = io::util::LimitReader::new(reader.by_ref(), file.central_header.compressed_size as uint);
+        let name = file.central_header.file_name.clone();
 
-        let reader = match file.central_header.compression_method
-        {
-            spec::Stored => box Crc32Reader::new_with_check(lreader, file.central_header.crc32) as Box<Reader>,
-            spec::Deflated => box Crc32Reader::new_with_check(lreader.deflate_decode(), file.central_header.crc32) as Box<Reader>,
-            _ => return unsupported_zip_error("Compression method not supported".to_string()),
-        };
-
-        Ok(ZipFileItem { name: name, reader: reader, size: file.central_header.uncompressed_size as uint })
+        Ok(ZipFileItem { name: name, size: file.central_header.uncompressed_size as uint, index: index })
     }
 }
 
-impl<'a, T: Reader+Seek> Iterator<ZipFileItem<'a>> for ZipFileItems<'a, T>
+impl<'a, T: Reader+Seek> Iterator<ZipFileItem> for ZipFileItems<'a, T>
 {
-    fn next(&mut self) -> Option<ZipFileItem<'a>>
+    fn next(&mut self) -> Option<ZipFileItem>
     {
         self.pos += 1;
         if self.pos - 1 >= self.container.files.len()
@@ -130,8 +138,7 @@ impl<'a, T: Reader+Seek> Iterator<ZipFileItem<'a>> for ZipFileItems<'a, T>
         }
         else
         {
-            let result = ZipFileItem::new(&mut self.container.inner, &self.container.files[self.pos - 1]);
-            result.ok()
+            ZipFileItem::new(self.container, self.pos - 1).ok()
         }
     }
 }

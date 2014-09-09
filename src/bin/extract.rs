@@ -7,9 +7,9 @@ fn main()
     let file = std::io::File::open(&fname);
 
     let mut zipcontainer = zip::reader::ZipContainer::new(file).unwrap();
-    for mut i in zipcontainer.files()
+    for i in zipcontainer.files()
     {
-        println!("File: {}", i.name);
+        println!("File: {}", String::from_utf8_lossy(i.name.as_slice()));
 
         if i.size == 0 { continue }
 
@@ -19,7 +19,8 @@ fn main()
         std::io::fs::mkdir_recursive(&dirname, std::io::UserDir).unwrap();
 
         let mut outfile = std::io::File::create(&outpath);
-        copy(&mut i.reader, &mut outfile).unwrap();
+        let mut reader = zipcontainer.read_file(&i);
+        copy(&mut reader, &mut outfile).unwrap();
     }
 }
 
