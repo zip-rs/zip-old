@@ -1,12 +1,13 @@
 use std::io;
 use std::io::{IoResult, IoError};
+use std::iter::range_step_inclusive;
 use time::Tm;
 use util;
 
 static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
 static DATA_DESCRIPTOR_SIGNATURE : u32 = 0x08074b50;
 static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
-static DIGITAL_SIGNATURE_SIGNATURE : u32 = 0x05054b50;
+static CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
 
 #[deriving(FromPrimitive, Show)]
 pub enum CompressionMethod
@@ -139,7 +140,8 @@ impl DataDescriptor
     }
 }
 
-struct CentralDirectoryHeader
+#[deriving(Show)]
+pub struct CentralDirectoryHeader
 {
     made_by: u16,
     version_needed: u16,
@@ -226,25 +228,74 @@ impl CentralDirectoryHeader
     }
 }
 
-struct DigitalSignature
+#[deriving(Show)]
+pub struct CentralDirectoryEnd
 {
-    data: Vec<u8>,
+    number_of_disks: u16,
+    disk_with_central_directory: u16,
+    pub number_of_files_on_this_disk: u16,
+    number_of_files: u16,
+    central_directory_size: u32,
+    pub central_directory_offset: u32,
+    zip_file_comment: Vec<u8>,
 }
 
-impl DigitalSignature
+impl CentralDirectoryEnd
 {
-    pub fn parse<T: Reader>(reader: &mut T) -> IoResult<DigitalSignature>
+    pub fn parse<T: Reader>(reader: &mut T) -> IoResult<CentralDirectoryEnd>
     {
         let magic = try!(reader.read_le_u32());
-        if magic != DIGITAL_SIGNATURE_SIGNATURE
+        if magic != CENTRAL_DIRECTORY_END_SIGNATURE
         {
             return Err(IoError {
                 kind: io::MismatchedFileTypeForOperation,
                 desc: "Invalid digital signature header",
                 detail: None })
         }
-        let size = try!(reader.read_le_u16()) as uint;
-        let data = try!(reader.read_exact(size));
-        Ok(DigitalSignature { data: data })
+        let number_of_disks = try!(reader.read_le_u16());
+        let disk_with_central_directory = try!(reader.read_le_u16());
+        let number_of_files_on_this_disk = try!(reader.read_le_u16());
+        let number_of_files = try!(reader.read_le_u16());
+        let central_directory_size = try!(reader.read_le_u32());
+        let central_directory_offset = try!(reader.read_le_u32());
+        let zip_file_comment_length = try!(reader.read_le_u16()) as uint;
+        let zip_file_comment = try!(reader.read_exact(zip_file_comment_length));
+
+        Ok(CentralDirectoryEnd
+           {
+               number_of_disks: number_of_disks,
+               disk_with_central_directory: disk_with_central_directory,
+               number_of_files_on_this_disk: number_of_files_on_this_disk,
+               number_of_files: number_of_files,
+               central_directory_size: central_directory_size,
+               central_directory_offset: central_directory_offset,
+               zip_file_comment: zip_file_comment,
+           })
+    }
+    pub fn find_and_parse<T: Reader+Seek>(reader: &mut T) -> IoResult<CentralDirectoryEnd>
+    {
+        let header_size = 22;
+        try!(reader.seek(0, io::SeekEnd));
+        let filelength = try!(reader.tell()) as i64;
+        for pos in range_step_inclusive(filelength - header_size, 0, -1)
+        {
+            try!(reader.seek(pos, io::SeekSet));
+            if try!(reader.read_le_u32()) == CENTRAL_DIRECTORY_END_SIGNATURE
+            {
+                try!(reader.seek(header_size - 6, io::SeekCur));
+                let comment_length = try!(reader.read_le_u16()) as i64;
+                if filelength - pos - header_size == comment_length
+                {
+                    try!(reader.seek(pos, io::SeekSet));
+                    return CentralDirectoryEnd::parse(reader);
+                }
+            }
+        }
+        Err(IoError
+            {
+                kind: io::MismatchedFileTypeForOperation,
+                desc: "Could not find central directory end",
+                detail: None
+            })
     }
 }
