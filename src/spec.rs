@@ -143,32 +143,32 @@ impl DataDescriptor
 #[deriving(Show)]
 pub struct CentralDirectoryHeader
 {
-    made_by: u16,
-    version_needed: u16,
+    pub made_by: u16,
+    pub version_needed: u16,
 
     // general purpose flags
-    encrypted: bool, // bit 0
+    pub encrypted: bool, // bit 0
     // bit 1 & 2 unused
-    has_descriptor: bool, // bit 3
+    pub has_descriptor: bool, // bit 3
     // bit 4 unused
-    is_compressed_patch: bool, // bit 5
-    strong_encryption: bool, // bit 6
+    pub is_compressed_patch: bool, // bit 5
+    pub strong_encryption: bool, // bit 6
     // bit 7 - 10 unused
-    is_utf8: bool, // bit 11
+    pub is_utf8: bool, // bit 11
     // bit 12 unused
-    is_masked: bool, // bit 13
+    pub is_masked: bool, // bit 13
     // bit 14 & 15 unused
 
-    compression_method: CompressionMethod,
-    last_modified_time: Tm,
-    crc32: u32,
-    compressed_size: u32,
-    uncompressed_size: u32,
-    file_name: Vec<u8>,
-    extra_field: Vec<u8>,
-    file_comment: Vec<u8>,
-    disk_number: u16,
-    file_offset: u32,
+    pub compression_method: CompressionMethod,
+    pub last_modified_time: Tm,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub file_name: Vec<u8>,
+    pub extra_field: Vec<u8>,
+    pub file_comment: Vec<u8>,
+    pub disk_number: u16,
+    pub file_offset: u32,
 }
 
 impl CentralDirectoryHeader
@@ -231,13 +231,13 @@ impl CentralDirectoryHeader
 #[deriving(Show)]
 pub struct CentralDirectoryEnd
 {
-    number_of_disks: u16,
-    disk_with_central_directory: u16,
+    pub number_of_disks: u16,
+    pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
-    number_of_files: u16,
-    central_directory_size: u32,
+    pub number_of_files: u16,
+    pub central_directory_size: u32,
     pub central_directory_offset: u32,
-    zip_file_comment: Vec<u8>,
+    pub zip_file_comment: Vec<u8>,
 }
 
 impl CentralDirectoryEnd
@@ -275,16 +275,19 @@ impl CentralDirectoryEnd
     pub fn find_and_parse<T: Reader+Seek>(reader: &mut T) -> IoResult<CentralDirectoryEnd>
     {
         let header_size = 22;
+        let bytes_between_magic_and_comment_size = header_size - 6;
         try!(reader.seek(0, io::SeekEnd));
-        let filelength = try!(reader.tell()) as i64;
-        for pos in range_step_inclusive(filelength - header_size, 0, -1)
+        let file_length = try!(reader.tell()) as i64;
+
+        let search_upper_bound = ::std::cmp::max(0, file_length - header_size - ::std::u16::MAX as i64);
+        for pos in range_step_inclusive(file_length - header_size, search_upper_bound, -1)
         {
             try!(reader.seek(pos, io::SeekSet));
             if try!(reader.read_le_u32()) == CENTRAL_DIRECTORY_END_SIGNATURE
             {
-                try!(reader.seek(header_size - 6, io::SeekCur));
+                try!(reader.seek(bytes_between_magic_and_comment_size, io::SeekCur));
                 let comment_length = try!(reader.read_le_u16()) as i64;
-                if filelength - pos - header_size == comment_length
+                if file_length - pos - header_size == comment_length
                 {
                     try!(reader.seek(pos, io::SeekSet));
                     return CentralDirectoryEnd::parse(reader);

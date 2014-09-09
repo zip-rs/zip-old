@@ -2,8 +2,9 @@
 
 #[phase(plugin, link)] extern crate log;
 extern crate time;
-extern crate flatestream;
+extern crate flate2;
 
 mod util;
-pub mod spec;
+mod spec;
 pub mod crc32;
+pub mod reader;
