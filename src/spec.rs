@@ -9,7 +9,7 @@ static DATA_DESCRIPTOR_SIGNATURE : u32 = 0x08074b50;
 static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
 static CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
 
-#[deriving(FromPrimitive, Show)]
+#[deriving(FromPrimitive, Clone)]
 pub enum CompressionMethod
 {
     Stored = 0,
@@ -31,7 +31,7 @@ pub enum CompressionMethod
     Unknown = 100000,
 }
 
-#[deriving(Show)]
+#[deriving(Clone)]
 pub struct LocalFileHeader
 {
     pub extract_version: u16,
@@ -107,6 +107,7 @@ impl LocalFileHeader
     }
 }
 
+#[deriving(Clone)]
 pub struct DataDescriptor
 {
     pub compressed_size: u32,
@@ -140,7 +141,7 @@ impl DataDescriptor
     }
 }
 
-#[deriving(Show)]
+#[deriving(Clone)]
 pub struct CentralDirectoryHeader
 {
     pub made_by: u16,

@@ -7,9 +7,10 @@ fn main()
     let file = std::io::File::open(&fname);
 
     let mut zipcontainer = zip::reader::ZipContainer::new(file).unwrap();
+
     for i in zipcontainer.files()
     {
-        println!("File: {}", String::from_utf8_lossy(i.name.as_slice()));
+        println!("{}", String::from_utf8_lossy(i.name.as_slice()));
 
         if i.size == 0 { continue }
 

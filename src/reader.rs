@@ -10,6 +10,7 @@ pub struct ZipContainer<T>
     files: Vec<ZipFile>,
 }
 
+#[deriving(Clone)]
 struct ZipFile
 {
     central_header: spec::CentralDirectoryHeader,
@@ -17,9 +18,9 @@ struct ZipFile
     _data_descriptor: Option<spec::DataDescriptor>,
 }
 
-pub struct ZipFileItems<'a, T:'a>
+pub struct ZipFileItems
 {
-    container: &'a ZipContainer<T>,
+    list: Vec<ZipFile>,
     pos: uint,
 }
 
@@ -73,9 +74,9 @@ impl<T: Reader+Seek> ZipContainer<T>
         result
     }
 
-    pub fn files(&mut self) -> ZipFileItems<T>
+    pub fn files(&self) -> ZipFileItems
     {
-        ZipFileItems { container: self, pos: 0 }
+        ZipFileItems { list: self.files.clone(), pos: 0 }
     }
 
     pub fn read_file(&mut self, item: &ZipFileItem) -> IoResult<Box<Reader>>
@@ -117,9 +118,9 @@ impl ZipFile
 
 impl ZipFileItem
 {
-    fn new<T>(container: &ZipContainer<T>, index: uint) -> IoResult<ZipFileItem>
+    fn new(list: &Vec<ZipFile>, index: uint) -> IoResult<ZipFileItem>
     {
-        let file = &container.files[index];
+        let file = &list[index];
 
         let name = file.central_header.file_name.clone();
 
@@ -127,18 +128,18 @@ impl ZipFileItem
     }
 }
 
-impl<'a, T: Reader+Seek> Iterator<ZipFileItem> for ZipFileItems<'a, T>
+impl Iterator<ZipFileItem> for ZipFileItems
 {
     fn next(&mut self) -> Option<ZipFileItem>
     {
         self.pos += 1;
-        if self.pos - 1 >= self.container.files.len()
+        if self.pos - 1 >= self.list.len()
         {
             None
         }
         else
         {
-            ZipFileItem::new(self.container, self.pos - 1).ok()
+            ZipFileItem::new(&self.list, self.pos - 1).ok()
         }
     }
 }
