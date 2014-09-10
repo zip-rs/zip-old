@@ -6,11 +6,9 @@ use types;
 use util;
 
 static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
-static DATA_DESCRIPTOR_SIGNATURE : u32 = 0x08074b50;
 static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
 static CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
 
-#[deriving(Clone)]
 pub struct LocalFileHeader
 {
     pub extract_version: u16,
@@ -86,41 +84,6 @@ impl LocalFileHeader
     }
 }
 
-#[deriving(Clone)]
-pub struct DataDescriptor
-{
-    pub compressed_size: u32,
-    pub uncompressed_size: u32,
-    pub crc32: u32,
-}
-
-impl DataDescriptor
-{
-    pub fn parse<T: Reader>(reader: &mut T) -> IoResult<DataDescriptor>
-    {
-        let first = try!(reader.read_le_u32());
-        let compressed = if first == DATA_DESCRIPTOR_SIGNATURE
-        {
-            try!(reader.read_le_u32())
-        }
-        else
-        {
-            first
-        };
-
-        let uncompressed = try!(reader.read_le_u32());
-        let crc = try!(reader.read_le_u32());
-
-        Ok(DataDescriptor
-           {
-               compressed_size: compressed,
-               uncompressed_size: uncompressed,
-               crc32: crc,
-           })
-    }
-}
-
-#[deriving(Clone)]
 pub struct CentralDirectoryHeader
 {
     pub made_by: u16,
@@ -208,7 +171,6 @@ impl CentralDirectoryHeader
     }
 }
 
-#[deriving(Show)]
 pub struct CentralDirectoryEnd
 {
     pub number_of_disks: u16,
