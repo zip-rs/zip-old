@@ -39,40 +39,10 @@ impl<T: Reader+Seek> ZipReader<T>
         try!(reader.seek(directory_start, io::SeekSet));
         for i in range(0, number_of_files)
         {
-            files.push(try!(ZipReader::parse_directory(&mut reader)));
+            files.push(try!(spec::central_header_to_zip_file(&mut reader)));
         }
 
         Ok(ZipReader { inner: RefCell::new(reader), files: files })
-    }
-
-    fn parse_directory(reader: &mut T) -> IoResult<ZipFile>
-    {
-        let cdh = try!(spec::CentralDirectoryHeader::parse(reader));
-        // Remember position
-        let pos = try!(reader.tell()) as i64;
-        let result = ZipReader::parse_file(reader, cdh);
-        // Jump back for next directory
-        try!(reader.seek(pos, io::SeekSet));
-        result
-    }
-
-    fn parse_file(reader: &mut T, central: spec::CentralDirectoryHeader) -> IoResult<ZipFile>
-    {
-        try!(reader.seek(central.file_offset as i64, io::SeekSet));
-        let local = try!(spec::LocalFileHeader::parse(reader));
-
-        Ok(ZipFile
-        {
-            encrypted: central.encrypted,
-            compression_method: central.compression_method,
-            last_modified_time: central.last_modified_time,
-            crc32: central.crc32,
-            compressed_size: central.compressed_size as u64,
-            uncompressed_size: central.uncompressed_size as u64,
-            file_name: central.file_name.clone(),
-            file_comment: central.file_comment.clone(),
-            data_start: local.header_end,
-        })
     }
 
     pub fn files(&self) -> ::std::slice::Items<ZipFile>

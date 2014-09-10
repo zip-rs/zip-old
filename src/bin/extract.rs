@@ -11,6 +11,8 @@ fn main()
     for file in zipcontainer.files()
     {
         println!("{}", file.file_name_string());
+        let comment = file.file_comment_string();
+        if comment.len() > 0 { println!("  File comment: {}", comment); }
 
         if file.uncompressed_size == 0 { continue }
 

@@ -42,4 +42,9 @@ impl ZipFile
     {
         String::from_utf8_lossy(self.file_name.as_slice()).into_string()
     }
+
+    pub fn file_comment_string(&self) -> String
+    {
+        String::from_utf8_lossy(self.file_comment.as_slice()).into_string()
+    }
 }

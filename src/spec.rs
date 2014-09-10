@@ -1,174 +1,85 @@
 use std::io;
 use std::io::{IoResult, IoError};
 use std::iter::range_step_inclusive;
-use time::Tm;
 use types;
+use types::ZipFile;
 use util;
 
 static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
 static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
 static CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
 
-pub struct LocalFileHeader
+pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<ZipFile>
 {
-    pub extract_version: u16,
-
-    // general purpose flags
-    pub encrypted: bool, // bit 0
-    // bit 1 & 2 unused
-    pub has_descriptor: bool, // bit 3
-    // bit 4 unused
-    pub is_compressed_patch: bool, // bit 5
-    pub strong_encryption: bool, // bit 6
-    // bit 7 - 10 unused
-    pub is_utf8: bool, // bit 11
-    // bit 12 unused
-    pub is_masked: bool, // bit 13
-    // bit 14 & 15 unused
-
-    pub compression_method: types::CompressionMethod,
-    pub last_modified: Tm,
-    pub crc32: u32,
-    pub compressed_size: u32,
-    pub uncompressed_size: u32,
-    pub file_name: Vec<u8>,
-    pub extra_field: Vec<u8>,
-    pub header_end: u64,
-}
-
-
-impl LocalFileHeader
-{
-    pub fn parse<T: Reader+Seek>(reader: &mut T) -> IoResult<LocalFileHeader>
+    // Parse central header
+    let signature = try!(reader.read_le_u32());
+    if signature != CENTRAL_DIRECTORY_HEADER_SIGNATURE
     {
-        let signature = try!(reader.read_le_u32());
-        if signature != LOCAL_FILE_HEADER_SIGNATURE
-        {
-            return Err(IoError {
-                kind: io::MismatchedFileTypeForOperation,
-                desc: "Invalid local file header",
-                detail: None })
-        }
-        let version = try!(reader.read_le_u16());
-        let flags = try!(reader.read_le_u16());
-        let compression_method = try!(reader.read_le_u16());
-        let last_mod_time = try!(reader.read_le_u16());
-        let last_mod_date = try!(reader.read_le_u16());
-        let crc = try!(reader.read_le_u32());
-        let compressed_size = try!(reader.read_le_u32());
-        let uncompressed_size = try!(reader.read_le_u32());
-        let file_name_length = try!(reader.read_le_u16());
-        let extra_field_length = try!(reader.read_le_u16());
-        let file_name = try!(reader.read_exact(file_name_length as uint));
-        let extra_field = try!(reader.read_exact(extra_field_length as uint));
-        let header_end = try!(reader.tell());
-
-        Ok(LocalFileHeader
-           {
-               extract_version: version,
-               encrypted: (flags & (1 << 0)) != 0,
-               has_descriptor: (flags & (1 << 3)) != 0,
-               is_compressed_patch: (flags & (1 << 5)) != 0,
-               strong_encryption: (flags & (1 << 6)) != 0,
-               is_utf8: (flags & (1 << 11)) != 0,
-               is_masked: (flags & (1 << 13)) != 0,
-               compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(types::Unknown),
-               last_modified: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
-               crc32: crc,
-               compressed_size: compressed_size,
-               uncompressed_size: uncompressed_size,
-               file_name: file_name,
-               extra_field: extra_field,
-               header_end: header_end,
-           })
+        return Err(IoError {
+            kind: io::MismatchedFileTypeForOperation,
+            desc: "Invalid central directory header",
+            detail: None })
     }
-}
 
-pub struct CentralDirectoryHeader
-{
-    pub made_by: u16,
-    pub version_needed: u16,
+    try!(reader.read_le_u16());
+    try!(reader.read_le_u16());
+    let flags = try!(reader.read_le_u16());
+    let encrypted = flags & 1 == 1;
+    let compression_method = try!(reader.read_le_u16());
+    let last_mod_time = try!(reader.read_le_u16());
+    let last_mod_date = try!(reader.read_le_u16());
+    let crc32 = try!(reader.read_le_u32());
+    let compressed_size = try!(reader.read_le_u32());
+    let uncompressed_size = try!(reader.read_le_u32());
+    let file_name_length = try!(reader.read_le_u16()) as uint;
+    let extra_field_length = try!(reader.read_le_u16()) as uint;
+    let file_comment_length = try!(reader.read_le_u16()) as uint;
+    try!(reader.read_le_u16());
+    try!(reader.read_le_u16());
+    try!(reader.read_le_u32());
+    let offset = try!(reader.read_le_u32()) as i64;
+    let file_name = try!(reader.read_exact(file_name_length));
+    try!(reader.read_exact(extra_field_length));
+    let file_comment  = try!(reader.read_exact(file_comment_length));
 
-    // general purpose flags
-    pub encrypted: bool, // bit 0
-    // bit 1 & 2 unused
-    pub has_descriptor: bool, // bit 3
-    // bit 4 unused
-    pub is_compressed_patch: bool, // bit 5
-    pub strong_encryption: bool, // bit 6
-    // bit 7 - 10 unused
-    pub is_utf8: bool, // bit 11
-    // bit 12 unused
-    pub is_masked: bool, // bit 13
-    // bit 14 & 15 unused
+    // Remember end of central header
+    let return_position = try!(reader.tell()) as i64;
 
-    pub compression_method: types::CompressionMethod,
-    pub last_modified_time: Tm,
-    pub crc32: u32,
-    pub compressed_size: u32,
-    pub uncompressed_size: u32,
-    pub file_name: Vec<u8>,
-    pub extra_field: Vec<u8>,
-    pub file_comment: Vec<u8>,
-    pub disk_number: u16,
-    pub file_offset: u32,
-}
-
-impl CentralDirectoryHeader
-{
-    pub fn parse<T: Reader>(reader: &mut T) -> IoResult<CentralDirectoryHeader>
+    // Parse local header
+    try!(reader.seek(offset, io::SeekSet));
+    let signature = try!(reader.read_le_u32());
+    if signature != LOCAL_FILE_HEADER_SIGNATURE
     {
-        let signature = try!(reader.read_le_u32());
-        if signature != CENTRAL_DIRECTORY_HEADER_SIGNATURE
-        {
-            return Err(IoError {
-                kind: io::MismatchedFileTypeForOperation,
-                desc: "Invalid central directory header",
-                detail: None })
-        }
-
-        let made_by = try!(reader.read_le_u16());
-        let version_needed = try!(reader.read_le_u16());
-        let flags = try!(reader.read_le_u16());
-        let compression = try!(reader.read_le_u16());
-        let last_mod_time = try!(reader.read_le_u16());
-        let last_mod_date = try!(reader.read_le_u16());
-        let crc = try!(reader.read_le_u32());
-        let compressed_size = try!(reader.read_le_u32());
-        let uncompressed_size = try!(reader.read_le_u32());
-        let file_name_length = try!(reader.read_le_u16()) as uint;
-        let extra_field_length = try!(reader.read_le_u16()) as uint;
-        let file_comment_length = try!(reader.read_le_u16()) as uint;
-        let disk_number = try!(reader.read_le_u16());
-        try!(reader.read_le_u16()); // internal file attribute
-        try!(reader.read_le_u32()); // external file attribute
-        let offset = try!(reader.read_le_u32());
-        let file_name = try!(reader.read_exact(file_name_length));
-        let extra_field = try!(reader.read_exact(extra_field_length));
-        let file_comment  = try!(reader.read_exact(file_comment_length));
-
-        Ok(CentralDirectoryHeader
-           {
-               made_by: made_by,
-               version_needed: version_needed,
-               encrypted: flags & (1 << 0) != 0,
-               has_descriptor: flags & (1 << 3) != 0,
-               is_compressed_patch: flags & (1 << 5) != 0,
-               strong_encryption: flags & (1 << 6) != 0,
-               is_utf8: flags & (1 << 11) != 0,
-               is_masked: flags & (1 << 13) != 0,
-               compression_method: FromPrimitive::from_u16(compression).unwrap_or(types::Unknown),
-               last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
-               crc32: crc,
-               compressed_size: compressed_size,
-               uncompressed_size: uncompressed_size,
-               file_name: file_name,
-               extra_field: extra_field,
-               file_comment: file_comment,
-               disk_number: disk_number,
-               file_offset: offset,
-            })
+        return Err(IoError {
+            kind: io::MismatchedFileTypeForOperation,
+            desc: "Invalid local file header",
+            detail: None })
     }
+
+    try!(reader.seek(22, io::SeekCur));
+    let file_name_length = try!(reader.read_le_u16()) as u64;
+    let extra_field_length = try!(reader.read_le_u16()) as u64;
+    let magic_and_header = 4 + 22 + 2 + 2;
+    let data_start = offset as u64 + magic_and_header + file_name_length + extra_field_length;
+
+    // Construct the result
+    let result = ZipFile
+    {
+        encrypted: encrypted,
+        compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(types::Unknown),
+        last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
+        crc32: crc32,
+        compressed_size: compressed_size as u64,
+        uncompressed_size: uncompressed_size as u64,
+        file_name: file_name,
+        file_comment: file_comment,
+        data_start: data_start,
+    };
+
+    // Go back after the central header
+    try!(reader.seek(return_position, io::SeekSet));
+
+    Ok(result)
 }
 
 pub struct CentralDirectoryEnd
@@ -214,6 +125,7 @@ impl CentralDirectoryEnd
                zip_file_comment: zip_file_comment,
            })
     }
+
     pub fn find_and_parse<T: Reader+Seek>(reader: &mut T) -> IoResult<CentralDirectoryEnd>
     {
         let header_size = 22;
