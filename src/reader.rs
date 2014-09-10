@@ -7,7 +7,7 @@ use std::io::{IoResult, IoError};
 use std::cell::RefCell;
 use flate2::FlateReader;
 
-pub struct ZipContainer<T>
+pub struct ZipReader<T>
 {
     inner: RefCell<T>,
     files: Vec<ZipFile>,
@@ -23,11 +23,11 @@ fn unsupported_zip_error<T>(detail: &str) -> IoResult<T>
         })
 }
 
-impl<T: Reader+Seek> ZipContainer<T>
+impl<T: Reader+Seek> ZipReader<T>
 {
-    pub fn new(inner: T) -> IoResult<ZipContainer<T>>
+    pub fn new(inner: T) -> IoResult<ZipReader<T>>
     {
-        let mut result = ZipContainer { inner: RefCell::new(inner), files: Vec::new() };
+        let mut result = ZipReader { inner: RefCell::new(inner), files: Vec::new() };
 
         {
             let reader = &mut *result.inner.borrow_mut();
@@ -43,7 +43,7 @@ impl<T: Reader+Seek> ZipContainer<T>
             try!(reader.seek(directory_start, io::SeekSet));
             for i in range(0, number_of_files)
             {
-                files.push(try!(ZipContainer::parse_directory(reader)));
+                files.push(try!(ZipReader::parse_directory(reader)));
             }
 
             result.files = files;
@@ -57,7 +57,7 @@ impl<T: Reader+Seek> ZipContainer<T>
         let cdh = try!(spec::CentralDirectoryHeader::parse(reader));
         // Remember position
         let pos = try!(reader.tell()) as i64;
-        let result = ZipContainer::parse_file(reader, cdh);
+        let result = ZipReader::parse_file(reader, cdh);
         // Jump back for next directory
         try!(reader.seek(pos, io::SeekSet));
         result
