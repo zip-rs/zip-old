@@ -25,31 +25,24 @@ fn unsupported_zip_error<T>(detail: &str) -> IoResult<T>
 
 impl<T: Reader+Seek> ZipReader<T>
 {
-    pub fn new(inner: T) -> IoResult<ZipReader<T>>
+    pub fn new(mut reader: T) -> IoResult<ZipReader<T>>
     {
-        let mut result = ZipReader { inner: RefCell::new(inner), files: Vec::new() };
+        let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
 
+        if footer.number_of_disks > 1 { return unsupported_zip_error("Support for multi-disk files is not implemented") }
+
+        let directory_start = footer.central_directory_offset as i64;
+        let number_of_files = footer.number_of_files_on_this_disk as uint;
+
+        let mut files = Vec::with_capacity(number_of_files);
+
+        try!(reader.seek(directory_start, io::SeekSet));
+        for i in range(0, number_of_files)
         {
-            let reader = &mut *result.inner.borrow_mut();
-            let footer = try!(spec::CentralDirectoryEnd::find_and_parse(reader));
-
-            if footer.number_of_disks > 1 { return unsupported_zip_error("Support for multi-disk files is not implemented") }
-
-            let directory_start = footer.central_directory_offset as i64;
-            let number_of_files = footer.number_of_files_on_this_disk as uint;
-
-            let mut files = Vec::with_capacity(number_of_files);
-
-            try!(reader.seek(directory_start, io::SeekSet));
-            for i in range(0, number_of_files)
-            {
-                files.push(try!(ZipReader::parse_directory(reader)));
-            }
-
-            result.files = files;
+            files.push(try!(ZipReader::parse_directory(&mut reader)));
         }
 
-        Ok(result)
+        Ok(ZipReader { inner: RefCell::new(reader), files: files })
     }
 
     fn parse_directory(reader: &mut T) -> IoResult<ZipFile>
