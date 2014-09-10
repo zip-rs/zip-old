@@ -1,5 +1,6 @@
 use time;
 use time::Tm;
+use std::cell::RefMut;
 
 pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
 {
@@ -23,5 +24,26 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     {
         Ok(tm) => tm,
         Err(m) => { debug!("Failed parsing date: {}", m); time::empty_tm() },
+    }
+}
+
+pub struct RefMutReader<'a, R:'a>
+{
+    inner: RefMut<'a, R>,
+}
+
+impl<'a, R: Reader> RefMutReader<'a, R>
+{
+    pub fn new(inner: RefMut<'a, R>) -> RefMutReader<'a, R>
+    {
+        RefMutReader { inner: inner, }
+    }
+}
+
+impl<'a, R: Reader> Reader for RefMutReader<'a, R>
+{
+    fn read(&mut self, buf: &mut [u8]) -> ::std::io::IoResult<uint>
+    {
+        self.inner.read(buf)
     }
 }

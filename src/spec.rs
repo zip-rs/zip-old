@@ -2,34 +2,13 @@ use std::io;
 use std::io::{IoResult, IoError};
 use std::iter::range_step_inclusive;
 use time::Tm;
+use types;
 use util;
 
 static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
 static DATA_DESCRIPTOR_SIGNATURE : u32 = 0x08074b50;
 static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
 static CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
-
-#[deriving(FromPrimitive, Clone)]
-pub enum CompressionMethod
-{
-    Stored = 0,
-    Shrunk = 1,
-    Reduced1 = 2,
-    Reduced2 = 3,
-    Reduced3 = 4,
-    Reduced4 = 5,
-    Imploded = 6,
-    Deflated = 8,
-    Deflate64 = 9,
-    PkwareImploding = 10,
-    Bzip2 = 12,
-    LZMA = 14,
-    IBMTerse = 18,
-    LZ77 = 19,
-    WavPack = 97,
-    PPMdI1 = 98,
-    Unknown = 100000,
-}
 
 #[deriving(Clone)]
 pub struct LocalFileHeader
@@ -49,7 +28,7 @@ pub struct LocalFileHeader
     pub is_masked: bool, // bit 13
     // bit 14 & 15 unused
 
-    pub compression_method: CompressionMethod,
+    pub compression_method: types::CompressionMethod,
     pub last_modified: Tm,
     pub crc32: u32,
     pub compressed_size: u32,
@@ -95,7 +74,7 @@ impl LocalFileHeader
                strong_encryption: (flags & (1 << 6)) != 0,
                is_utf8: (flags & (1 << 11)) != 0,
                is_masked: (flags & (1 << 13)) != 0,
-               compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(Unknown),
+               compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(types::Unknown),
                last_modified: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
                crc32: crc,
                compressed_size: compressed_size,
@@ -160,7 +139,7 @@ pub struct CentralDirectoryHeader
     pub is_masked: bool, // bit 13
     // bit 14 & 15 unused
 
-    pub compression_method: CompressionMethod,
+    pub compression_method: types::CompressionMethod,
     pub last_modified_time: Tm,
     pub crc32: u32,
     pub compressed_size: u32,
@@ -215,7 +194,7 @@ impl CentralDirectoryHeader
                strong_encryption: flags & (1 << 6) != 0,
                is_utf8: flags & (1 << 11) != 0,
                is_masked: flags & (1 << 13) != 0,
-               compression_method: FromPrimitive::from_u16(compression).unwrap_or(Unknown),
+               compression_method: FromPrimitive::from_u16(compression).unwrap_or(types::Unknown),
                last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
                crc32: crc,
                compressed_size: compressed_size,

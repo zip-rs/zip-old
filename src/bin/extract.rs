@@ -6,21 +6,21 @@ fn main()
     let fname = Path::new(args[1].as_slice());
     let file = std::io::File::open(&fname);
 
-    let mut zipcontainer = zip::reader::ZipContainer::new(file).unwrap();
+    let zipcontainer = zip::reader::ZipContainer::new(file).unwrap();
 
-    for i in zipcontainer.files()
+    for file in zipcontainer.files()
     {
-        println!("{}", String::from_utf8_lossy(i.name.as_slice()));
+        println!("{}", file.file_name_string());
 
-        if i.size == 0 { continue }
+        if file.uncompressed_size == 0 { continue }
 
-        let outpath = Path::new(i.name.as_slice());
+        let outpath = Path::new(file.file_name.as_slice());
         let dirname = Path::new(outpath.dirname());
 
         std::io::fs::mkdir_recursive(&dirname, std::io::UserDir).unwrap();
 
         let mut outfile = std::io::File::create(&outpath);
-        let mut reader = zipcontainer.read_file(&i);
+        let mut reader = zipcontainer.read_file(file);
         copy(&mut reader, &mut outfile).unwrap();
     }
 }
