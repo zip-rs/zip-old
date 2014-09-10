@@ -78,7 +78,7 @@ impl<T: Reader+Seek> ZipReader<T>
             types::Stored =>
             {
                 box
-                    Crc32Reader::new_with_check(
+                    Crc32Reader::new(
                         limit_reader,
                         file.crc32)
                     as Box<Reader>
@@ -87,7 +87,7 @@ impl<T: Reader+Seek> ZipReader<T>
             {
                 let deflate_reader = limit_reader.deflate_decode();
                 box
-                    Crc32Reader::new_with_check(
+                    Crc32Reader::new(
                         deflate_reader,
                         file.crc32)
                     as Box<Reader>

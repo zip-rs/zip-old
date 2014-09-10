@@ -82,6 +82,19 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     Ok(result)
 }
 
+pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
+{
+    try!(writer.write_le_u32(LOCAL_FILE_HEADER_SIGNATURE));
+    try!(writer.write_le_u16(20));
+    let flag = if file.encrypted { 1 } else { 0 };
+    try!(writer.write_le_u16(flag));
+    try!(writer.write_le_u16(file.compression_method as u16));
+    try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
+    // ...
+
+    Ok(())
+}
+
 pub struct CentralDirectoryEnd
 {
     pub number_of_disks: u16,

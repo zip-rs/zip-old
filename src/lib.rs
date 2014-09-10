@@ -9,3 +9,4 @@ mod spec;
 pub mod crc32;
 pub mod reader;
 pub mod types;
+pub mod writer;

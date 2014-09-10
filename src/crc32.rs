@@ -46,7 +46,7 @@ static CRC32_TABLE : [u32, ..256] = [
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 ];
 
-fn crc32(original: u32, buf: &[u8]) -> u32
+pub fn crc32(original: u32, buf: &[u8]) -> u32
 {
     let mut crc = original ^ !0u32;
 
@@ -62,43 +62,24 @@ pub struct Crc32Reader<R>
 {
     inner: R,
     crc: u32,
-    check: Option<u32>,
+    check: u32,
 }
 
 impl<R: Reader> Crc32Reader<R>
 {
-    pub fn new(inner: R) -> Crc32Reader<R>
+    pub fn new(inner: R, checksum: u32) -> Crc32Reader<R>
     {
         Crc32Reader
         {
             inner: inner,
             crc: 0,
-            check: None,
+            check: checksum,
         }
-    }
-
-    pub fn new_with_check(inner: R, checksum: u32) -> Crc32Reader<R>
-    {
-        Crc32Reader
-        {
-            inner: inner,
-            crc: 0,
-            check: Some(checksum),
-        }
-    }
-
-    pub fn get_checksum(&self) -> u32
-    {
-        self.crc
     }
 
     fn check_matches(&self) -> bool
     {
-        match self.check
-        {
-            None => true,
-            Some(check) => check == self.crc
-        }
+        self.check == self.crc
     }
 }
 

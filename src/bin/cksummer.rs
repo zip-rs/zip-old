@@ -2,19 +2,18 @@ extern crate zip;
 
 fn main()
 {
-    let stdin = std::io::stdin();
-    let mut crc_reader = zip::crc32::Crc32Reader::new(stdin);
-
+    let mut stdin = std::io::stdin();
+    let mut crc = 0u32;
     let mut buf = [0u8, ..4096];
+
     loop
     {
-        match crc_reader.read(&mut buf)
+        match stdin.read(&mut buf)
         {
             Err(_) => break,
-            _ => {},
+            Ok(n) => { crc = zip::crc32::crc32(crc, buf.slice_to(n)); },
         }
     }
-    crc_reader.read_to_end().unwrap();
 
-    println!("{:x}", crc_reader.get_checksum());
+    println!("{:x}", crc);
 }
