@@ -13,11 +13,6 @@ test = false
 doc = false
 
 [[bin]]
-name = "cksummer"
-test = false
-doc = false
-
-[[bin]]
 name = "write_sample"
 test = false
 doc = false

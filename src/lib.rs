@@ -13,7 +13,7 @@ pub use writer::ZipWriter;
 
 mod util;
 mod spec;
-pub mod crc32;
+mod crc32;
 mod reader;
 pub mod types;
 mod writer;

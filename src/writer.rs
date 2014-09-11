@@ -1,6 +1,7 @@
 use types;
 use types::ZipFile;
 use spec;
+use crc32;
 use std::default::Default;
 use std::io;
 use std::io::{IoResult, IoError};
@@ -77,7 +78,7 @@ impl ZipWriterStats
 {
     fn update(&mut self, buf: &[u8])
     {
-        self.crc32 = ::crc32::crc32(self.crc32, buf);
+        self.crc32 = crc32::update(self.crc32, buf);
         self.bytes_written += buf.len() as u64;
     }
 }

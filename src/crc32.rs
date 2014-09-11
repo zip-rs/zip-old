@@ -48,10 +48,10 @@ static CRC32_TABLE : [u32, ..256] = [
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 ];
 
-/// Update the checksum original based upon the contents of buf.
-pub fn crc32(original: u32, buf: &[u8]) -> u32
+/// Update the checksum prev based upon the contents of buf.
+pub fn update(prev: u32, buf: &[u8]) -> u32
 {
-    let mut crc = original ^ !0u32;
+    let mut crc = prev ^ !0u32;
 
     for byte in buf.iter()
     {
@@ -103,7 +103,7 @@ impl<R: Reader> Reader for Crc32Reader<R>
             },
             Err(e) => return Err(e),
         };
-        self.crc = crc32(self.crc, buf.slice_to(count));
+        self.crc = update(self.crc, buf.slice_to(count));
         Ok(count)
     }
 }
