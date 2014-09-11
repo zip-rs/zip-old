@@ -105,7 +105,7 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
 pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
 {
     try!(writer.write_le_u32(CENTRAL_DIRECTORY_HEADER_SIGNATURE));
-    try!(writer.write_le_u16(1337));
+    try!(writer.write_le_u16(0x00FF));
     try!(writer.write_le_u16(20));
     let flag = if file.encrypted { 1 } else { 0 };
     try!(writer.write_le_u16(flag));
