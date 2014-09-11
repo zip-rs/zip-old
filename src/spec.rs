@@ -97,7 +97,7 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
 
 pub struct CentralDirectoryEnd
 {
-    pub number_of_disks: u16,
+    pub disk_number: u16,
     pub disk_with_central_directory: u16,
     pub number_of_files_on_this_disk: u16,
     pub number_of_files: u16,
@@ -118,7 +118,7 @@ impl CentralDirectoryEnd
                 desc: "Invalid digital signature header",
                 detail: None })
         }
-        let number_of_disks = try!(reader.read_le_u16());
+        let disk_number = try!(reader.read_le_u16());
         let disk_with_central_directory = try!(reader.read_le_u16());
         let number_of_files_on_this_disk = try!(reader.read_le_u16());
         let number_of_files = try!(reader.read_le_u16());
@@ -129,7 +129,7 @@ impl CentralDirectoryEnd
 
         Ok(CentralDirectoryEnd
            {
-               number_of_disks: number_of_disks,
+               disk_number: disk_number,
                disk_with_central_directory: disk_with_central_directory,
                number_of_files_on_this_disk: number_of_files_on_this_disk,
                number_of_files: number_of_files,

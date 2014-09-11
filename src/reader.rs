@@ -29,7 +29,7 @@ impl<T: Reader+Seek> ZipReader<T>
     {
         let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
 
-        if footer.number_of_disks > 1 { return unsupported_zip_error("Support for multi-disk files is not implemented") }
+        if footer.disk_number != footer.disk_with_central_directory { return unsupported_zip_error("Support for multi-disk files is not implemented") }
 
         let directory_start = footer.central_directory_offset as i64;
         let number_of_files = footer.number_of_files_on_this_disk as uint;
