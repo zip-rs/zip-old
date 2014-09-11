@@ -12,7 +12,7 @@ Supported compression formats:
 * stored (i.e. none)
 * deflate
 
-Currentlt unsupported zip extensions:
+Currently unsupported zip extensions:
 
 * ZIP64
 * Encryption
