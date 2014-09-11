@@ -1,3 +1,5 @@
+//! Helper module to compute a CRC32 checksum
+
 use std::io;
 
 static CRC32_TABLE : [u32, ..256] = [
@@ -46,6 +48,7 @@ static CRC32_TABLE : [u32, ..256] = [
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 ];
 
+/// Update the checksum original based upon the contents of buf.
 pub fn crc32(original: u32, buf: &[u8]) -> u32
 {
     let mut crc = original ^ !0u32;
@@ -58,6 +61,7 @@ pub fn crc32(original: u32, buf: &[u8]) -> u32
     return crc ^ !0u32;
 }
 
+/// Reader that validates the CRC32 when it reaches the EOF.
 pub struct Crc32Reader<R>
 {
     inner: R,
@@ -67,6 +71,7 @@ pub struct Crc32Reader<R>
 
 impl<R: Reader> Crc32Reader<R>
 {
+    /// Get a new Crc32Reader which check the inner reader against checksum.
     pub fn new(inner: R, checksum: u32) -> Crc32Reader<R>
     {
         Crc32Reader

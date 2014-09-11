@@ -11,11 +11,7 @@ fn doit() -> std::io::IoResult<()>
     let fname = Path::new(args[1].as_slice());
     let file = std::io::File::create(&fname).unwrap();
 
-    let mut zip = zip::writer::ZipWriter::new(file);
-
-
-//    try!(zip.start_file(b"test", zip::types::Stored));
-//    try!(zip.write(b""));
+    let mut zip = zip::ZipWriter::new(file);
 
     try!(zip.start_file(b"test/readme.txt", zip::types::Stored));
     try!(zip.write(b"Hello, World!\n"));

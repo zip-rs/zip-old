@@ -17,6 +17,27 @@ enum GenericZipWriter<W>
     Deflater(DeflateEncoder<W>),
 }
 
+/// Generator for ZIP files.
+///
+/// ```
+/// fn doit() -> std::io::IoResult<()>
+/// {
+///     // For this example we write to a buffer, but normally you should use a File
+///     let mut buf = [0u8, ..65536];
+///     let w = std::io::BufWriter::new(&mut buf);
+///     let mut zip = zip::ZipWriter::new(w);
+///
+///     try!(zip.start_file(b"hello_world.txt", zip::types::Stored));
+///     try!(zip.write(b"Hello, World!"));
+///
+///     // Optionally finish the zip. (this is also done on drop)
+///     try!(zip.finalize());
+///
+///     Ok(())
+/// }
+///
+/// println!("Result: {}", doit());
+/// ```
 pub struct ZipWriter<W>
 {
     inner: GenericZipWriter<W>,
@@ -63,6 +84,9 @@ impl ZipWriterStats
 
 impl<W: Writer+Seek> ZipWriter<W>
 {
+    /// Initializes the ZipWriter.
+    ///
+    /// Before writing to this object, the start_file command should be called.
     pub fn new(inner: W) -> ZipWriter<W>
     {
         ZipWriter
@@ -73,6 +97,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         }
     }
 
+    /// Start a new file for with the requested compression method.
     pub fn start_file(&mut self, name: &[u8], compression: types::CompressionMethod) -> IoResult<()>
     {
         try!(self.finish_file());
@@ -126,6 +151,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         Ok(())
     }
 
+    /// Finish the last file and write all other zip-structures
     pub fn finalize(&mut self) -> IoResult<()>
     {
         try!(self.finish_file());

@@ -6,7 +6,7 @@ fn main()
     let fname = Path::new(args[1].as_slice());
     let file = std::io::File::open(&fname);
 
-    let zipcontainer = zip::reader::ZipReader::new(file).unwrap();
+    let zipcontainer = zip::ZipReader::new(file).unwrap();
 
     for file in zipcontainer.files()
     {

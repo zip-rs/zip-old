@@ -7,6 +7,30 @@ use std::io::{IoResult, IoError};
 use std::cell::RefCell;
 use flate2::FlateReader;
 
+/// Wrapper for reading the contents of a ZIP file.
+///
+/// ```
+/// fn doit() -> std::io::IoResult<()>
+/// {
+///     // For demonstration purposes we read from an empty buffer.
+///     // Normally a File object would be used.
+///     let buf = [0u8, 128];
+///     let mut reader = std::io::BufReader::new(&buf);
+///
+///     let zip = try!(zip::ZipReader::new(reader));
+///
+///     for file in zip.files()
+///     {
+///         println!("Filename: {}", file.file_name_string());
+///         let mut file_reader = try!(zip.read_file(file));
+///         let first_byte = try!(file_reader.read_byte());
+///         println!("{}", first_byte);
+///     }
+///     Ok(())
+/// }
+///
+/// println!("Result: {}", doit());
+/// ```
 pub struct ZipReader<T>
 {
     inner: RefCell<T>,
@@ -25,6 +49,7 @@ fn unsupported_zip_error<T>(detail: &str) -> IoResult<T>
 
 impl<T: Reader+Seek> ZipReader<T>
 {
+    /// Opens a ZIP file and parses the content headers.
     pub fn new(mut reader: T) -> IoResult<ZipReader<T>>
     {
         let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
@@ -45,11 +70,18 @@ impl<T: Reader+Seek> ZipReader<T>
         Ok(ZipReader { inner: RefCell::new(reader), files: files })
     }
 
+    /// An iterator over the information of all contained files.
     pub fn files(&self) -> ::std::slice::Items<ZipFile>
     {
         self.files.as_slice().iter()
     }
 
+    /// Gets a reader for a contained zipfile.
+    ///
+    /// Possible errors:
+    ///
+    /// * `ResourceUnavailable`: when another reader returned from this function is still active
+    /// * `OtherIoError`: if the file is encrypted or has an unsupported compression
     pub fn read_file(&self, file: &ZipFile) -> IoResult<Box<Reader>>
     {
         let mut inner_reader = match self.inner.try_borrow_mut()
