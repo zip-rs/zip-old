@@ -2,22 +2,32 @@ extern crate zip;
 
 fn main()
 {
-    println!("{}", doit());
+    let args = std::os::args();
+    let filename = args[1].as_slice();
+    match doit(filename)
+    {
+        Ok(_) => println!("File written to {}", filename),
+        Err(e) => println!("Error: {}", e),
+    }
 }
 
-fn doit() -> std::io::IoResult<()>
+fn doit(filename: &str) -> std::io::IoResult<()>
 {
-    let args = std::os::args();
-    let fname = Path::new(args[1].as_slice());
-    let file = std::io::File::create(&fname).unwrap();
+    let path = Path::new(filename);
+    let file = std::io::File::create(&path).unwrap();
 
     let mut zip = zip::ZipWriter::new(file);
 
-    try!(zip.start_file(b"test/readme.txt", zip::types::Stored));
+    try!(zip.start_file(b"test/hello_world.txt", zip::types::Stored));
     try!(zip.write(b"Hello, World!\n"));
 
-    try!(zip.start_file(b"test/lorem.txt", zip::types::Deflated));
-    try!(zip.write(b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
+    try!(zip.start_file(b"test/lorem_ipsum.txt", zip::types::Deflated));
+    try!(zip.write(LOREM_IPSUM));
+
+    zip.finalize()
+}
+
+static LOREM_IPSUM : &'static [u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a consequat felis. Morbi metus diam, auctor in auctor vel, feugiat id odio. Curabitur ex ex,
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
@@ -43,6 +53,4 @@ laoreet est nec dolor aliquam consectetur. Integer iaculis felis venenatis liber
 nunc. Morbi a venenatis quam, in vehicula justo. Nam risus dui, auctor eu accumsan at, sagittis ac lectus. Mauris iaculis dignissim interdum. Cras cursus dapibus auctor.
 Donec sagittis massa vitae tortor viverra vehicula. Mauris fringilla nunc eu lorem ultrices placerat. Maecenas posuere porta quam at semper. Praesent eu bibendum eros.
 Nunc congue sollicitudin ante, sollicitudin lacinia magna cursus vitae.
-"));
-    zip.finalize()
-}
+";
