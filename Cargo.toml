@@ -6,3 +6,18 @@ authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>"]
 
 [dependencies.flate2]
 git = "https://github.com/alexcrichton/flate2-rs.git"
+
+[[bin]]
+name = "extract"
+test = false
+doc = false
+
+[[bin]]
+name = "cksummer"
+test = false
+doc = false
+
+[[bin]]
+name = "write_sample"
+test = false
+doc = false

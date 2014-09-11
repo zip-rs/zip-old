@@ -1,0 +1,18 @@
+language: rust
+
+notifications:
+  email:
+    on_success: never
+    on_failure: always
+
+env:
+  global:
+    - secure: F1XhJmZGLE0WuVr7KsN0+Yn5sCiBjc8L9Lwugg5wV3/XwJqskq4EZXSFUDBbhIsMeArMftnrfxejEncySMs/CtjAaHnHxbGvCkWZAihyNQUjbbaYXTpPBfjqye5dhkWIEeTZXfIZacCoFxPGwGA+SWf9PfvgztQyazXEtmxtSqw=
+
+script:
+  - cargo build
+  - cargo test
+  - cargo doc
+
+after_script:
+  - cd target && curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
