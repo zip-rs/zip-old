@@ -73,6 +73,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
         uncompressed_size: uncompressed_size as u64,
         file_name: file_name,
         file_comment: file_comment,
+        header_start: offset as u64,
         data_start: data_start,
     };
 
@@ -90,7 +91,38 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
     try!(writer.write_le_u16(flag));
     try!(writer.write_le_u16(file.compression_method as u16));
     try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
-    // ...
+    try!(writer.write_le_u16(util::tm_to_msdos_date(file.last_modified_time)));
+    try!(writer.write_le_u32(file.crc32));
+    try!(writer.write_le_u32(file.compressed_size as u32));
+    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    try!(writer.write_le_u16(file.file_name.len() as u16));
+    try!(writer.write_le_u16(0));
+    try!(writer.write(file.file_name.as_slice()));
+
+    Ok(())
+}
+
+pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
+{
+    try!(writer.write_le_u32(CENTRAL_DIRECTORY_HEADER_SIGNATURE));
+    try!(writer.write_le_u16(1337));
+    try!(writer.write_le_u16(20));
+    let flag = if file.encrypted { 1 } else { 0 };
+    try!(writer.write_le_u16(flag));
+    try!(writer.write_le_u16(file.compression_method as u16));
+    try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
+    try!(writer.write_le_u16(util::tm_to_msdos_date(file.last_modified_time)));
+    try!(writer.write_le_u32(file.crc32));
+    try!(writer.write_le_u32(file.compressed_size as u32));
+    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    try!(writer.write_le_u16(file.file_name.len() as u16));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u32(0));
+    try!(writer.write_le_u32(file.header_start as u32));
+    try!(writer.write(file.file_name.as_slice()));
 
     Ok(())
 }
@@ -167,5 +199,19 @@ impl CentralDirectoryEnd
                 desc: "Could not find central directory end",
                 detail: None
             })
+    }
+
+    pub fn write<T: Writer>(&self, writer: &mut T) -> IoResult<()>
+    {
+        try!(writer.write_le_u32(CENTRAL_DIRECTORY_END_SIGNATURE));
+        try!(writer.write_le_u16(self.disk_number));
+        try!(writer.write_le_u16(self.disk_with_central_directory));
+        try!(writer.write_le_u16(self.number_of_files_on_this_disk));
+        try!(writer.write_le_u16(self.number_of_files));
+        try!(writer.write_le_u32(self.central_directory_size));
+        try!(writer.write_le_u32(self.central_directory_offset));
+        try!(writer.write_le_u16(self.zip_file_comment.len() as u16));
+        try!(writer.write(self.zip_file_comment.as_slice()));
+        Ok(())
     }
 }

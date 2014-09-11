@@ -29,7 +29,12 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
 
 pub fn tm_to_msdos_time(time: Tm) -> u16
 {
-    ((time.tm_sec >> 2) | (time.tm_min << 5) | (time.tm_hour << 11)) as u16
+    ((time.tm_sec >> 1) | (time.tm_min << 5) | (time.tm_hour << 11)) as u16
+}
+
+pub fn tm_to_msdos_date(time: Tm) -> u16
+{
+    (time.tm_mday | ((time.tm_mon + 1) << 5) | ((time.tm_year - 80) << 9)) as u16
 }
 
 pub struct RefMutReader<'a, R:'a>

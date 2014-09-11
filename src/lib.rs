@@ -1,4 +1,5 @@
 #![feature(phase)]
+#![feature(unsafe_destructor)]
 
 #[phase(plugin, link)] extern crate log;
 extern crate time;

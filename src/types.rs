@@ -33,6 +33,7 @@ pub struct ZipFile
     pub uncompressed_size: u64,
     pub file_name: Vec<u8>,
     pub file_comment: Vec<u8>,
+    pub header_start: u64,
     pub data_start: u64,
 }
 
