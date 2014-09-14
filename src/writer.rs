@@ -106,13 +106,8 @@ impl<W: Writer+Seek> ZipWriter<W>
         {
             let writer = self.inner.get_plain();
             let header_start = try!(writer.tell());
-            try!(writer.seek(30 + name.len() as i64, io::SeekCur));
 
-            self.stats.start = header_start + 30 + name.len() as u64;
-            self.stats.bytes_written = 0;
-            self.stats.crc32 = 0;
-
-            self.files.push(ZipFile
+            let mut file = ZipFile
             {
                 encrypted: false,
                 compression_method: compression,
@@ -123,8 +118,18 @@ impl<W: Writer+Seek> ZipWriter<W>
                 file_name: String::from_str(name),
                 file_comment: String::new(),
                 header_start: header_start,
-                data_start: self.stats.start,
-            });
+                data_start: 0,
+            };
+            try!(spec::write_local_file_header(writer, &file));
+
+            let header_end = try!(writer.tell());
+            self.stats.start = header_end;
+            file.data_start = header_end;
+
+            self.stats.bytes_written = 0;
+            self.stats.crc32 = 0;
+
+            self.files.push(file);
         }
 
         try!(self.inner.switch_to(compression));

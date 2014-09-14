@@ -5,6 +5,7 @@ pub fn to_string(input: &[u8]) -> String
     input.iter().map(|c| to_char(*c)).collect()
 }
 
+#[allow(dead_code)]
 pub fn from_string(input: &str) -> Vec<u8>
 {
     input.chars().map(|c| from_char(c)).collect()

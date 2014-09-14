@@ -40,7 +40,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     try!(reader.read_le_u32());
     let offset = try!(reader.read_le_u32()) as i64;
     let file_name_raw = try!(reader.read_exact(file_name_length));
-    try!(reader.read_exact(extra_field_length));
+    let extra_field = try!(reader.read_exact(extra_field_length));
     let file_comment_raw  = try!(reader.read_exact(file_comment_length));
 
     let file_name = match is_utf8
@@ -75,7 +75,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     let data_start = offset as u64 + magic_and_header + file_name_length + extra_field_length;
 
     // Construct the result
-    let result = ZipFile
+    let mut result = ZipFile
     {
         encrypted: encrypted,
         compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(types::Unknown),
@@ -89,17 +89,35 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
         data_start: data_start,
     };
 
+    try!(parse_extra_field(&mut result, extra_field.as_slice()));
+
     // Go back after the central header
     try!(reader.seek(return_position, io::SeekSet));
 
     Ok(result)
 }
 
+fn parse_extra_field(_file: &mut ZipFile, data: &[u8]) -> IoResult<()>
+{
+    let mut reader = io::BufReader::new(data);
+    while !reader.eof()
+    {
+        let kind = try!(reader.read_le_u16());
+        let len = try!(reader.read_le_u16());
+        debug!("Parsing extra block {:04x}", kind);
+        match kind
+        {
+            _ => try!(reader.seek(len as i64, io::SeekCur)),
+        }
+    }
+    Ok(())
+}
+
 pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
 {
     try!(writer.write_le_u32(LOCAL_FILE_HEADER_SIGNATURE));
     try!(writer.write_le_u16(20));
-    let flag = if file.encrypted { 1 } else { 0 };
+    let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_le_u16(flag));
     try!(writer.write_le_u16(file.compression_method as u16));
     try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
@@ -107,9 +125,11 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
     try!(writer.write_le_u32(file.crc32));
     try!(writer.write_le_u32(file.compressed_size as u32));
     try!(writer.write_le_u32(file.uncompressed_size as u32));
-    try!(writer.write_le_u16(file.file_name.len() as u16));
-    try!(writer.write_le_u16(0));
-    try!(writer.write(::cp437::from_string(file.file_name.as_slice()).as_slice()));
+    try!(writer.write_le_u16(file.file_name.as_bytes().len() as u16));
+    let extra_field = try!(build_extra_field(file));
+    try!(writer.write_le_u16(extra_field.len() as u16));
+    try!(writer.write(file.file_name.as_bytes()));
+    try!(writer.write(extra_field.as_slice()));
 
     Ok(())
 }
@@ -117,9 +137,9 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
 pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
 {
     try!(writer.write_le_u32(CENTRAL_DIRECTORY_HEADER_SIGNATURE));
-    try!(writer.write_le_u16(0x00FF));
+    try!(writer.write_le_u16(0x14FF));
     try!(writer.write_le_u16(20));
-    let flag = if file.encrypted { 1 } else { 0 };
+    let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_le_u16(flag));
     try!(writer.write_le_u16(file.compression_method as u16));
     try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
@@ -127,16 +147,25 @@ pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile)
     try!(writer.write_le_u32(file.crc32));
     try!(writer.write_le_u32(file.compressed_size as u32));
     try!(writer.write_le_u32(file.uncompressed_size as u32));
-    try!(writer.write_le_u16(file.file_name.len() as u16));
-    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u16(file.file_name.as_bytes().len() as u16));
+    let extra_field = try!(build_extra_field(file));
+    try!(writer.write_le_u16(extra_field.len() as u16));
     try!(writer.write_le_u16(0));
     try!(writer.write_le_u16(0));
     try!(writer.write_le_u16(0));
     try!(writer.write_le_u32(0));
     try!(writer.write_le_u32(file.header_start as u32));
-    try!(writer.write(::cp437::from_string(file.file_name.as_slice()).as_slice()));
+    try!(writer.write(file.file_name.as_bytes()));
+    try!(writer.write(extra_field.as_slice()));
 
     Ok(())
+}
+
+fn build_extra_field(_file: &ZipFile) -> IoResult<Vec<u8>>
+{
+    let writer = io::MemWriter::new();
+    // Future work
+    Ok(writer.unwrap())
 }
 
 pub struct CentralDirectoryEnd
