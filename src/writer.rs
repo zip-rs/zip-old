@@ -28,7 +28,7 @@ enum GenericZipWriter<W>
 ///     let w = std::io::BufWriter::new(&mut buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
-///     try!(zip.start_file(b"hello_world.txt", zip::types::Stored));
+///     try!(zip.start_file("hello_world.txt", zip::types::Stored));
 ///     try!(zip.write(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
@@ -99,7 +99,7 @@ impl<W: Writer+Seek> ZipWriter<W>
     }
 
     /// Start a new file for with the requested compression method.
-    pub fn start_file(&mut self, name: &[u8], compression: types::CompressionMethod) -> IoResult<()>
+    pub fn start_file(&mut self, name: &str, compression: types::CompressionMethod) -> IoResult<()>
     {
         try!(self.finish_file());
 
@@ -120,8 +120,8 @@ impl<W: Writer+Seek> ZipWriter<W>
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: Vec::from_slice(name),
-                file_comment: Vec::new(),
+                file_name: String::from_str(name),
+                file_comment: String::new(),
                 header_start: header_start,
                 data_start: self.stats.start,
             });

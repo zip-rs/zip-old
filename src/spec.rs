@@ -25,6 +25,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     try!(reader.read_le_u16());
     let flags = try!(reader.read_le_u16());
     let encrypted = flags & 1 == 1;
+    let is_utf8 = flags & (1 << 11) != 0;
     let compression_method = try!(reader.read_le_u16());
     let last_mod_time = try!(reader.read_le_u16());
     let last_mod_date = try!(reader.read_le_u16());
@@ -38,9 +39,20 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     try!(reader.read_le_u16());
     try!(reader.read_le_u32());
     let offset = try!(reader.read_le_u32()) as i64;
-    let file_name = try!(reader.read_exact(file_name_length));
+    let file_name_raw = try!(reader.read_exact(file_name_length));
     try!(reader.read_exact(extra_field_length));
-    let file_comment  = try!(reader.read_exact(file_comment_length));
+    let file_comment_raw  = try!(reader.read_exact(file_comment_length));
+
+    let file_name = match is_utf8
+    {
+        true => String::from_utf8_lossy(file_name_raw.as_slice()).into_string(),
+        false => ::cp437::to_string(file_name_raw.as_slice()),
+    };
+    let file_comment = match is_utf8
+    {
+        true => String::from_utf8_lossy(file_comment_raw.as_slice()).into_string(),
+        false => ::cp437::to_string(file_comment_raw.as_slice()),
+    };
 
     // Remember end of central header
     let return_position = try!(reader.tell()) as i64;
@@ -97,7 +109,7 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
     try!(writer.write_le_u32(file.uncompressed_size as u32));
     try!(writer.write_le_u16(file.file_name.len() as u16));
     try!(writer.write_le_u16(0));
-    try!(writer.write(file.file_name.as_slice()));
+    try!(writer.write(::cp437::from_string(file.file_name.as_slice()).as_slice()));
 
     Ok(())
 }
@@ -122,7 +134,7 @@ pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile)
     try!(writer.write_le_u16(0));
     try!(writer.write_le_u32(0));
     try!(writer.write_le_u32(file.header_start as u32));
-    try!(writer.write(file.file_name.as_slice()));
+    try!(writer.write(::cp437::from_string(file.file_name.as_slice()).as_slice()));
 
     Ok(())
 }

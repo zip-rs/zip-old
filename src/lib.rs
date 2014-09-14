@@ -17,3 +17,4 @@ mod crc32;
 mod reader;
 pub mod types;
 mod writer;
+mod cp437;

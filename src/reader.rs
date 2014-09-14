@@ -21,7 +21,7 @@ use flate2::FlateReader;
 ///
 ///     for file in zip.files()
 ///     {
-///         println!("Filename: {}", file.file_name_string());
+///         println!("Filename: {}", file.file_name);
 ///         let mut file_reader = try!(zip.read_file(file));
 ///         let first_byte = try!(file_reader.read_byte());
 ///         println!("{}", first_byte);

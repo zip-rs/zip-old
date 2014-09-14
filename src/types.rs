@@ -58,26 +58,11 @@ pub struct ZipFile
     /// Size of the file when extracted
     pub uncompressed_size: u64,
     /// Name of the file
-    pub file_name: Vec<u8>,
+    pub file_name: String,
     /// File comment
-    pub file_comment: Vec<u8>,
+    pub file_comment: String,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
     /// Specifies where the compressed data of the file starts
     pub data_start: u64,
-}
-
-impl ZipFile
-{
-    /// Lossy UTF-8 interpretation of the file name
-    pub fn file_name_string(&self) -> String
-    {
-        String::from_utf8_lossy(self.file_name.as_slice()).into_string()
-    }
-
-    /// Lossy UTF-8 interpretation of the file comment
-    pub fn file_comment_string(&self) -> String
-    {
-        String::from_utf8_lossy(self.file_comment.as_slice()).into_string()
-    }
 }
