@@ -1,7 +1,7 @@
 use std::io;
 use std::io::{IoResult, IoError};
 use std::iter::range_step_inclusive;
-use types;
+use compression;
 use types::ZipFile;
 use util;
 
@@ -78,7 +78,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     let mut result = ZipFile
     {
         encrypted: encrypted,
-        compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(types::Unknown),
+        compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(compression::Unknown),
         last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
         crc32: crc32,
         compressed_size: compressed_size as u64,

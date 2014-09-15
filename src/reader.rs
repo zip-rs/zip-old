@@ -1,7 +1,7 @@
 use spec;
 use crc32::Crc32Reader;
 use types::ZipFile;
-use types;
+use compression;
 use std::io;
 use std::io::{IoResult, IoError};
 use std::cell::RefCell;
@@ -107,7 +107,7 @@ impl<T: Reader+Seek> ZipReader<T>
 
         let reader = match file.compression_method
         {
-            types::Stored =>
+            compression::Stored =>
             {
                 box
                     Crc32Reader::new(
@@ -115,7 +115,7 @@ impl<T: Reader+Seek> ZipReader<T>
                         file.crc32)
                     as Box<Reader>
             },
-            types::Deflated =>
+            compression::Deflated =>
             {
                 let deflate_reader = limit_reader.deflate_decode();
                 box

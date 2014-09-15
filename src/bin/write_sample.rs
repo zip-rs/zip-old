@@ -18,10 +18,10 @@ fn doit(filename: &str) -> std::io::IoResult<()>
 
     let mut zip = zip::ZipWriter::new(file);
 
-    try!(zip.start_file("test/☃.txt", zip::types::Stored));
+    try!(zip.start_file("test/☃.txt", zip::compression::Stored));
     try!(zip.write(b"Hello, World!\n"));
 
-    try!(zip.start_file("test/lorem_ipsum.txt", zip::types::Deflated));
+    try!(zip.start_file("test/lorem_ipsum.txt", zip::compression::Deflated));
     try!(zip.write(LOREM_IPSUM));
 
     zip.finalize()

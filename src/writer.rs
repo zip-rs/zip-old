@@ -1,4 +1,4 @@
-use types;
+use compression;
 use types::ZipFile;
 use spec;
 use crc32;
@@ -28,7 +28,7 @@ enum GenericZipWriter<W>
 ///     let w = std::io::BufWriter::new(&mut buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
-///     try!(zip.start_file("hello_world.txt", zip::types::Stored));
+///     try!(zip.start_file("hello_world.txt", zip::compression::Stored));
 ///     try!(zip.write(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
@@ -99,7 +99,7 @@ impl<W: Writer+Seek> ZipWriter<W>
     }
 
     /// Start a new file for with the requested compression method.
-    pub fn start_file(&mut self, name: &str, compression: types::CompressionMethod) -> IoResult<()>
+    pub fn start_file(&mut self, name: &str, compression: compression::CompressionMethod) -> IoResult<()>
     {
         try!(self.finish_file());
 
@@ -139,7 +139,7 @@ impl<W: Writer+Seek> ZipWriter<W>
 
     fn finish_file(&mut self) -> IoResult<()>
     {
-        try!(self.inner.switch_to(types::Stored));
+        try!(self.inner.switch_to(compression::Stored));
         let writer = self.inner.get_plain();
 
         let file = match self.files.mut_last()
@@ -209,7 +209,7 @@ impl<W: Writer+Seek> Drop for ZipWriter<W>
 
 impl<W: Writer+Seek> GenericZipWriter<W>
 {
-    fn switch_to(&mut self, compression: types::CompressionMethod) -> IoResult<()>
+    fn switch_to(&mut self, compression: compression::CompressionMethod) -> IoResult<()>
     {
         let bare = match mem::replace(self, Closed)
         {
@@ -220,8 +220,8 @@ impl<W: Writer+Seek> GenericZipWriter<W>
 
         *self = match compression
         {
-            types::Stored => Storer(bare),
-            types::Deflated => Deflater(bare.deflate_encode(flate2::Default)),
+            compression::Stored => Storer(bare),
+            compression::Deflated => Deflater(bare.deflate_encode(flate2::Default)),
             _ => return Err(IoError { kind: io::OtherIoError, desc: "Unsupported compression requested", detail: None }),
         };
 
