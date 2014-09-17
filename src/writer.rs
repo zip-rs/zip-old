@@ -33,7 +33,7 @@ enum GenericZipWriter<W>
 ///     try!(zip.write(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
-///     try!(zip.finalize());
+///     try!(zip.finish());
 ///
 ///     Ok(())
 /// }
@@ -158,7 +158,17 @@ impl<W: Writer+Seek> ZipWriter<W>
     }
 
     /// Finish the last file and write all other zip-structures
-    pub fn finalize(&mut self) -> IoResult<()>
+    ///
+    /// This will return the writer, but one should normally not append any data to the end of the file.
+    /// Note that the zipfile will also be finished on drop.
+    pub fn finish(mut self) -> IoResult<W>
+    {
+        try!(self.finalize());
+        let inner = mem::replace(&mut self.inner, Closed);
+        Ok(inner.unwrap())
+    }
+
+    fn finalize(&mut self) -> IoResult<()>
     {
         try!(self.finish_file());
 
@@ -186,7 +196,6 @@ impl<W: Writer+Seek> ZipWriter<W>
             try!(footer.write(writer));
         }
 
-        self.inner = Closed;
         Ok(())
     }
 }
@@ -242,6 +251,15 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         match *self
         {
             Storer(ref mut w) => w,
+            _ => fail!("Should have switched to stored beforehand"),
+        }
+    }
+
+    fn unwrap(self) -> W
+    {
+        match self
+        {
+            Storer(w) => w,
             _ => fail!("Should have switched to stored beforehand"),
         }
     }

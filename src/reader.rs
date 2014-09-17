@@ -129,4 +129,12 @@ impl<T: Reader+Seek> ZipReader<T>
         };
         Ok(reader)
     }
+
+    /// Unwrap and return the inner reader object
+    ///
+    /// The position of the reader is undefined.
+    pub fn unwrap(self) -> T
+    {
+        self.inner.unwrap()
+    }
 }

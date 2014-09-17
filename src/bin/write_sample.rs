@@ -24,7 +24,8 @@ fn doit(filename: &str) -> std::io::IoResult<()>
     try!(zip.start_file("test/lorem_ipsum.txt", zip::compression::Deflated));
     try!(zip.write(LOREM_IPSUM));
 
-    zip.finalize()
+    try!(zip.finish());
+    Ok(())
 }
 
 static LOREM_IPSUM : &'static [u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
