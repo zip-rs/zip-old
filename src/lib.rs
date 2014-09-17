@@ -14,6 +14,8 @@ pub use types::ZipFile;
 
 mod util;
 mod spec;
+mod reader_spec;
+mod writer_spec;
 mod crc32;
 mod reader;
 mod types;

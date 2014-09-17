@@ -1,7 +1,8 @@
-use spec;
 use crc32::Crc32Reader;
 use types::ZipFile;
 use compression;
+use spec;
+use reader_spec;
 use std::io;
 use std::io::{IoResult, IoError};
 use std::cell::RefCell;
@@ -64,7 +65,7 @@ impl<T: Reader+Seek> ZipReader<T>
         try!(reader.seek(directory_start, io::SeekSet));
         for i in range(0, number_of_files)
         {
-            files.push(try!(spec::central_header_to_zip_file(&mut reader)));
+            files.push(try!(reader_spec::central_header_to_zip_file(&mut reader)));
         }
 
         Ok(ZipReader { inner: RefCell::new(reader), files: files })

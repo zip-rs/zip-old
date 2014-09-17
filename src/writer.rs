@@ -1,6 +1,7 @@
 use compression;
 use types::ZipFile;
 use spec;
+use writer_spec;
 use crc32;
 use std::default::Default;
 use std::io;
@@ -120,7 +121,7 @@ impl<W: Writer+Seek> ZipWriter<W>
                 header_start: header_start,
                 data_start: 0,
             };
-            try!(spec::write_local_file_header(writer, &file));
+            try!(writer_spec::write_local_file_header(writer, &file));
 
             let header_end = try!(writer.tell());
             self.stats.start = header_end;
@@ -152,7 +153,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         file.compressed_size = try!(writer.tell()) - self.stats.start;
 
         try!(writer.seek(file.header_start as i64, io::SeekSet));
-        try!(spec::write_local_file_header(writer, file));
+        try!(writer_spec::write_local_file_header(writer, file));
         try!(writer.seek(0, io::SeekEnd));
         Ok(())
     }
@@ -168,7 +169,7 @@ impl<W: Writer+Seek> ZipWriter<W>
             let central_start = try!(writer.tell());
             for file in self.files.iter()
             {
-                try!(spec::write_central_directory_header(writer, file));
+                try!(writer_spec::write_central_directory_header(writer, file));
             }
             let central_size = try!(writer.tell()) - central_start;
 
