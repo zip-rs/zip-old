@@ -152,8 +152,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         file.uncompressed_size = self.stats.bytes_written;
         file.compressed_size = try!(writer.tell()) - self.stats.start;
 
-        try!(writer.seek(file.header_start as i64, io::SeekSet));
-        try!(writer_spec::write_local_file_header(writer, file));
+        try!(writer_spec::update_local_file_header(writer, file));
         try!(writer.seek(0, io::SeekEnd));
         Ok(())
     }

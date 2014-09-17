@@ -25,6 +25,16 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
     Ok(())
 }
 
+pub fn update_local_file_header<T: Writer+Seek>(writer: &mut T, file: &ZipFile) -> IoResult<()>
+{
+    static CRC32_OFFSET : i64 = 14;
+    try!(writer.seek(file.header_start as i64 + CRC32_OFFSET, io::SeekSet));
+    try!(writer.write_le_u32(file.crc32));
+    try!(writer.write_le_u32(file.compressed_size as u32));
+    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    Ok(())
+}
+
 pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
 {
     try!(writer.write_le_u32(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
