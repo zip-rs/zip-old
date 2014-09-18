@@ -63,7 +63,7 @@ impl<T: Reader+Seek> ZipReader<T>
         let mut files = Vec::with_capacity(number_of_files);
 
         try!(reader.seek(directory_start, io::SeekSet));
-        for i in range(0, number_of_files)
+        for _ in range(0, number_of_files)
         {
             files.push(try!(reader_spec::central_header_to_zip_file(&mut reader)));
         }

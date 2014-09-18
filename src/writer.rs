@@ -143,7 +143,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         try!(self.inner.switch_to(compression::Stored));
         let writer = self.inner.get_plain();
 
-        let file = match self.files.mut_last()
+        let file = match self.files.last_mut()
         {
             None => return Ok(()),
             Some(f) => f,
