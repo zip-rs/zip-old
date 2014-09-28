@@ -190,7 +190,7 @@ impl<W: Writer+Seek> ZipWriter<W>
                 number_of_files: self.files.len() as u16,
                 central_directory_size: central_size as u32,
                 central_directory_offset: central_start as u32,
-                zip_file_comment: Vec::from_slice(b"zip-rs"),
+                zip_file_comment: b"zip-rs".to_vec(),
             };
 
             try!(footer.write(writer));
