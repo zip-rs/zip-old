@@ -19,7 +19,7 @@ fn main()
         let outpath = Path::new(file.file_name.as_slice());
         let dirname = Path::new(outpath.dirname());
 
-        std::io::fs::mkdir_recursive(&dirname, std::io::UserDir).unwrap();
+        std::io::fs::mkdir_recursive(&dirname, std::io::USER_DIR).unwrap();
 
         let mut outfile = std::io::File::create(&outpath);
         let mut reader = zipcontainer.read_file(file);
