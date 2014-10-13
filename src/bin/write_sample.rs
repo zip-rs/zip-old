@@ -3,6 +3,12 @@ extern crate zip;
 fn main()
 {
     let args = std::os::args();
+    if args.len() < 2 {
+        println!("Usage: {} <filename>", args[0]);
+        std::os::set_exit_status(1);
+        return;
+    }
+
     let filename = args[1].as_slice();
     match doit(filename)
     {
@@ -17,6 +23,8 @@ fn doit(filename: &str) -> std::io::IoResult<()>
     let file = std::io::File::create(&path).unwrap();
 
     let mut zip = zip::ZipWriter::new(file);
+
+    try!(zip.start_file("test/", zip::compression::Stored));
 
     try!(zip.start_file("test/☃.txt", zip::compression::Stored));
     try!(zip.write(b"Hello, World!\n"));
