@@ -7,12 +7,13 @@ notifications:
 
 env:
   global:
-    - secure: F1XhJmZGLE0WuVr7KsN0+Yn5sCiBjc8L9Lwugg5wV3/XwJqskq4EZXSFUDBbhIsMeArMftnrfxejEncySMs/CtjAaHnHxbGvCkWZAihyNQUjbbaYXTpPBfjqye5dhkWIEeTZXfIZacCoFxPGwGA+SWf9PfvgztQyazXEtmxtSqw=
+  - secure: "VeXvD0tLJyu38t87p8AAztSQVBxsCE1y016l/Nc44203V/RUxj4tz5ifaZcKziPqFHK2ITs2T6fBE1uu404zMVwA0W0J8vmG6+xDoJJLsbwKp4W3SlAI+oIEmFSTIxgzAB7hio17VPDmAqKbnbhbmbP+U94ygoztRNN3ObCZ8yo="
 
 script:
-  - cargo build
-  - cargo test
-  - cargo doc --no-deps
+- cargo build
+- cargo test
+- cargo doc --no-deps
+- rustdoc --test README.md -L target
 
 after_script:
-  - cd target && curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
+- .travis/publish_doc.sh
