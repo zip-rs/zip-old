@@ -15,5 +15,5 @@ script:
 - cargo doc --no-deps
 - rustdoc --test README.md -L target
 
-after_script:
+after_success:
 - .travis/publish_doc.sh
