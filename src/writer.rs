@@ -251,7 +251,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         match *self
         {
             Storer(ref mut w) => w,
-            _ => fail!("Should have switched to stored beforehand"),
+            _ => panic!("Should have switched to stored beforehand"),
         }
     }
 
@@ -260,7 +260,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         match self
         {
             Storer(w) => w,
-            _ => fail!("Should have switched to stored beforehand"),
+            _ => panic!("Should have switched to stored beforehand"),
         }
     }
 }
