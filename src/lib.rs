@@ -2,7 +2,7 @@
 
 #![feature(phase)]
 #![feature(unsafe_destructor)]
-#![warn(missing_doc)]
+#![warn(missing_docs)]
 
 #[phase(plugin, link)] extern crate log;
 extern crate time;
