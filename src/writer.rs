@@ -3,9 +3,9 @@ use types::ZipFile;
 use spec;
 use writer_spec;
 use crc32;
+use result::ZipResult;
 use std::default::Default;
 use std::io;
-use std::io::{IoResult, IoError};
 use std::mem;
 use time;
 use flate2;
@@ -22,7 +22,7 @@ enum GenericZipWriter<W>
 /// Generator for ZIP files.
 ///
 /// ```
-/// fn doit() -> std::io::IoResult<()>
+/// fn doit() -> zip::result::ZipResult<()>
 /// {
 ///     // For this example we write to a buffer, but normally you should use a File
 ///     let mut buf = [0u8, ..65536];
@@ -55,22 +55,17 @@ struct ZipWriterStats
     bytes_written: u64,
 }
 
-fn writer_closed_error<T>() -> IoResult<T>
-{
-    Err(IoError { kind: io::Closed, desc: "This writer has been closed", detail: None })
-}
-
 impl<W: Writer+Seek> Writer for ZipWriter<W>
 {
-    fn write(&mut self, buf: &[u8]) -> IoResult<()>
+    fn write(&mut self, buf: &[u8]) -> io::IoResult<()>
     {
-        if self.files.len() == 0 { return Err(IoError { kind: io::OtherIoError, desc: "No file has been started", detail: None, }) }
+        if self.files.len() == 0 { return Err(io::IoError { kind: io::OtherIoError, desc: "No file has been started", detail: None, }) }
         self.stats.update(buf);
         match self.inner
         {
             Storer(ref mut w) => w.write(buf),
             Deflater(ref mut w) => w.write(buf),
-            Closed => writer_closed_error(),
+            Closed => Err(io::standard_error(io::Closed)),
         }
     }
 }
@@ -100,7 +95,7 @@ impl<W: Writer+Seek> ZipWriter<W>
     }
 
     /// Start a new file for with the requested compression method.
-    pub fn start_file(&mut self, name: &str, compression: compression::CompressionMethod) -> IoResult<()>
+    pub fn start_file(&mut self, name: &str, compression: compression::CompressionMethod) -> ZipResult<()>
     {
         try!(self.finish_file());
 
@@ -138,7 +133,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         Ok(())
     }
 
-    fn finish_file(&mut self) -> IoResult<()>
+    fn finish_file(&mut self) -> ZipResult<()>
     {
         try!(self.inner.switch_to(compression::Stored));
         let writer = self.inner.get_plain();
@@ -159,16 +154,16 @@ impl<W: Writer+Seek> ZipWriter<W>
 
     /// Finish the last file and write all other zip-structures
     ///
-    /// This will return the writer, but one should normally not append any data to the end of the file.
+    /// This will return the writer, but one should normally not append any data to the end of the file.  
     /// Note that the zipfile will also be finished on drop.
-    pub fn finish(mut self) -> IoResult<W>
+    pub fn finish(mut self) -> ZipResult<W>
     {
         try!(self.finalize());
         let inner = mem::replace(&mut self.inner, Closed);
         Ok(inner.unwrap())
     }
 
-    fn finalize(&mut self) -> IoResult<()>
+    fn finalize(&mut self) -> ZipResult<()>
     {
         try!(self.finish_file());
 
@@ -218,20 +213,20 @@ impl<W: Writer+Seek> Drop for ZipWriter<W>
 
 impl<W: Writer+Seek> GenericZipWriter<W>
 {
-    fn switch_to(&mut self, compression: compression::CompressionMethod) -> IoResult<()>
+    fn switch_to(&mut self, compression: compression::CompressionMethod) -> ZipResult<()>
     {
         let bare = match mem::replace(self, Closed)
         {
             Storer(w) => w,
             Deflater(w) => try!(w.finish()),
-            Closed => return writer_closed_error(),
+            Closed => try!(Err(io::standard_error(io::Closed))),
         };
 
         *self = match compression
         {
             compression::Stored => Storer(bare),
             compression::Deflated => Deflater(bare.deflate_encode(flate2::Default)),
-            _ => return Err(IoError { kind: io::OtherIoError, desc: "Unsupported compression requested", detail: None }),
+            _ => return Err(::result::UnsupportedZipFile("Unsupported compression")),
         };
 
         Ok(())

@@ -1,10 +1,10 @@
 use std::io;
-use std::io::IoResult;
 use types::ZipFile;
+use result::ZipResult;
 use spec;
 use util;
 
-pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
+pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
     try!(writer.write_le_u32(spec::LOCAL_FILE_HEADER_SIGNATURE));
     try!(writer.write_le_u16(20));
@@ -25,7 +25,7 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoR
     Ok(())
 }
 
-pub fn update_local_file_header<T: Writer+Seek>(writer: &mut T, file: &ZipFile) -> IoResult<()>
+pub fn update_local_file_header<T: Writer+Seek>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
     static CRC32_OFFSET : i64 = 14;
     try!(writer.seek(file.header_start as i64 + CRC32_OFFSET, io::SeekSet));
@@ -35,7 +35,7 @@ pub fn update_local_file_header<T: Writer+Seek>(writer: &mut T, file: &ZipFile) 
     Ok(())
 }
 
-pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> IoResult<()>
+pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
     try!(writer.write_le_u32(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
     try!(writer.write_le_u16(0x14FF));
@@ -62,7 +62,7 @@ pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile)
     Ok(())
 }
 
-fn build_extra_field(_file: &ZipFile) -> IoResult<Vec<u8>>
+fn build_extra_field(_file: &ZipFile) -> ZipResult<Vec<u8>>
 {
     let writer = io::MemWriter::new();
     // Future work

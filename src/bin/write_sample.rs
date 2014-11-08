@@ -17,7 +17,7 @@ fn main()
     }
 }
 
-fn doit(filename: &str) -> std::io::IoResult<()>
+fn doit(filename: &str) -> zip::result::ZipResult<()>
 {
     let path = Path::new(filename);
     let file = std::io::File::create(&path).unwrap();

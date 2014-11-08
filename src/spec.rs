@@ -1,5 +1,5 @@
 use std::io;
-use std::io::{IoResult, IoError};
+use result::ZipResult;
 use std::iter::range_step_inclusive;
 
 pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
@@ -19,15 +19,12 @@ pub struct CentralDirectoryEnd
 
 impl CentralDirectoryEnd
 {
-    pub fn parse<T: Reader>(reader: &mut T) -> IoResult<CentralDirectoryEnd>
+    pub fn parse<T: Reader>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
     {
         let magic = try!(reader.read_le_u32());
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE
         {
-            return Err(IoError {
-                kind: io::MismatchedFileTypeForOperation,
-                desc: "Invalid digital signature header",
-                detail: None })
+            return Err(::result::UnsupportedZipFile("Invalid digital signature header"))
         }
         let disk_number = try!(reader.read_le_u16());
         let disk_with_central_directory = try!(reader.read_le_u16());
@@ -50,7 +47,7 @@ impl CentralDirectoryEnd
            })
     }
 
-    pub fn find_and_parse<T: Reader+Seek>(reader: &mut T) -> IoResult<CentralDirectoryEnd>
+    pub fn find_and_parse<T: Reader+Seek>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
     {
         let header_size = 22;
         let bytes_between_magic_and_comment_size = header_size - 6;
@@ -72,15 +69,10 @@ impl CentralDirectoryEnd
                 }
             }
         }
-        Err(IoError
-            {
-                kind: io::MismatchedFileTypeForOperation,
-                desc: "Could not find central directory end",
-                detail: None
-            })
+        Err(::result::UnsupportedZipFile("Could not find central directory end"))
     }
 
-    pub fn write<T: Writer>(&self, writer: &mut T) -> IoResult<()>
+    pub fn write<T: Writer>(&self, writer: &mut T) -> ZipResult<()>
     {
         try!(writer.write_le_u32(CENTRAL_DIRECTORY_END_SIGNATURE));
         try!(writer.write_le_u16(self.disk_number));

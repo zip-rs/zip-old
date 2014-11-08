@@ -22,3 +22,4 @@ mod types;
 pub mod compression;
 mod writer;
 mod cp437;
+pub mod result;

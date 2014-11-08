@@ -35,7 +35,7 @@ fn main()
 fn write_file(zipcontainer: &zip::ZipReader<std::io::File>, file: &zip::ZipFile, outpath: Path)
 {
     let mut outfile = std::io::File::create(&outpath);
-    let mut reader = zipcontainer.read_file(file);
+    let mut reader = zipcontainer.read_file(file).unwrap();
     std::io::util::copy(&mut reader, &mut outfile).unwrap();
     std::io::fs::chmod(&outpath, std::io::USER_FILE).unwrap();
 }

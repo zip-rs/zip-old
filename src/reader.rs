@@ -3,15 +3,15 @@ use types::ZipFile;
 use compression;
 use spec;
 use reader_spec;
+use result::ZipResult;
 use std::io;
-use std::io::{IoResult, IoError};
 use std::cell::RefCell;
 use flate2::FlateReader;
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
 /// ```
-/// fn doit() -> std::io::IoResult<()>
+/// fn doit() -> zip::result::ZipResult<()>
 /// {
 ///     // For demonstration purposes we read from an empty buffer.
 ///     // Normally a File object would be used.
@@ -38,20 +38,15 @@ pub struct ZipReader<T>
     files: Vec<ZipFile>,
 }
 
-fn unsupported_zip_error<T>(detail: &str) -> IoResult<T>
+fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 {
-    Err(IoError
-        {
-            kind: io::OtherIoError,
-            desc: "This ZIP file is not supported",
-            detail: Some(detail.to_string()),
-        })
+    Err(::result::UnsupportedZipFile(detail))
 }
 
 impl<T: Reader+Seek> ZipReader<T>
 {
     /// Opens a ZIP file and parses the content headers.
-    pub fn new(mut reader: T) -> IoResult<ZipReader<T>>
+    pub fn new(mut reader: T) -> ZipResult<ZipReader<T>>
     {
         let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
 
@@ -79,21 +74,13 @@ impl<T: Reader+Seek> ZipReader<T>
 
     /// Gets a reader for a contained zipfile.
     ///
-    /// Possible errors:
-    ///
-    /// * `ResourceUnavailable`: when another reader returned from this function is still active
-    /// * `OtherIoError`: if the file is encrypted or has an unsupported compression
-    pub fn read_file(&self, file: &ZipFile) -> IoResult<Box<Reader>>
+    /// May return `ReaderUnavailable` if there is another reader borrowed.
+    pub fn read_file(&self, file: &ZipFile) -> ZipResult<Box<Reader>>
     {
         let mut inner_reader = match self.inner.try_borrow_mut()
         {
             Some(reader) => reader,
-            None => return Err(IoError
-                               {
-                                   kind: io::ResourceUnavailable,
-                                   desc: "There is already a ZIP reader active",
-                                   detail: None
-                               }),
+            None => return Err(::result::ReaderUnavailable),
         };
         let pos = file.data_start as i64;
 

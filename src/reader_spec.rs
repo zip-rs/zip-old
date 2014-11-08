@@ -1,20 +1,17 @@
 use std::io;
-use std::io::{IoResult, IoError};
+use result::ZipResult;
 use compression;
 use types::ZipFile;
 use spec;
 use util;
 
-pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<ZipFile>
+pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<ZipFile>
 {
     // Parse central header
     let signature = try!(reader.read_le_u32());
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE
     {
-        return Err(IoError {
-            kind: io::MismatchedFileTypeForOperation,
-            desc: "Invalid central directory header",
-            detail: None })
+        return Err(::result::InvalidZipFile("Invalid Central Directory header"))
     }
 
     try!(reader.read_le_u16());
@@ -58,10 +55,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     let signature = try!(reader.read_le_u32());
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
     {
-        return Err(IoError {
-            kind: io::MismatchedFileTypeForOperation,
-            desc: "Invalid local file header",
-            detail: None })
+        return Err(::result::InvalidZipFile("Invalid local file header"))
     }
 
     try!(reader.seek(22, io::SeekCur));
@@ -93,7 +87,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> IoResult<Zi
     Ok(result)
 }
 
-fn parse_extra_field(_file: &mut ZipFile, data: &[u8]) -> IoResult<()>
+fn parse_extra_field(_file: &mut ZipFile, data: &[u8]) -> ZipResult<()>
 {
     let mut reader = io::BufReader::new(data);
     while !reader.eof()
