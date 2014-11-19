@@ -1,9 +1,9 @@
-use compression;
+use compression::CompressionMethod;
 use types::ZipFile;
 use spec;
 use writer_spec;
 use crc32;
-use result::ZipResult;
+use result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
 use std::mem;
@@ -63,9 +63,9 @@ impl<W: Writer+Seek> Writer for ZipWriter<W>
         self.stats.update(buf);
         match self.inner
         {
-            Storer(ref mut w) => w.write(buf),
-            Deflater(ref mut w) => w.write(buf),
-            Closed => Err(io::standard_error(io::Closed)),
+            GenericZipWriter::Storer(ref mut w) => w.write(buf),
+            GenericZipWriter::Deflater(ref mut w) => w.write(buf),
+            GenericZipWriter::Closed => Err(io::standard_error(io::Closed)),
         }
     }
 }
@@ -88,14 +88,14 @@ impl<W: Writer+Seek> ZipWriter<W>
     {
         ZipWriter
         {
-            inner: Storer(inner),
+            inner: GenericZipWriter::Storer(inner),
             files: Vec::new(),
             stats: Default::default(),
         }
     }
 
     /// Start a new file for with the requested compression method.
-    pub fn start_file(&mut self, name: &str, compression: compression::CompressionMethod) -> ZipResult<()>
+    pub fn start_file(&mut self, name: &str, compression: CompressionMethod) -> ZipResult<()>
     {
         try!(self.finish_file());
 
@@ -135,7 +135,7 @@ impl<W: Writer+Seek> ZipWriter<W>
 
     fn finish_file(&mut self) -> ZipResult<()>
     {
-        try!(self.inner.switch_to(compression::Stored));
+        try!(self.inner.switch_to(CompressionMethod::Stored));
         let writer = self.inner.get_plain();
 
         let file = match self.files.last_mut()
@@ -159,7 +159,7 @@ impl<W: Writer+Seek> ZipWriter<W>
     pub fn finish(mut self) -> ZipResult<W>
     {
         try!(self.finalize());
-        let inner = mem::replace(&mut self.inner, Closed);
+        let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
         Ok(inner.unwrap())
     }
 
@@ -213,20 +213,20 @@ impl<W: Writer+Seek> Drop for ZipWriter<W>
 
 impl<W: Writer+Seek> GenericZipWriter<W>
 {
-    fn switch_to(&mut self, compression: compression::CompressionMethod) -> ZipResult<()>
+    fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()>
     {
-        let bare = match mem::replace(self, Closed)
+        let bare = match mem::replace(self, GenericZipWriter::Closed)
         {
-            Storer(w) => w,
-            Deflater(w) => try!(w.finish()),
-            Closed => try!(Err(io::standard_error(io::Closed))),
+            GenericZipWriter::Storer(w) => w,
+            GenericZipWriter::Deflater(w) => try!(w.finish()),
+            GenericZipWriter::Closed => try!(Err(io::standard_error(io::Closed))),
         };
 
         *self = match compression
         {
-            compression::Stored => Storer(bare),
-            compression::Deflated => Deflater(bare.deflate_encode(flate2::Default)),
-            _ => return Err(::result::UnsupportedZipFile("Unsupported compression")),
+            CompressionMethod::Stored => GenericZipWriter::Storer(bare),
+            CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Default)),
+            _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
         };
 
         Ok(())
@@ -236,7 +236,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
     {
         match *self
         {
-            Closed => true,
+            GenericZipWriter::Closed => true,
             _ => false,
         }
     }
@@ -245,7 +245,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
     {
         match *self
         {
-            Storer(ref mut w) => w,
+            GenericZipWriter::Storer(ref mut w) => w,
             _ => panic!("Should have switched to stored beforehand"),
         }
     }
@@ -254,7 +254,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
     {
         match self
         {
-            Storer(w) => w,
+            GenericZipWriter::Storer(w) => w,
             _ => panic!("Should have switched to stored beforehand"),
         }
     }

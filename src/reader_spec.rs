@@ -1,7 +1,7 @@
 use std::io;
-use result::ZipResult;
-use compression;
+use result::{ZipResult, ZipError};
 use types::ZipFile;
+use compression::CompressionMethod;
 use spec;
 use util;
 
@@ -11,7 +11,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
     let signature = try!(reader.read_le_u32());
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE
     {
-        return Err(::result::InvalidZipFile("Invalid Central Directory header"))
+        return Err(ZipError::InvalidZipFile("Invalid Central Directory header"))
     }
 
     try!(reader.read_le_u16());
@@ -55,7 +55,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
     let signature = try!(reader.read_le_u32());
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
     {
-        return Err(::result::InvalidZipFile("Invalid local file header"))
+        return Err(ZipError::InvalidZipFile("Invalid local file header"))
     }
 
     try!(reader.seek(22, io::SeekCur));
@@ -68,7 +68,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
     let mut result = ZipFile
     {
         encrypted: encrypted,
-        compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(compression::Unknown),
+        compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(CompressionMethod::Unknown),
         last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
         crc32: crc32,
         compressed_size: compressed_size as u64,

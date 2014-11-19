@@ -1,9 +1,9 @@
 use crc32::Crc32Reader;
 use types::ZipFile;
-use compression;
+use compression::CompressionMethod;
 use spec;
 use reader_spec;
-use result::ZipResult;
+use result::{ZipResult, ZipError};
 use std::io;
 use std::cell::RefCell;
 use flate2::FlateReader;
@@ -40,7 +40,7 @@ pub struct ZipReader<T>
 
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 {
-    Err(::result::UnsupportedZipFile(detail))
+    Err(ZipError::UnsupportedZipFile(detail))
 }
 
 impl<T: Reader+Seek> ZipReader<T>
@@ -80,7 +80,7 @@ impl<T: Reader+Seek> ZipReader<T>
         let mut inner_reader = match self.inner.try_borrow_mut()
         {
             Some(reader) => reader,
-            None => return Err(::result::ReaderUnavailable),
+            None => return Err(ZipError::ReaderUnavailable),
         };
         let pos = file.data_start as i64;
 
@@ -95,7 +95,7 @@ impl<T: Reader+Seek> ZipReader<T>
 
         let reader = match file.compression_method
         {
-            compression::Stored =>
+            CompressionMethod::Stored =>
             {
                 box
                     Crc32Reader::new(
@@ -103,7 +103,7 @@ impl<T: Reader+Seek> ZipReader<T>
                         file.crc32)
                     as Box<Reader>
             },
-            compression::Deflated =>
+            CompressionMethod::Deflated =>
             {
                 let deflate_reader = limit_reader.deflate_decode();
                 box

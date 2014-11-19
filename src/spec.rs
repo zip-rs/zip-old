@@ -1,5 +1,5 @@
 use std::io;
-use result::ZipResult;
+use result::{ZipResult, ZipError};
 use std::iter::range_step_inclusive;
 
 pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
@@ -24,7 +24,7 @@ impl CentralDirectoryEnd
         let magic = try!(reader.read_le_u32());
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE
         {
-            return Err(::result::UnsupportedZipFile("Invalid digital signature header"))
+            return Err(ZipError::UnsupportedZipFile("Invalid digital signature header"))
         }
         let disk_number = try!(reader.read_le_u16());
         let disk_with_central_directory = try!(reader.read_le_u16());
@@ -69,7 +69,7 @@ impl CentralDirectoryEnd
                 }
             }
         }
-        Err(::result::UnsupportedZipFile("Could not find central directory end"))
+        Err(ZipError::UnsupportedZipFile("Could not find central directory end"))
     }
 
     pub fn write<T: Writer>(&self, writer: &mut T) -> ZipResult<()>

@@ -26,7 +26,7 @@ impl error::FromError<io::IoError> for ZipError
 {
     fn from_error(err: io::IoError) -> ZipError
     {
-        Io(err)
+        ZipError::Io(err)
     }
 }
 
@@ -36,10 +36,10 @@ impl error::Error for ZipError
     {
         match *self
         {
-            Io(ref io_err) => io_err.description(),
-            InvalidZipFile(..) => "Invalid Zip File",
-            UnsupportedZipFile(..) => "Unsupported Zip File",
-            ReaderUnavailable => "No reader available",
+            ZipError::Io(ref io_err) => io_err.description(),
+            ZipError::InvalidZipFile(..) => "Invalid Zip File",
+            ZipError::UnsupportedZipFile(..) => "Unsupported Zip File",
+            ZipError::ReaderUnavailable => "No reader available",
         }
     }
 
@@ -47,10 +47,10 @@ impl error::Error for ZipError
     {
         match *self
         {
-            Io(ref io_err) => io_err.detail(),
-            InvalidZipFile(detail) |
-            UnsupportedZipFile(detail) => Some(detail.to_string()),
-            ReaderUnavailable => None,
+            ZipError::Io(ref io_err) => io_err.detail(),
+            ZipError::InvalidZipFile(detail) |
+            ZipError::UnsupportedZipFile(detail) => Some(detail.to_string()),
+            ZipError::ReaderUnavailable => None,
         }
     }
 
@@ -58,7 +58,7 @@ impl error::Error for ZipError
     {
         match *self
         {
-            Io(ref io_err) => Some(io_err as &error::Error),
+            ZipError::Io(ref io_err) => Some(io_err as &error::Error),
             _ => None,
         }
     }
