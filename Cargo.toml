@@ -3,6 +3,11 @@
 name = "zip"
 version = "0.0.1"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>"]
+license = "MIT"
+repository = "https://github.com/mvdnes/zip-rs.git"
+description = """
+Library to support the reading and writing of zip files.
+"""
 
 [dependencies]
 flate2 = "*"
