@@ -11,7 +11,7 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     let months =  (date & 0b0000000111100000) >> 5;
     let years =   (date & 0b1111111000000000) >> 9;
 
-    let datetime = format!("{:04u}-{:02u}-{:02u} {:02u}:{:02u}:{:02u}",
+    let datetime = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
                            years as uint + 1980,
                            months,
                            days,
