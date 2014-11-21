@@ -11,6 +11,7 @@ Supported compression formats:
 
 * stored (i.e. none)
 * deflate
+* bzip2
 
 Currently unsupported zip extensions:
 

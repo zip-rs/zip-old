@@ -7,6 +7,7 @@ use result::{ZipResult, ZipError};
 use std::io;
 use std::cell::RefCell;
 use flate2::FlateReader;
+use bzip2::reader::BzDecompressor;
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -109,6 +110,15 @@ impl<T: Reader+Seek> ZipReader<T>
                 box
                     Crc32Reader::new(
                         deflate_reader,
+                        file.crc32)
+                    as Box<Reader>
+            },
+            CompressionMethod::Bzip2 =>
+            {
+                let bzip2_reader = BzDecompressor::new(limit_reader);
+                box
+                    Crc32Reader::new(
+                        bzip2_reader,
                         file.crc32)
                     as Box<Reader>
             },

@@ -7,6 +7,7 @@
 #[phase(plugin, link)] extern crate log;
 extern crate time;
 extern crate flate2;
+extern crate bzip2;
 
 pub use reader::ZipReader;
 pub use writer::ZipWriter;

@@ -11,12 +11,15 @@ use time;
 use flate2;
 use flate2::FlateWriter;
 use flate2::writer::DeflateEncoder;
+use bzip2;
+use bzip2::writer::BzCompressor;
 
 enum GenericZipWriter<W>
 {
     Closed,
     Storer(W),
     Deflater(DeflateEncoder<W>),
+    Bzip2(BzCompressor<W>),
 }
 
 /// Generator for ZIP files.
@@ -65,6 +68,7 @@ impl<W: Writer+Seek> Writer for ZipWriter<W>
         {
             GenericZipWriter::Storer(ref mut w) => w.write(buf),
             GenericZipWriter::Deflater(ref mut w) => w.write(buf),
+            GenericZipWriter::Bzip2(ref mut w) => w.write(buf),
             GenericZipWriter::Closed => Err(io::standard_error(io::Closed)),
         }
     }
@@ -219,6 +223,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         {
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
+            GenericZipWriter::Bzip2(w) => try!(w.unwrap()),
             GenericZipWriter::Closed => try!(Err(io::standard_error(io::Closed))),
         };
 
@@ -226,6 +231,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Default)),
+            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::CompressionLevel::Default)),
             _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
         };
 
