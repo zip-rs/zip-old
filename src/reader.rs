@@ -6,6 +6,7 @@ use reader_spec;
 use result::{ZipResult, ZipError};
 use std::io;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use flate2::FlateReader;
 use bzip2::reader::BzDecompressor;
 
@@ -37,6 +38,7 @@ pub struct ZipReader<T>
 {
     inner: RefCell<T>,
     files: Vec<ZipFile>,
+    names_map: HashMap<String, uint>,
 }
 
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
@@ -57,20 +59,29 @@ impl<T: Reader+Seek> ZipReader<T>
         let number_of_files = footer.number_of_files_on_this_disk as uint;
 
         let mut files = Vec::with_capacity(number_of_files);
+        let mut names_map = HashMap::new();
 
         try!(reader.seek(directory_start, io::SeekSet));
         for _ in range(0, number_of_files)
         {
-            files.push(try!(reader_spec::central_header_to_zip_file(&mut reader)));
+            let file = try!(reader_spec::central_header_to_zip_file(&mut reader));
+            names_map.insert(file.file_name.clone(), files.len());
+            files.push(file);
         }
 
-        Ok(ZipReader { inner: RefCell::new(reader), files: files })
+        Ok(ZipReader { inner: RefCell::new(reader), files: files, names_map: names_map })
     }
 
     /// An iterator over the information of all contained files.
     pub fn files(&self) -> ::std::slice::Items<ZipFile>
     {
         self.files.as_slice().iter()
+    }
+
+    /// Search for a file entry by name
+    pub fn get(&self, name: &str) -> Option<&ZipFile>
+    {
+        self.names_map.get(name).map(|index| &self.files[*index])
     }
 
     /// Gets a reader for a contained zipfile.

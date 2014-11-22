@@ -2,6 +2,7 @@
 
 use time;
 
+#[deriving(Clone)]
 /// Structure representing a ZIP file.
 pub struct ZipFile
 {
