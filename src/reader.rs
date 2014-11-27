@@ -141,8 +141,15 @@ impl<T: Reader+Seek> ZipReader<T>
     /// Unwrap and return the inner reader object
     ///
     /// The position of the reader is undefined.
+    pub fn into_inner(self) -> T
+    {
+        self.inner.into_inner()
+    }
+
+    /// Deprecated method equal to `into_inner()`
+    #[deprecated="renamed to into_inner()"]
     pub fn unwrap(self) -> T
     {
-        self.inner.unwrap()
+        self.into_inner()
     }
 }

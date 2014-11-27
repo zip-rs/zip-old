@@ -66,5 +66,5 @@ fn build_extra_field(_file: &ZipFile) -> ZipResult<Vec<u8>>
 {
     let writer = io::MemWriter::new();
     // Future work
-    Ok(writer.unwrap())
+    Ok(writer.into_inner())
 }
