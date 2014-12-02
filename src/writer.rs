@@ -32,7 +32,7 @@ enum GenericZipWriter<W>
 ///     let w = std::io::BufWriter::new(&mut buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
-///     try!(zip.start_file("hello_world.txt", zip::compression::Stored));
+///     try!(zip.start_file("hello_world.txt", zip::CompressionMethod::Stored));
 ///     try!(zip.write(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
