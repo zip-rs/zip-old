@@ -11,6 +11,7 @@ extern crate bzip2;
 
 pub use reader::ZipReader;
 pub use writer::ZipWriter;
+pub use compression::CompressionMethod;
 pub use types::ZipFile;
 
 mod util;

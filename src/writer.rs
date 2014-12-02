@@ -230,7 +230,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         *self = match compression
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Default)),
+            CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::CompressionLevel::Default)),
             CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::CompressionLevel::Default)),
             _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
         };

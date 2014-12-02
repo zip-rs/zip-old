@@ -24,12 +24,12 @@ fn doit(filename: &str) -> zip::result::ZipResult<()>
 
     let mut zip = zip::ZipWriter::new(file);
 
-    try!(zip.start_file("test/", zip::compression::Stored));
+    try!(zip.start_file("test/", zip::CompressionMethod::Stored));
 
-    try!(zip.start_file("test/☃.txt", zip::compression::Stored));
+    try!(zip.start_file("test/☃.txt", zip::CompressionMethod::Stored));
     try!(zip.write(b"Hello, World!\n"));
 
-    try!(zip.start_file("test/lorem_ipsum.txt", zip::compression::Deflated));
+    try!(zip.start_file("test/lorem_ipsum.txt", zip::CompressionMethod::Deflated));
     try!(zip.write(LOREM_IPSUM));
 
     try!(zip.finish());
