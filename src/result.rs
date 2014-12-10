@@ -3,6 +3,7 @@
 use std::io;
 use std::error;
 
+/// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
