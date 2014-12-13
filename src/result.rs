@@ -31,6 +31,14 @@ impl error::FromError<io::IoError> for ZipError
     }
 }
 
+impl<T> error::FromError<(T, io::IoError)> for ZipError
+{
+    fn from_error((_, err): (T, io::IoError)) -> ZipError
+    {
+        error::FromError::from_error(err)
+    }
+}
+
 impl error::Error for ZipError
 {
     fn description(&self) -> &str
