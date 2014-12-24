@@ -18,6 +18,9 @@ git = "https://github.com/alexcrichton/bzip2-rs"
 [dependencies.time]
 git = "https://github.com/rust-lang/time.git"
 
+[dependencies.log]
+git = "https://github.com/rust-lang/log.git"
+
 [[bin]]
 name = "extract"
 test = false
