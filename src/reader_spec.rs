@@ -38,12 +38,12 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
 
     let file_name = match is_utf8
     {
-        true => String::from_utf8_lossy(file_name_raw.as_slice()).into_string(),
+        true => String::from_utf8_lossy(file_name_raw.as_slice()).into_owned(),
         false => ::cp437::to_string(file_name_raw.as_slice()),
     };
     let file_comment = match is_utf8
     {
-        true => String::from_utf8_lossy(file_comment_raw.as_slice()).into_string(),
+        true => String::from_utf8_lossy(file_comment_raw.as_slice()).into_owned(),
         false => ::cp437::to_string(file_comment_raw.as_slice()),
     };
 
