@@ -73,7 +73,7 @@ impl<T: Reader+Seek> ZipReader<T>
     }
 
     /// An iterator over the information of all contained files.
-    pub fn files(&self) -> ::std::slice::Items<ZipFile>
+    pub fn files(&self) -> ::std::slice::Iter<ZipFile>
     {
         self.files.as_slice().iter()
     }
