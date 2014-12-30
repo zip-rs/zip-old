@@ -1,4 +1,5 @@
 use std::io;
+use std::ascii::AsciiExt;
 use types::ZipFile;
 use result::ZipResult;
 use spec;
