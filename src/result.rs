@@ -7,7 +7,7 @@ use std::error;
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
-#[deriving(Show)]
+#[derive(Show)]
 pub enum ZipError
 {
     /// An Error caused by I/O

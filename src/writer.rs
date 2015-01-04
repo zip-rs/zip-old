@@ -50,7 +50,7 @@ pub struct ZipWriter<W>
     stats: ZipWriterStats,
 }
 
-#[deriving(Default)]
+#[derive(Default)]
 struct ZipWriterStats
 {
     crc32: u32,
