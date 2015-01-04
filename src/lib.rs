@@ -2,6 +2,7 @@
 
 #![feature(phase)]
 #![feature(unsafe_destructor)]
+#![feature(old_orphan_check)]
 #![warn(missing_docs)]
 
 #[phase(plugin, link)] extern crate log;

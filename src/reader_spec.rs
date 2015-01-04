@@ -1,4 +1,5 @@
 use std::io;
+use std::num::FromPrimitive;
 use result::{ZipResult, ZipError};
 use types::ZipFile;
 use compression::CompressionMethod;
