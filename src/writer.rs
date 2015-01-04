@@ -28,7 +28,7 @@ enum GenericZipWriter<W>
 /// fn doit() -> zip::result::ZipResult<()>
 /// {
 ///     // For this example we write to a buffer, but normally you should use a File
-///     let mut buf = [0u8, ..65536];
+///     let mut buf = [0u8; 65536];
 ///     let w = std::io::BufWriter::new(&mut buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
