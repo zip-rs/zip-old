@@ -223,7 +223,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         {
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
-            GenericZipWriter::Bzip2(w) => try!(w.into_inner()),
+            GenericZipWriter::Bzip2(w) => match w.into_inner() { Ok(r) => r, Err((_, err)) => try!(Err(err)) },
             GenericZipWriter::Closed => try!(Err(io::standard_error(io::Closed))),
         };
 
