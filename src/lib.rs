@@ -1,10 +1,9 @@
 //! A basic ZipReader/Writer crate
 
-#![feature(phase)]
 #![feature(unsafe_destructor)]
 #![warn(missing_docs)]
 
-#[phase(plugin, link)] extern crate log;
+#[macro_use] extern crate log;
 extern crate time;
 extern crate flate2;
 extern crate bzip2;
