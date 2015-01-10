@@ -41,7 +41,7 @@ enum GenericZipWriter<W>
 ///     Ok(())
 /// }
 ///
-/// println!("Result: {}", doit());
+/// println!("Result: {:?}", doit());
 /// ```
 pub struct ZipWriter<W>
 {
@@ -209,7 +209,7 @@ impl<W: Writer+Seek> Drop for ZipWriter<W>
             match self.finalize()
             {
                 Ok(_) => {},
-                Err(e) => warn!("ZipWriter drop failed: {}", e),
+                Err(e) => warn!("ZipWriter drop failed: {:?}", e),
             }
         }
     }

@@ -13,7 +13,7 @@ fn main()
     match doit(filename)
     {
         Ok(_) => println!("File written to {}", filename),
-        Err(e) => println!("Error: {}", e),
+        Err(e) => println!("Error: {:?}", e),
     }
 }
 

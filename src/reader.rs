@@ -32,7 +32,7 @@ use bzip2::reader::BzDecompressor;
 ///     Ok(())
 /// }
 ///
-/// println!("Result: {}", doit());
+/// println!("Result: {:?}", doit());
 /// ```
 pub struct ZipReader<T>
 {
@@ -109,28 +109,28 @@ impl<T: Reader+Seek> ZipReader<T>
         {
             CompressionMethod::Stored =>
             {
-                box
+                Box::new(
                     Crc32Reader::new(
                         limit_reader,
-                        file.crc32)
+                        file.crc32))
                     as Box<Reader>
             },
             CompressionMethod::Deflated =>
             {
                 let deflate_reader = limit_reader.deflate_decode();
-                box
+                Box::new(
                     Crc32Reader::new(
                         deflate_reader,
-                        file.crc32)
+                        file.crc32))
                     as Box<Reader>
             },
             CompressionMethod::Bzip2 =>
             {
                 let bzip2_reader = BzDecompressor::new(limit_reader);
-                box
+                Box::new(
                     Crc32Reader::new(
                         bzip2_reader,
-                        file.crc32)
+                        file.crc32))
                     as Box<Reader>
             },
             _ => return unsupported_zip_error("Compression method not supported"),
