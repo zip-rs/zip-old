@@ -26,9 +26,9 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
     let crc32 = try!(reader.read_le_u32());
     let compressed_size = try!(reader.read_le_u32());
     let uncompressed_size = try!(reader.read_le_u32());
-    let file_name_length = try!(reader.read_le_u16()) as uint;
-    let extra_field_length = try!(reader.read_le_u16()) as uint;
-    let file_comment_length = try!(reader.read_le_u16()) as uint;
+    let file_name_length = try!(reader.read_le_u16()) as usize;
+    let extra_field_length = try!(reader.read_le_u16()) as usize;
+    let file_comment_length = try!(reader.read_le_u16()) as usize;
     try!(reader.read_le_u16());
     try!(reader.read_le_u16());
     try!(reader.read_le_u32());
@@ -39,13 +39,13 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
 
     let file_name = match is_utf8
     {
-        true => String::from_utf8_lossy(file_name_raw.as_slice()).into_owned(),
-        false => ::cp437::to_string(file_name_raw.as_slice()),
+        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
+        false => ::cp437::to_string(&*file_name_raw),
     };
     let file_comment = match is_utf8
     {
-        true => String::from_utf8_lossy(file_comment_raw.as_slice()).into_owned(),
-        false => ::cp437::to_string(file_comment_raw.as_slice()),
+        true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
+        false => ::cp437::to_string(&*file_comment_raw),
     };
 
     // Remember end of central header
@@ -80,7 +80,7 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
         data_start: data_start,
     };
 
-    try!(parse_extra_field(&mut result, extra_field.as_slice()));
+    try!(parse_extra_field(&mut result, &*extra_field));
 
     // Go back after the central header
     try!(reader.seek(return_position, io::SeekSet));

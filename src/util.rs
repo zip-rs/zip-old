@@ -12,7 +12,7 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     let years =   (date & 0b1111111000000000) >> 9;
 
     let datetime = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                           years as uint + 1980,
+                           years as u32 + 1980,
                            months,
                            days,
                            hours,
@@ -20,7 +20,7 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
                            seconds);
     let format = "%Y-%m-%d %H:%M:%S";
 
-    match time::strptime(datetime.as_slice(), format)
+    match time::strptime(&*datetime, format)
     {
         Ok(tm) => tm,
         Err(m) => { debug!("Failed parsing date: {}", m); time::empty_tm() },
@@ -52,7 +52,7 @@ impl<'a, R: Reader> RefMutReader<'a, R>
 
 impl<'a, R: Reader> Reader for RefMutReader<'a, R>
 {
-    fn read(&mut self, buf: &mut [u8]) -> ::std::io::IoResult<uint>
+    fn read(&mut self, buf: &mut [u8]) -> ::std::io::IoResult<usize>
     {
         self.inner.read(buf)
     }

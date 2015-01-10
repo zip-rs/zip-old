@@ -32,7 +32,7 @@ impl CentralDirectoryEnd
         let number_of_files = try!(reader.read_le_u16());
         let central_directory_size = try!(reader.read_le_u32());
         let central_directory_offset = try!(reader.read_le_u32());
-        let zip_file_comment_length = try!(reader.read_le_u16()) as uint;
+        let zip_file_comment_length = try!(reader.read_le_u16()) as usize;
         let zip_file_comment = try!(reader.read_exact(zip_file_comment_length));
 
         Ok(CentralDirectoryEnd

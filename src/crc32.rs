@@ -55,7 +55,7 @@ pub fn update(prev: u32, buf: &[u8]) -> u32
 
     for byte in buf.iter()
     {
-        crc = CRC32_TABLE[((crc ^ (*byte as u32)) & 0xFF) as uint] ^ (crc >> 8);
+        crc = CRC32_TABLE[((crc ^ (*byte as u32)) & 0xFF) as usize] ^ (crc >> 8);
     }
 
     return crc ^ !0u32;
@@ -90,7 +90,7 @@ impl<R: Reader> Crc32Reader<R>
 
 impl<R: Reader> Reader for Crc32Reader<R>
 {
-    fn read(&mut self, buf: &mut [u8]) -> io::IoResult<uint>
+    fn read(&mut self, buf: &mut [u8]) -> io::IoResult<usize>
     {
         let count = match self.inner.read(buf)
         {
@@ -103,7 +103,7 @@ impl<R: Reader> Reader for Crc32Reader<R>
             },
             Err(e) => return Err(e),
         };
-        self.crc = update(self.crc, buf.slice_to(count));
+        self.crc = update(self.crc, &buf[0..count]);
         Ok(count)
     }
 }

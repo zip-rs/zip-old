@@ -38,7 +38,7 @@ pub struct ZipReader<T>
 {
     inner: RefCell<T>,
     files: Vec<ZipFile>,
-    names_map: HashMap<String, uint>,
+    names_map: HashMap<String, usize>,
 }
 
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
@@ -56,13 +56,13 @@ impl<T: Reader+Seek> ZipReader<T>
         if footer.disk_number != footer.disk_with_central_directory { return unsupported_zip_error("Support for multi-disk files is not implemented") }
 
         let directory_start = footer.central_directory_offset as i64;
-        let number_of_files = footer.number_of_files_on_this_disk as uint;
+        let number_of_files = footer.number_of_files_on_this_disk as usize;
 
         let mut files = Vec::with_capacity(number_of_files);
         let mut names_map = HashMap::new();
 
         try!(reader.seek(directory_start, io::SeekSet));
-        for _ in range(0, number_of_files)
+        for _ in (0 .. number_of_files)
         {
             let file = try!(reader_spec::central_header_to_zip_file(&mut reader));
             names_map.insert(file.file_name.clone(), files.len());
@@ -75,7 +75,7 @@ impl<T: Reader+Seek> ZipReader<T>
     /// An iterator over the information of all contained files.
     pub fn files(&self) -> ::std::slice::Iter<ZipFile>
     {
-        self.files.as_slice().iter()
+        (&*self.files).iter()
     }
 
     /// Search for a file entry by name
@@ -103,7 +103,7 @@ impl<T: Reader+Seek> ZipReader<T>
 
         try!(inner_reader.seek(pos, io::SeekSet));
         let refmut_reader = ::util::RefMutReader::new(inner_reader);
-        let limit_reader = io::util::LimitReader::new(refmut_reader, file.compressed_size as uint);
+        let limit_reader = io::util::LimitReader::new(refmut_reader, file.compressed_size as usize);
 
         let reader = match file.compression_method
         {

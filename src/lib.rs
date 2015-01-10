@@ -2,6 +2,7 @@
 
 #![feature(unsafe_destructor)]
 #![warn(missing_docs)]
+#![allow(unstable)]
 
 #[macro_use] extern crate log;
 extern crate time;
