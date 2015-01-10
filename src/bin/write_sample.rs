@@ -1,3 +1,5 @@
+#![allow(unstable)]
+
 extern crate zip;
 
 fn main()
@@ -9,7 +11,7 @@ fn main()
         return;
     }
 
-    let filename = args[1].as_slice();
+    let filename = &*args[1];
     match doit(filename)
     {
         Ok(_) => println!("File written to {}", filename),

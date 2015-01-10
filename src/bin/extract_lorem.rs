@@ -1,3 +1,5 @@
+#![allow(unstable)]
+
 extern crate zip;
 
 fn main()
@@ -8,7 +10,7 @@ fn main()
         std::os::set_exit_status(1);
         return;
     }
-    let fname = Path::new(args[1].as_slice());
+    let fname = Path::new(&*args[1]);
     let file = std::io::File::open(&fname).unwrap();
 
     let zipcontainer = zip::ZipReader::new(file).unwrap();

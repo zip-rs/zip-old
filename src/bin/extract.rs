@@ -1,3 +1,5 @@
+#![allow(unstable)]
+
 extern crate zip;
 
 fn main()
@@ -8,14 +10,14 @@ fn main()
         std::os::set_exit_status(1);
         return;
     }
-    let fname = Path::new(args[1].as_slice());
+    let fname = Path::new(&*args[1]);
     let file = std::io::File::open(&fname).unwrap();
 
     let zipcontainer = zip::ZipReader::new(file).unwrap();
 
     for file in zipcontainer.files()
     {
-        let outpath = sanitize_filename(file.file_name.as_slice());
+        let outpath = sanitize_filename(&*file.file_name);
         println!("{}", outpath.display());
 
         let comment = &file.file_comment;
@@ -23,7 +25,7 @@ fn main()
 
         std::io::fs::mkdir_recursive(&outpath.dir_path(), std::io::USER_DIR).unwrap();
 
-        if file.file_name.as_slice().ends_with("/") {
+        if (&*file.file_name).ends_with("/") {
             create_directory(outpath);
         }
         else {
@@ -48,7 +50,7 @@ fn create_directory(outpath: Path)
 fn sanitize_filename(filename: &str) -> Path
 {
     let no_null_filename = match filename.find('\0') {
-        Some(index) => filename.slice_to(index),
+        Some(index) => &filename[0..index],
         None => filename,
     };
 
