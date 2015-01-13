@@ -1,7 +1,7 @@
 [package]
 
 name = "zip"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>"]
 license = "MIT"
 repository = "https://github.com/mvdnes/zip-rs.git"
@@ -9,17 +9,11 @@ description = """
 Library to support the reading and writing of zip files.
 """
 
-[dependencies.flate2]
-git = "https://github.com/alexcrichton/flate2-rs"
-
-[dependencies.bzip2]
-git = "https://github.com/alexcrichton/bzip2-rs"
-
-[dependencies.time]
-git = "https://github.com/rust-lang/time.git"
-
-[dependencies.log]
-git = "https://github.com/rust-lang/log.git"
+[dependencies]
+flate2 = "*"
+bzip2 = "*"
+time = "*"
+log = "*"
 
 [[bin]]
 name = "extract"
