@@ -95,7 +95,6 @@ fn parse_extra_field(_file: &mut ZipFile, data: &[u8]) -> ZipResult<()>
     {
         let kind = try!(reader.read_le_u16());
         let len = try!(reader.read_le_u16());
-        debug!("Parsing extra block {:04x}", kind);
         match kind
         {
             _ => try!(reader.seek(len as i64, io::SeekCur)),

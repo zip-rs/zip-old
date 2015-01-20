@@ -4,7 +4,6 @@
 #![warn(missing_docs)]
 #![allow(unstable)]
 
-#[macro_use] extern crate log;
 extern crate time;
 extern crate flate2;
 extern crate bzip2;

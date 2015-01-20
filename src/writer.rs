@@ -206,10 +206,8 @@ impl<W: Writer+Seek> Drop for ZipWriter<W>
     {
         if !self.inner.is_closed()
         {
-            match self.finalize()
-            {
-                Ok(_) => {},
-                Err(e) => warn!("ZipWriter drop failed: {:?}", e),
+            if let Err(e) = self.finalize() {
+                let _ = write!(&mut ::std::io::stdio::stderr(), "ZipWriter drop failed: {:?}", e);
             }
         }
     }

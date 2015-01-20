@@ -23,7 +23,10 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     match time::strptime(&*datetime, format)
     {
         Ok(tm) => tm,
-        Err(m) => { debug!("Failed parsing date: {}", m); time::empty_tm() },
+        Err(m) => {
+            let _ = write!(&mut ::std::io::stdio::stderr(), "Failed parsing date: {}", m);
+            time::empty_tm()
+        },
     }
 }
 
