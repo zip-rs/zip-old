@@ -13,18 +13,3 @@ Library to support the reading and writing of zip files.
 flate2 = "*"
 bzip2 = "*"
 time = "*"
-
-[[bin]]
-name = "extract"
-test = false
-doc = false
-
-[[bin]]
-name = "extract_lorem"
-test = false
-doc = false
-
-[[bin]]
-name = "write_sample"
-test = false
-doc = false
