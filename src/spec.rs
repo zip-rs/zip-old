@@ -82,7 +82,7 @@ impl CentralDirectoryEnd
         try!(writer.write_le_u32(self.central_directory_size));
         try!(writer.write_le_u32(self.central_directory_offset));
         try!(writer.write_le_u16(self.zip_file_comment.len() as u16));
-        try!(writer.write(self.zip_file_comment.as_slice()));
+        try!(writer.write_all(self.zip_file_comment.as_slice()));
         Ok(())
     }
 }

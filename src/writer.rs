@@ -60,15 +60,15 @@ struct ZipWriterStats
 
 impl<W: Writer+Seek> Writer for ZipWriter<W>
 {
-    fn write(&mut self, buf: &[u8]) -> old_io::IoResult<()>
+    fn write_all(&mut self, buf: &[u8]) -> old_io::IoResult<()>
     {
         if self.files.len() == 0 { return Err(old_io::IoError { kind: old_io::OtherIoError, desc: "No file has been started", detail: None, }) }
         self.stats.update(buf);
         match self.inner
         {
-            GenericZipWriter::Storer(ref mut w) => w.write(buf),
-            GenericZipWriter::Deflater(ref mut w) => w.write(buf),
-            GenericZipWriter::Bzip2(ref mut w) => w.write(buf),
+            GenericZipWriter::Storer(ref mut w) => w.write_all(buf),
+            GenericZipWriter::Deflater(ref mut w) => w.write_all(buf),
+            GenericZipWriter::Bzip2(ref mut w) => w.write_all(buf),
             GenericZipWriter::Closed => Err(old_io::standard_error(old_io::Closed)),
         }
     }
