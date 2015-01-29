@@ -29,11 +29,11 @@ enum GenericZipWriter<W>
 /// {
 ///     // For this example we write to a buffer, but normally you should use a File
 ///     let mut buf = [0u8; 65536];
-///     let w = std::io::BufWriter::new(&mut buf);
+///     let w = std::old_io::BufWriter::new(&mut buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
 ///     try!(zip.start_file("hello_world.txt", zip::CompressionMethod::Stored));
-///     try!(zip.write(b"Hello, World!"));
+///     try!(zip.write_all(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
 ///     try!(zip.finish());

@@ -11,7 +11,7 @@ fn main()
         return;
     }
     let fname = Path::new(&*args[1]);
-    let file = std::io::File::open(&fname).unwrap();
+    let file = std::old_io::File::open(&fname).unwrap();
 
     let zipcontainer = zip::ZipReader::new(file).unwrap();
     

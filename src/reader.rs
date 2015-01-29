@@ -18,7 +18,7 @@ use bzip2::reader::BzDecompressor;
 ///     // For demonstration purposes we read from an empty buffer.
 ///     // Normally a File object would be used.
 ///     let buf = [0u8; 128];
-///     let mut reader = std::io::BufReader::new(&buf);
+///     let mut reader = std::old_io::BufReader::new(&buf);
 ///
 ///     let zip = try!(zip::ZipReader::new(reader));
 ///
