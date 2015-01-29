@@ -1,4 +1,4 @@
-#![allow(unstable)]
+#![feature(path, io, os)]
 
 extern crate zip;
 
