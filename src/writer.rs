@@ -5,7 +5,7 @@ use writer_spec;
 use crc32;
 use result::{ZipResult, ZipError};
 use std::default::Default;
-use std::io;
+use std::old_io;
 use std::mem;
 use time;
 use flate2;
@@ -60,16 +60,16 @@ struct ZipWriterStats
 
 impl<W: Writer+Seek> Writer for ZipWriter<W>
 {
-    fn write(&mut self, buf: &[u8]) -> io::IoResult<()>
+    fn write(&mut self, buf: &[u8]) -> old_io::IoResult<()>
     {
-        if self.files.len() == 0 { return Err(io::IoError { kind: io::OtherIoError, desc: "No file has been started", detail: None, }) }
+        if self.files.len() == 0 { return Err(old_io::IoError { kind: old_io::OtherIoError, desc: "No file has been started", detail: None, }) }
         self.stats.update(buf);
         match self.inner
         {
             GenericZipWriter::Storer(ref mut w) => w.write(buf),
             GenericZipWriter::Deflater(ref mut w) => w.write(buf),
             GenericZipWriter::Bzip2(ref mut w) => w.write(buf),
-            GenericZipWriter::Closed => Err(io::standard_error(io::Closed)),
+            GenericZipWriter::Closed => Err(old_io::standard_error(old_io::Closed)),
         }
     }
 }
@@ -152,7 +152,7 @@ impl<W: Writer+Seek> ZipWriter<W>
         file.compressed_size = try!(writer.tell()) - self.stats.start;
 
         try!(writer_spec::update_local_file_header(writer, file));
-        try!(writer.seek(0, io::SeekEnd));
+        try!(writer.seek(0, old_io::SeekEnd));
         Ok(())
     }
 
@@ -207,7 +207,7 @@ impl<W: Writer+Seek> Drop for ZipWriter<W>
         if !self.inner.is_closed()
         {
             if let Err(e) = self.finalize() {
-                let _ = write!(&mut ::std::io::stdio::stderr(), "ZipWriter drop failed: {:?}", e);
+                let _ = write!(&mut old_io::stdio::stderr(), "ZipWriter drop failed: {:?}", e);
             }
         }
     }
@@ -222,7 +222,7 @@ impl<W: Writer+Seek> GenericZipWriter<W>
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
             GenericZipWriter::Bzip2(w) => match w.into_inner() { Ok(r) => r, Err((_, err)) => try!(Err(err)) },
-            GenericZipWriter::Closed => try!(Err(io::standard_error(io::Closed))),
+            GenericZipWriter::Closed => try!(Err(old_io::standard_error(old_io::Closed))),
         };
 
         *self = match compression

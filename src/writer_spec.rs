@@ -1,4 +1,4 @@
-use std::io;
+use std::old_io;
 use std::ascii::AsciiExt;
 use types::ZipFile;
 use result::ZipResult;
@@ -29,7 +29,7 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> Zip
 pub fn update_local_file_header<T: Writer+Seek>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
     static CRC32_OFFSET : i64 = 14;
-    try!(writer.seek(file.header_start as i64 + CRC32_OFFSET, io::SeekSet));
+    try!(writer.seek(file.header_start as i64 + CRC32_OFFSET, old_io::SeekSet));
     try!(writer.write_le_u32(file.crc32));
     try!(writer.write_le_u32(file.compressed_size as u32));
     try!(writer.write_le_u32(file.uncompressed_size as u32));
@@ -65,7 +65,7 @@ pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile)
 
 fn build_extra_field(_file: &ZipFile) -> ZipResult<Vec<u8>>
 {
-    let writer = io::MemWriter::new();
+    let writer = old_io::MemWriter::new();
     // Future work
     Ok(writer.into_inner())
 }

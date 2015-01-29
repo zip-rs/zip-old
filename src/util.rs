@@ -24,7 +24,7 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     {
         Ok(tm) => tm,
         Err(m) => {
-            let _ = write!(&mut ::std::io::stdio::stderr(), "Failed parsing date: {}", m);
+            let _ = write!(&mut ::std::old_io::stdio::stderr(), "Failed parsing date: {}", m);
             time::empty_tm()
         },
     }
@@ -55,7 +55,7 @@ impl<'a, R: Reader> RefMutReader<'a, R>
 
 impl<'a, R: Reader> Reader for RefMutReader<'a, R>
 {
-    fn read(&mut self, buf: &mut [u8]) -> ::std::io::IoResult<usize>
+    fn read(&mut self, buf: &mut [u8]) -> ::std::old_io::IoResult<usize>
     {
         self.inner.read(buf)
     }

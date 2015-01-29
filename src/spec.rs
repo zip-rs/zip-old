@@ -1,4 +1,4 @@
-use std::io;
+use std::old_io;
 use result::{ZipResult, ZipError};
 use std::iter::range_step_inclusive;
 
@@ -51,20 +51,20 @@ impl CentralDirectoryEnd
     {
         let header_size = 22;
         let bytes_between_magic_and_comment_size = header_size - 6;
-        try!(reader.seek(0, io::SeekEnd));
+        try!(reader.seek(0, old_io::SeekEnd));
         let file_length = try!(reader.tell()) as i64;
 
         let search_upper_bound = ::std::cmp::max(0, file_length - header_size - ::std::u16::MAX as i64);
         for pos in range_step_inclusive(file_length - header_size, search_upper_bound, -1)
         {
-            try!(reader.seek(pos, io::SeekSet));
+            try!(reader.seek(pos, old_io::SeekSet));
             if try!(reader.read_le_u32()) == CENTRAL_DIRECTORY_END_SIGNATURE
             {
-                try!(reader.seek(bytes_between_magic_and_comment_size, io::SeekCur));
+                try!(reader.seek(bytes_between_magic_and_comment_size, old_io::SeekCur));
                 let comment_length = try!(reader.read_le_u16()) as i64;
                 if file_length - pos - header_size == comment_length
                 {
-                    try!(reader.seek(pos, io::SeekSet));
+                    try!(reader.seek(pos, old_io::SeekSet));
                     return CentralDirectoryEnd::parse(reader);
                 }
             }

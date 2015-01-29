@@ -1,6 +1,6 @@
 //! Helper module to compute a CRC32 checksum
 
-use std::io;
+use std::old_io;
 
 static CRC32_TABLE : [u32; 256] = [
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -90,16 +90,16 @@ impl<R: Reader> Crc32Reader<R>
 
 impl<R: Reader> Reader for Crc32Reader<R>
 {
-    fn read(&mut self, buf: &mut [u8]) -> io::IoResult<usize>
+    fn read(&mut self, buf: &mut [u8]) -> old_io::IoResult<usize>
     {
         let count = match self.inner.read(buf)
         {
             Ok(n) => n,
-            Err(ref e) if e.kind == io::EndOfFile =>
+            Err(ref e) if e.kind == old_io::EndOfFile =>
             {
                 return
                 if self.check_matches() { Err(e.clone()) }
-                else { Err(io::IoError { kind: io::OtherIoError, desc: "Invalid checksum", detail: None, }) }
+                else { Err(old_io::IoError { kind: old_io::OtherIoError, desc: "Invalid checksum", detail: None, }) }
             },
             Err(e) => return Err(e),
         };

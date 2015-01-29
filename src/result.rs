@@ -1,6 +1,6 @@
 //! Error types that can be emitted from this library
 
-use std::io;
+use std::old_io::IoError;
 use std::error;
 use std::fmt;
 
@@ -12,7 +12,7 @@ pub type ZipResult<T> = Result<T, ZipError>;
 pub enum ZipError
 {
     /// An Error caused by I/O
-    Io(io::IoError),
+    Io(IoError),
 
     /// This file is probably not a zipfile. The argument is enclosed.
     InvalidZipFile(&'static str),
@@ -46,9 +46,9 @@ impl ZipError
     }
 }
 
-impl error::FromError<io::IoError> for ZipError
+impl error::FromError<IoError> for ZipError
 {
-    fn from_error(err: io::IoError) -> ZipError
+    fn from_error(err: IoError) -> ZipError
     {
         ZipError::Io(err)
     }

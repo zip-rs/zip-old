@@ -4,7 +4,7 @@ use compression::CompressionMethod;
 use spec;
 use reader_spec;
 use result::{ZipResult, ZipError};
-use std::io;
+use std::old_io;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use flate2::FlateReader;
@@ -61,7 +61,7 @@ impl<T: Reader+Seek> ZipReader<T>
         let mut files = Vec::with_capacity(number_of_files);
         let mut names_map = HashMap::new();
 
-        try!(reader.seek(directory_start, io::SeekSet));
+        try!(reader.seek(directory_start, old_io::SeekSet));
         for _ in (0 .. number_of_files)
         {
             let file = try!(reader_spec::central_header_to_zip_file(&mut reader));
@@ -101,9 +101,9 @@ impl<T: Reader+Seek> ZipReader<T>
             return unsupported_zip_error("Encrypted files are not supported")
         }
 
-        try!(inner_reader.seek(pos, io::SeekSet));
+        try!(inner_reader.seek(pos, old_io::SeekSet));
         let refmut_reader = ::util::RefMutReader::new(inner_reader);
-        let limit_reader = io::util::LimitReader::new(refmut_reader, file.compressed_size as usize);
+        let limit_reader = old_io::util::LimitReader::new(refmut_reader, file.compressed_size as usize);
 
         let reader = match file.compression_method
         {

@@ -1,4 +1,4 @@
-use std::io;
+use std::old_io;
 use std::num::FromPrimitive;
 use result::{ZipResult, ZipError};
 use types::ZipFile;
@@ -52,14 +52,14 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
     let return_position = try!(reader.tell()) as i64;
 
     // Parse local header
-    try!(reader.seek(offset, io::SeekSet));
+    try!(reader.seek(offset, old_io::SeekSet));
     let signature = try!(reader.read_le_u32());
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
     {
         return Err(ZipError::InvalidZipFile("Invalid local file header"))
     }
 
-    try!(reader.seek(22, io::SeekCur));
+    try!(reader.seek(22, old_io::SeekCur));
     let file_name_length = try!(reader.read_le_u16()) as u64;
     let extra_field_length = try!(reader.read_le_u16()) as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
@@ -83,21 +83,21 @@ pub fn central_header_to_zip_file<R: Reader+Seek>(reader: &mut R) -> ZipResult<Z
     try!(parse_extra_field(&mut result, &*extra_field));
 
     // Go back after the central header
-    try!(reader.seek(return_position, io::SeekSet));
+    try!(reader.seek(return_position, old_io::SeekSet));
 
     Ok(result)
 }
 
 fn parse_extra_field(_file: &mut ZipFile, data: &[u8]) -> ZipResult<()>
 {
-    let mut reader = io::BufReader::new(data);
+    let mut reader = old_io::BufReader::new(data);
     while !reader.eof()
     {
         let kind = try!(reader.read_le_u16());
         let len = try!(reader.read_le_u16());
         match kind
         {
-            _ => try!(reader.seek(len as i64, io::SeekCur)),
+            _ => try!(reader.seek(len as i64, old_io::SeekCur)),
         }
     }
     Ok(())
