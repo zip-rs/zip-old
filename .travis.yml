@@ -14,9 +14,6 @@ script:
 - cargo test
 - cargo doc --no-deps
 - rustdoc --test README.md -L target
-- cargo run --example write_sample -- test.zip
-- cargo run --example extract -- test.zip
-- cargo run --example extract_lorem -- test.zip
 
 after_success:
 - .travis/publish_doc.sh
