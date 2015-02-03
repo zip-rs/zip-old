@@ -8,7 +8,7 @@ use std::fmt;
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
-#[derive(Show)]
+#[derive(Debug)]
 pub enum ZipError
 {
     /// An Error caused by I/O
