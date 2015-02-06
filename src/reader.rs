@@ -5,7 +5,7 @@ use spec;
 use reader_spec;
 use result::{ZipResult, ZipError};
 use std::old_io;
-use std::cell::RefCell;
+use std::cell::{RefCell, BorrowState};
 use std::collections::HashMap;
 use flate2::FlateReader;
 use bzip2::reader::BzDecompressor;
@@ -89,10 +89,10 @@ impl<T: Reader+Seek> ZipReader<T>
     /// May return `ReaderUnavailable` if there is another reader borrowed.
     pub fn read_file(&self, file: &ZipFile) -> ZipResult<Box<Reader>>
     {
-        let mut inner_reader = match self.inner.try_borrow_mut()
+        let mut inner_reader = match self.inner.borrow_state()
         {
-            Some(reader) => reader,
-            None => return Err(ZipError::ReaderUnavailable),
+            BorrowState::Unused => self.inner.borrow_mut(),
+            _ => return Err(ZipError::ReaderUnavailable),
         };
         let pos = file.data_start as i64;
 
