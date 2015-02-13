@@ -1,4 +1,4 @@
-#![feature(path, io, os, env, core)]
+#![feature(path, io, env)]
 
 extern crate zip;
 
@@ -6,7 +6,7 @@ use std::old_io;
 
 fn main()
 {
-    let args = std::env::args().map(|v| v.into_string().unwrap()).collect::<Vec<_>>();
+    let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage: {} <filename>", args[0]);
         std::env::set_exit_status(1);

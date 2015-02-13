@@ -1,10 +1,10 @@
-#![feature(io, os, path, env)]
+#![feature(io, path, env)]
 
 extern crate zip;
 
 fn main()
 {
-    let args = std::env::args().map(|v| v.into_string().unwrap()).collect::<Vec<_>>();
+    let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage: {} <filename>", args[0]);
         std::env::set_exit_status(1);
