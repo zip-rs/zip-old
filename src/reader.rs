@@ -87,7 +87,7 @@ impl<T: Reader+Seek> ZipReader<T>
     /// Gets a reader for a contained zipfile.
     ///
     /// May return `ReaderUnavailable` if there is another reader borrowed.
-    pub fn read_file(&self, file: &ZipFile) -> ZipResult<Box<Reader>>
+    pub fn read_file<'a>(&'a self, file: &ZipFile) -> ZipResult<Box<Reader+'a>>
     {
         let mut inner_reader = match self.inner.borrow_state()
         {
