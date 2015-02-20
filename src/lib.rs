@@ -3,7 +3,7 @@
 #![feature(unsafe_destructor)]
 #![warn(missing_docs)]
 
-#![feature(core, collections, io, std_misc)]
+#![feature(core, collections, old_io, std_misc)]
 
 extern crate time;
 extern crate flate2;
