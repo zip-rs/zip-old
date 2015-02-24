@@ -79,7 +79,9 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
 
     fn flush(&mut self) -> io::Result<()>
     {
-        match self.finalize() {
+        let result = self.finalize();
+        self.inner = GenericZipWriter::Closed;
+        match result {
             Ok(..) => Ok(()),
             Err(ZipError::Io(io_err)) => Err(io_err),
             Err(..) => Err(io::Error::new(io::ErrorKind::Other, "Error occured during finalization", None)),
