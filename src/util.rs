@@ -70,3 +70,31 @@ impl<'a, R: Reader> Reader for RefMutReader<'a, R>
         self.inner.read(buf)
     }
 }
+
+/// Additional integer write methods for a io::Read
+pub trait WriteIntExt {
+    /// Write a u32 in little-endian mode
+    fn write_le_u32(&mut self, u32) -> io::Result<()>;
+    /// Write a u16 in little-endian mode
+    fn write_le_u16(&mut self, u16) -> io::Result<()>;
+}
+
+impl<W: Write> WriteIntExt for W {
+    fn write_le_u32(&mut self, val: u32) -> io::Result<()> {
+        let mut buf = [0u8; 4];
+        let v = val;
+        buf[0] = ((v >>  0) & 0xFF) as u8;
+        buf[1] = ((v >>  8) & 0xFF) as u8;
+        buf[2] = ((v >> 16) & 0xFF) as u8;
+        buf[3] = ((v >> 24) & 0xFF) as u8;
+        self.write_all(&buf)
+    }
+
+    fn write_le_u16(&mut self, val: u16) -> io::Result<()> {
+        let mut buf = [0u8; 2];
+        let v = val;
+        buf[0] = ((v >>  0) & 0xFF) as u8;
+        buf[1] = ((v >>  8) & 0xFF) as u8;
+        self.write_all(&buf)
+    }
+}

@@ -1,12 +1,13 @@
-use std::old_io;
+use std::io;
 use std::io::prelude::*;
 use std::ascii::AsciiExt;
 use types::ZipFile;
 use result::ZipResult;
 use spec;
 use util;
+use util::WriteIntExt;
 
-pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
+pub fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
     try!(writer.write_le_u32(spec::LOCAL_FILE_HEADER_SIGNATURE));
     try!(writer.write_le_u16(20));
@@ -27,17 +28,17 @@ pub fn write_local_file_header<T: Writer>(writer: &mut T, file: &ZipFile) -> Zip
     Ok(())
 }
 
-pub fn update_local_file_header<T: Writer+Seek>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
+pub fn update_local_file_header<T: Write+io::Seek>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
-    static CRC32_OFFSET : i64 = 14;
-    try!(writer.seek(file.header_start as i64 + CRC32_OFFSET, old_io::SeekSet));
+    static CRC32_OFFSET : u64 = 14;
+    try!(writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET)));
     try!(writer.write_le_u32(file.crc32));
     try!(writer.write_le_u32(file.compressed_size as u32));
     try!(writer.write_le_u32(file.uncompressed_size as u32));
     Ok(())
 }
 
-pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
+pub fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFile) -> ZipResult<()>
 {
     try!(writer.write_le_u32(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
     try!(writer.write_le_u16(0x14FF));
@@ -66,7 +67,7 @@ pub fn write_central_directory_header<T: Writer>(writer: &mut T, file: &ZipFile)
 
 fn build_extra_field(_file: &ZipFile) -> ZipResult<Vec<u8>>
 {
-    let writer = old_io::MemWriter::new();
+    let writer = Vec::new();
     // Future work
-    Ok(writer.into_inner())
+    Ok(writer)
 }

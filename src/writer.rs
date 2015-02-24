@@ -6,7 +6,6 @@ use crc32;
 use result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
-use std::io::Seek;
 use std::io::prelude::*;
 use std::old_io::Writer;
 use std::mem;
@@ -64,7 +63,7 @@ struct ZipWriterStats
     bytes_written: u64,
 }
 
-impl<W: Write+Seek> Write for ZipWriter<W>
+impl<W: Write+io::Seek> Write for ZipWriter<W>
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize>
     {
@@ -98,7 +97,7 @@ impl ZipWriterStats
     }
 }
 
-impl<W: Write+Seek> ZipWriter<W>
+impl<W: Write+io::Seek> ZipWriter<W>
 {
     /// Initializes the ZipWriter.
     ///
@@ -135,9 +134,7 @@ impl<W: Write+Seek> ZipWriter<W>
                 header_start: header_start,
                 data_start: 0,
             };
-            let mut conv_w = IoConverter::new(writer);
-            try!(writer_spec::write_local_file_header(&mut conv_w, &file));
-            let writer = conv_w.into_inner();
+            try!(writer_spec::write_local_file_header(writer, &file));
 
             let header_end = try!(writer.seek(io::SeekFrom::Current(0)));
             self.stats.start = header_end;
@@ -168,9 +165,7 @@ impl<W: Write+Seek> ZipWriter<W>
         file.uncompressed_size = self.stats.bytes_written;
         file.compressed_size = try!(writer.seek(io::SeekFrom::Current(0))) - self.stats.start;
 
-        let mut conv_w = IoConverter::new(writer);
-        try!(writer_spec::update_local_file_header(&mut conv_w, file));
-        let writer = conv_w.into_inner();
+        try!(writer_spec::update_local_file_header(writer, file));
         try!(writer.seek(io::SeekFrom::End(0)));
         Ok(())
     }
@@ -194,12 +189,10 @@ impl<W: Write+Seek> ZipWriter<W>
             let writer = self.inner.get_plain();
 
             let central_start = try!(writer.seek(io::SeekFrom::Current(0)));
-            let mut conv_w = IoConverter::new(writer);
             for file in self.files.iter()
             {
-                try!(writer_spec::write_central_directory_header(&mut conv_w, file));
+                try!(writer_spec::write_central_directory_header(writer, file));
             }
-            let writer = conv_w.into_inner();
             let central_size = try!(writer.seek(io::SeekFrom::Current(0))) - central_start;
 
             let footer = spec::CentralDirectoryEnd
@@ -221,7 +214,7 @@ impl<W: Write+Seek> ZipWriter<W>
 }
 
 #[unsafe_destructor]
-impl<W: Write+Seek> Drop for ZipWriter<W>
+impl<W: Write+io::Seek> Drop for ZipWriter<W>
 {
     fn drop(&mut self)
     {
@@ -234,7 +227,7 @@ impl<W: Write+Seek> Drop for ZipWriter<W>
     }
 }
 
-impl<W: Write+Seek> GenericZipWriter<W>
+impl<W: Write+io::Seek> GenericZipWriter<W>
 {
     fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()>
     {
