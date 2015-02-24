@@ -1,4 +1,6 @@
-#![feature(old_io, old_path, env)]
+#![feature(io, fs, old_path, env)]
+
+use std::io::prelude::*;
 
 extern crate zip;
 
@@ -22,7 +24,7 @@ fn main()
 fn doit(filename: &str) -> zip::result::ZipResult<()>
 {
     let path = Path::new(filename);
-    let file = std::old_io::File::create(&path).unwrap();
+    let file = std::fs::File::create(&path).unwrap();
 
     let mut zip = zip::ZipWriter::new(file);
 

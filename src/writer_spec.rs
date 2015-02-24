@@ -1,4 +1,5 @@
 use std::old_io;
+use std::io::prelude::*;
 use std::ascii::AsciiExt;
 use types::ZipFile;
 use result::ZipResult;

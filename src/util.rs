@@ -1,6 +1,8 @@
 use time;
 use time::Tm;
 use std::cell::RefMut;
+use std::io;
+use std::io::prelude::*;
 
 pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
 {
@@ -45,11 +47,19 @@ pub struct RefMutReader<'a, R:'a>
     inner: RefMut<'a, R>,
 }
 
-impl<'a, R: Reader> RefMutReader<'a, R>
+impl<'a, R> RefMutReader<'a, R>
 {
     pub fn new(inner: RefMut<'a, R>) -> RefMutReader<'a, R>
     {
         RefMutReader { inner: inner, }
+    }
+}
+
+impl<'a, R: Read> Read for RefMutReader<'a, R>
+{
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>
+    {
+        self.inner.read(buf)
     }
 }
 

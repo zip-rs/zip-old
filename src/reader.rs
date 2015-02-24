@@ -7,8 +7,9 @@ use result::{ZipResult, ZipError};
 use std::old_io;
 use std::cell::{RefCell, BorrowState};
 use std::collections::HashMap;
-use flate2::FlateReader;
+use flate2::FlateReadExt;
 use bzip2::reader::BzDecompressor;
+use ioconverter::IoConverter;
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -117,7 +118,7 @@ impl<T: Reader+Seek> ZipReader<T>
             },
             CompressionMethod::Deflated =>
             {
-                let deflate_reader = limit_reader.deflate_decode();
+                let deflate_reader = IoConverter::new(IoConverter::new(limit_reader).deflate_decode());
                 Box::new(
                     Crc32Reader::new(
                         deflate_reader,

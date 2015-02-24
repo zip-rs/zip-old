@@ -3,7 +3,7 @@
 #![feature(unsafe_destructor)]
 #![warn(missing_docs)]
 
-#![feature(core, collections, old_io, std_misc)]
+#![feature(core, collections, old_io, std_misc, io)]
 
 extern crate time;
 extern crate flate2;
@@ -25,3 +25,4 @@ pub mod compression;
 mod writer;
 mod cp437;
 pub mod result;
+mod ioconverter;

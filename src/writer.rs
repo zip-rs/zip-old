@@ -5,21 +5,25 @@ use writer_spec;
 use crc32;
 use result::{ZipResult, ZipError};
 use std::default::Default;
-use std::old_io;
+use std::io;
+use std::io::Seek;
+use std::io::prelude::*;
+use std::old_io::Writer;
 use std::mem;
 use time;
 use flate2;
-use flate2::FlateWriter;
-use flate2::writer::DeflateEncoder;
+use flate2::FlateWriteExt;
+use flate2::write::DeflateEncoder;
 use bzip2;
 use bzip2::writer::BzCompressor;
+use ioconverter::IoConverter;
 
 enum GenericZipWriter<W>
 {
     Closed,
     Storer(W),
     Deflater(DeflateEncoder<W>),
-    Bzip2(BzCompressor<W>),
+    Bzip2(IoConverter<BzCompressor<IoConverter<W>>>),
 }
 
 /// Generator for ZIP files.
@@ -27,13 +31,15 @@ enum GenericZipWriter<W>
 /// ```
 /// fn doit() -> zip::result::ZipResult<()>
 /// {
+///     use std::io::Write;
+///
 ///     // For this example we write to a buffer, but normally you should use a File
-///     let mut buf = [0u8; 65536];
-///     let w = std::old_io::BufWriter::new(&mut buf);
+///     let mut buf: &mut [u8] = &mut [0u8; 65536];
+///     let mut w = std::io::Cursor::new(buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
 ///     try!(zip.start_file("hello_world.txt", zip::CompressionMethod::Stored));
-///     try!(zip.write_all(b"Hello, World!"));
+///     try!(zip.write(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
 ///     try!(zip.finish());
@@ -58,18 +64,27 @@ struct ZipWriterStats
     bytes_written: u64,
 }
 
-impl<W: Writer+Seek> Writer for ZipWriter<W>
+impl<W: Write+Seek> Write for ZipWriter<W>
 {
-    fn write_all(&mut self, buf: &[u8]) -> old_io::IoResult<()>
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize>
     {
-        if self.files.len() == 0 { return Err(old_io::IoError { kind: old_io::OtherIoError, desc: "No file has been started", detail: None, }) }
+        if self.files.len() == 0 { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started", None)) }
         self.stats.update(buf);
         match self.inner
         {
-            GenericZipWriter::Storer(ref mut w) => w.write_all(buf),
-            GenericZipWriter::Deflater(ref mut w) => w.write_all(buf),
-            GenericZipWriter::Bzip2(ref mut w) => w.write_all(buf),
-            GenericZipWriter::Closed => Err(old_io::standard_error(old_io::Closed)),
+            GenericZipWriter::Storer(ref mut w) => w.write(buf),
+            GenericZipWriter::Deflater(ref mut w) => w.write(buf),
+            GenericZipWriter::Bzip2(ref mut w) => w.write(buf),
+            GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()>
+    {
+        match self.finalize() {
+            Ok(..) => Ok(()),
+            Err(ZipError::Io(io_err)) => Err(io_err),
+            Err(..) => Err(io::Error::new(io::ErrorKind::Other, "Error occured during finalization", None)),
         }
     }
 }
@@ -83,7 +98,7 @@ impl ZipWriterStats
     }
 }
 
-impl<W: Writer+Seek> ZipWriter<W>
+impl<W: Write+Seek> ZipWriter<W>
 {
     /// Initializes the ZipWriter.
     ///
@@ -105,7 +120,7 @@ impl<W: Writer+Seek> ZipWriter<W>
 
         {
             let writer = self.inner.get_plain();
-            let header_start = try!(writer.tell());
+            let header_start = try!(writer.seek(io::SeekFrom::Current(0)));
 
             let mut file = ZipFile
             {
@@ -120,9 +135,11 @@ impl<W: Writer+Seek> ZipWriter<W>
                 header_start: header_start,
                 data_start: 0,
             };
-            try!(writer_spec::write_local_file_header(writer, &file));
+            let mut conv_w = IoConverter::new(writer);
+            try!(writer_spec::write_local_file_header(&mut conv_w, &file));
+            let writer = conv_w.into_inner();
 
-            let header_end = try!(writer.tell());
+            let header_end = try!(writer.seek(io::SeekFrom::Current(0)));
             self.stats.start = header_end;
             file.data_start = header_end;
 
@@ -149,10 +166,12 @@ impl<W: Writer+Seek> ZipWriter<W>
         };
         file.crc32 = self.stats.crc32;
         file.uncompressed_size = self.stats.bytes_written;
-        file.compressed_size = try!(writer.tell()) - self.stats.start;
+        file.compressed_size = try!(writer.seek(io::SeekFrom::Current(0))) - self.stats.start;
 
-        try!(writer_spec::update_local_file_header(writer, file));
-        try!(writer.seek(0, old_io::SeekEnd));
+        let mut conv_w = IoConverter::new(writer);
+        try!(writer_spec::update_local_file_header(&mut conv_w, file));
+        let writer = conv_w.into_inner();
+        try!(writer.seek(io::SeekFrom::End(0)));
         Ok(())
     }
 
@@ -174,12 +193,14 @@ impl<W: Writer+Seek> ZipWriter<W>
         {
             let writer = self.inner.get_plain();
 
-            let central_start = try!(writer.tell());
+            let central_start = try!(writer.seek(io::SeekFrom::Current(0)));
+            let mut conv_w = IoConverter::new(writer);
             for file in self.files.iter()
             {
-                try!(writer_spec::write_central_directory_header(writer, file));
+                try!(writer_spec::write_central_directory_header(&mut conv_w, file));
             }
-            let central_size = try!(writer.tell()) - central_start;
+            let writer = conv_w.into_inner();
+            let central_size = try!(writer.seek(io::SeekFrom::Current(0))) - central_start;
 
             let footer = spec::CentralDirectoryEnd
             {
@@ -192,7 +213,7 @@ impl<W: Writer+Seek> ZipWriter<W>
                 zip_file_comment: b"zip-rs".to_vec(),
             };
 
-            try!(footer.write(writer));
+            try!(footer.write(&mut IoConverter::new(writer)));
         }
 
         Ok(())
@@ -200,20 +221,20 @@ impl<W: Writer+Seek> ZipWriter<W>
 }
 
 #[unsafe_destructor]
-impl<W: Writer+Seek> Drop for ZipWriter<W>
+impl<W: Write+Seek> Drop for ZipWriter<W>
 {
     fn drop(&mut self)
     {
         if !self.inner.is_closed()
         {
             if let Err(e) = self.finalize() {
-                let _ = write!(&mut old_io::stdio::stderr(), "ZipWriter drop failed: {:?}", e);
+                let _ = write!(&mut ::std::old_io::stdio::stderr(), "ZipWriter drop failed: {:?}", e);
             }
         }
     }
 }
 
-impl<W: Writer+Seek> GenericZipWriter<W>
+impl<W: Write+Seek> GenericZipWriter<W>
 {
     fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()>
     {
@@ -221,15 +242,15 @@ impl<W: Writer+Seek> GenericZipWriter<W>
         {
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
-            GenericZipWriter::Bzip2(w) => match w.into_inner() { Ok(r) => r, Err((_, err)) => try!(Err(err)) },
-            GenericZipWriter::Closed => try!(Err(old_io::standard_error(old_io::Closed))),
+            GenericZipWriter::Bzip2(w) => match w.into_inner().into_inner() { Ok(r) => r.into_inner(), Err((_, err)) => try!(Err(err)) },
+            GenericZipWriter::Closed => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None))),
         };
 
         *self = match compression
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::CompressionLevel::Default)),
-            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::CompressionLevel::Default)),
+            CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
+            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(IoConverter::new(BzCompressor::new(IoConverter::new(bare), bzip2::CompressionLevel::Default))),
             _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
         };
 

@@ -1,6 +1,7 @@
 //! Error types that can be emitted from this library
 
 use std::old_io::IoError;
+use std::io;
 use std::error;
 use std::fmt;
 
@@ -11,8 +12,11 @@ pub type ZipResult<T> = Result<T, ZipError>;
 #[derive(Debug)]
 pub enum ZipError
 {
+    /// An Error caused by old I/O
+    OldIo(IoError),
+
     /// An Error caused by I/O
-    Io(IoError),
+    Io(io::Error),
 
     /// This file is probably not a zipfile. The argument is enclosed.
     InvalidZipFile(&'static str),
@@ -33,6 +37,9 @@ impl ZipError
 
         match *self
         {
+            ZipError::OldIo(ref io_err) => {
+                ("OldIo Error: ".to_string() + io_err.description()).into_cow()
+            },
             ZipError::Io(ref io_err) => {
                 ("Io Error: ".to_string() + io_err.description()).into_cow()
             },
@@ -49,6 +56,14 @@ impl ZipError
 impl error::FromError<IoError> for ZipError
 {
     fn from_error(err: IoError) -> ZipError
+    {
+        ZipError::OldIo(err)
+    }
+}
+
+impl error::FromError<io::Error> for ZipError
+{
+    fn from_error(err: io::Error) -> ZipError
     {
         ZipError::Io(err)
     }
@@ -68,6 +83,7 @@ impl error::Error for ZipError
     {
         match *self
         {
+            ZipError::OldIo(ref io_err) => io_err.description(),
             ZipError::Io(ref io_err) => io_err.description(),
             ZipError::InvalidZipFile(..) => "Invalid Zip File",
             ZipError::UnsupportedZipFile(..) => "Unsupported Zip File",
@@ -79,6 +95,7 @@ impl error::Error for ZipError
     {
         match *self
         {
+            ZipError::OldIo(ref io_err) => Some(io_err as &error::Error),
             ZipError::Io(ref io_err) => Some(io_err as &error::Error),
             _ => None,
         }
