@@ -98,3 +98,58 @@ impl<W: Write> WriteIntExt for W {
         self.write_all(&buf)
     }
 }
+/// Additional integer write methods for a io::Read
+pub trait ReadIntExt {
+    /// Read a u32 in little-endian mode
+    fn read_le_u32(&mut self) -> io::Result<u32>;
+    /// Read a u16 in little-endian mode
+    fn read_le_u16(&mut self) -> io::Result<u16>;
+    /// Read exactly n bytes
+    fn read_exact(&mut self, usize) -> io::Result<Vec<u8>>;
+}
+
+fn fill_exact<R: Read>(reader: &mut R, buf: &mut [u8]) -> io::Result<()> {
+    let mut idx = 0;
+    let mut tries = 0;
+    while idx < buf.len() {
+        match reader.read(&mut buf[idx..]) {
+            Err(v) => return Err(v),
+            Ok(i) => idx += i,
+        }
+        tries += 1;
+        if tries > 2*buf.len() {
+            return Err(io::Error::new(io::ErrorKind::ResourceUnavailable, "Could not fill the buffer", None));
+        }
+    }
+    Ok(())
+}
+
+impl<R: Read> ReadIntExt for R {
+    fn read_le_u32(&mut self) -> io::Result<u32> {
+        let mut buf = [0u8; 4];
+        try!(fill_exact(self, &mut buf));
+
+        Ok(
+            buf[0] as u32
+            | ((buf[1] as u32) << 8)
+            | ((buf[2] as u32) << 16)
+            | ((buf[3] as u32) << 24)
+        )
+    }
+
+    fn read_le_u16(&mut self) -> io::Result<u16> {
+        let mut buf = [0u8; 2];
+        try!(fill_exact(self, &mut buf));
+
+        Ok(
+            buf[0] as u16
+            | ((buf[1] as u16) << 8)
+        )
+    }
+
+    fn read_exact(&mut self, n: usize) -> io::Result<Vec<u8>> {
+        let mut res = vec![0u8; n];
+        try!(fill_exact(self, &mut res));
+        Ok(res)
+    }
+}

@@ -1,8 +1,8 @@
-use std::old_io;
+use std::io;
 use std::io::prelude::*;
 use result::{ZipResult, ZipError};
 use std::iter::range_step_inclusive;
-use util::WriteIntExt;
+use util::{ReadIntExt, WriteIntExt};
 
 pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
 pub static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
@@ -21,7 +21,7 @@ pub struct CentralDirectoryEnd
 
 impl CentralDirectoryEnd
 {
-    pub fn parse<T: Reader>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
+    pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
     {
         let magic = try!(reader.read_le_u32());
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE
@@ -49,24 +49,23 @@ impl CentralDirectoryEnd
            })
     }
 
-    pub fn find_and_parse<T: Reader+Seek>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
+    pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
     {
         let header_size = 22;
         let bytes_between_magic_and_comment_size = header_size - 6;
-        try!(reader.seek(0, old_io::SeekEnd));
-        let file_length = try!(reader.tell()) as i64;
+        let file_length = try!(reader.seek(io::SeekFrom::End(0))) as i64;
 
         let search_upper_bound = ::std::cmp::max(0, file_length - header_size - ::std::u16::MAX as i64);
         for pos in range_step_inclusive(file_length - header_size, search_upper_bound, -1)
         {
-            try!(reader.seek(pos, old_io::SeekSet));
+            try!(reader.seek(io::SeekFrom::Start(pos as u64)));
             if try!(reader.read_le_u32()) == CENTRAL_DIRECTORY_END_SIGNATURE
             {
-                try!(reader.seek(bytes_between_magic_and_comment_size, old_io::SeekCur));
+                try!(reader.seek(io::SeekFrom::Current(bytes_between_magic_and_comment_size)));
                 let comment_length = try!(reader.read_le_u16()) as i64;
                 if file_length - pos - header_size == comment_length
                 {
-                    try!(reader.seek(pos, old_io::SeekSet));
+                    try!(reader.seek(io::SeekFrom::Start(pos as u64)));
                     return CentralDirectoryEnd::parse(reader);
                 }
             }

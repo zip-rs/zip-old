@@ -4,7 +4,8 @@ use compression::CompressionMethod;
 use spec;
 use reader_spec;
 use result::{ZipResult, ZipError};
-use std::old_io;
+use std::io;
+use std::io::prelude::*;
 use std::cell::{RefCell, BorrowState};
 use std::collections::HashMap;
 use flate2::FlateReadExt;
@@ -47,7 +48,7 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
     Err(ZipError::UnsupportedZipFile(detail))
 }
 
-impl<T: Reader+Seek> ZipReader<T>
+impl<T: Read+io::Seek> ZipReader<T>
 {
     /// Opens a ZIP file and parses the content headers.
     pub fn new(mut reader: T) -> ZipResult<ZipReader<T>>
@@ -56,13 +57,13 @@ impl<T: Reader+Seek> ZipReader<T>
 
         if footer.disk_number != footer.disk_with_central_directory { return unsupported_zip_error("Support for multi-disk files is not implemented") }
 
-        let directory_start = footer.central_directory_offset as i64;
+        let directory_start = footer.central_directory_offset as u64;
         let number_of_files = footer.number_of_files_on_this_disk as usize;
 
         let mut files = Vec::with_capacity(number_of_files);
         let mut names_map = HashMap::new();
 
-        try!(reader.seek(directory_start, old_io::SeekSet));
+        try!(reader.seek(io::SeekFrom::Start(directory_start)));
         for _ in (0 .. number_of_files)
         {
             let file = try!(reader_spec::central_header_to_zip_file(&mut reader));
@@ -88,23 +89,23 @@ impl<T: Reader+Seek> ZipReader<T>
     /// Gets a reader for a contained zipfile.
     ///
     /// May return `ReaderUnavailable` if there is another reader borrowed.
-    pub fn read_file<'a>(&'a self, file: &ZipFile) -> ZipResult<Box<Reader+'a>>
+    pub fn read_file<'a>(&'a self, file: &ZipFile) -> ZipResult<Box<Read+'a>>
     {
         let mut inner_reader = match self.inner.borrow_state()
         {
             BorrowState::Unused => self.inner.borrow_mut(),
             _ => return Err(ZipError::ReaderUnavailable),
         };
-        let pos = file.data_start as i64;
+        let pos = file.data_start as u64;
 
         if file.encrypted
         {
             return unsupported_zip_error("Encrypted files are not supported")
         }
 
-        try!(inner_reader.seek(pos, old_io::SeekSet));
+        try!(inner_reader.seek(io::SeekFrom::Start(pos)));
         let refmut_reader = ::util::RefMutReader::new(inner_reader);
-        let limit_reader = old_io::util::LimitReader::new(refmut_reader, file.compressed_size as usize);
+        let limit_reader = refmut_reader.take(file.compressed_size as u64);
 
         let reader = match file.compression_method
         {
@@ -114,25 +115,25 @@ impl<T: Reader+Seek> ZipReader<T>
                     Crc32Reader::new(
                         limit_reader,
                         file.crc32))
-                    as Box<Reader>
+                    as Box<Read>
             },
             CompressionMethod::Deflated =>
             {
-                let deflate_reader = IoConverter::new(IoConverter::new(limit_reader).deflate_decode());
+                let deflate_reader = limit_reader.deflate_decode();
                 Box::new(
                     Crc32Reader::new(
                         deflate_reader,
                         file.crc32))
-                    as Box<Reader>
+                    as Box<Read>
             },
             CompressionMethod::Bzip2 =>
             {
-                let bzip2_reader = BzDecompressor::new(limit_reader);
+                let bzip2_reader = IoConverter::new(BzDecompressor::new(IoConverter::new(limit_reader)));
                 Box::new(
                     Crc32Reader::new(
                         bzip2_reader,
                         file.crc32))
-                    as Box<Reader>
+                    as Box<Read>
             },
             _ => return unsupported_zip_error("Compression method not supported"),
         };
