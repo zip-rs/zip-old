@@ -63,14 +63,6 @@ impl<'a, R: Read> Read for RefMutReader<'a, R>
     }
 }
 
-impl<'a, R: Reader> Reader for RefMutReader<'a, R>
-{
-    fn read(&mut self, buf: &mut [u8]) -> ::std::old_io::IoResult<usize>
-    {
-        self.inner.read(buf)
-    }
-}
-
 /// Additional integer write methods for a io::Read
 pub trait WriteIntExt {
     /// Write a u32 in little-endian mode
@@ -110,15 +102,11 @@ pub trait ReadIntExt {
 
 fn fill_exact<R: Read>(reader: &mut R, buf: &mut [u8]) -> io::Result<()> {
     let mut idx = 0;
-    let mut tries = 0;
     while idx < buf.len() {
         match reader.read(&mut buf[idx..]) {
             Err(v) => return Err(v),
+            Ok(0) => return Err(io::Error::new(io::ErrorKind::ResourceUnavailable, "Could not fill the buffer", None)),
             Ok(i) => idx += i,
-        }
-        tries += 1;
-        if tries > 2*buf.len() {
-            return Err(io::Error::new(io::ErrorKind::ResourceUnavailable, "Could not fill the buffer", None));
         }
     }
     Ok(())

@@ -7,7 +7,6 @@ use result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
-use std::old_io::Writer;
 use std::mem;
 use time;
 use flate2;
