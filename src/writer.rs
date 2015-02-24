@@ -128,7 +128,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: String::from_str(name),
+                file_name: name.to_string(),
                 file_comment: String::new(),
                 header_start: header_start,
                 data_start: 0,
