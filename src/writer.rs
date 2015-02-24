@@ -206,7 +206,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 zip_file_comment: b"zip-rs".to_vec(),
             };
 
-            try!(footer.write(&mut IoConverter::new(writer)));
+            try!(footer.write(writer));
         }
 
         Ok(())

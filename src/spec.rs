@@ -1,6 +1,8 @@
 use std::old_io;
+use std::io::prelude::*;
 use result::{ZipResult, ZipError};
 use std::iter::range_step_inclusive;
+use util::WriteIntExt;
 
 pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
 pub static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
@@ -72,7 +74,7 @@ impl CentralDirectoryEnd
         Err(ZipError::UnsupportedZipFile("Could not find central directory end"))
     }
 
-    pub fn write<T: Writer>(&self, writer: &mut T) -> ZipResult<()>
+    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()>
     {
         try!(writer.write_le_u32(CENTRAL_DIRECTORY_END_SIGNATURE));
         try!(writer.write_le_u16(self.disk_number));
