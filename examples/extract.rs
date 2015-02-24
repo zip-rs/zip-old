@@ -1,8 +1,9 @@
-#![feature(old_path, old_io, env)]
+#![feature(old_path, io, fs, env)]
 
 extern crate zip;
 
-use std::old_io;
+use std::io;
+use std::fs;
 
 fn main()
 {
@@ -13,7 +14,7 @@ fn main()
         return;
     }
     let fname = Path::new(&*args[1]);
-    let file = old_io::File::open(&fname).unwrap();
+    let file = fs::File::open(&fname).unwrap();
 
     let zipcontainer = zip::ZipReader::new(file).unwrap();
 
@@ -25,7 +26,7 @@ fn main()
         let comment = &file.file_comment;
         if comment.len() > 0 { println!("  File comment: {}", comment); }
 
-        old_io::fs::mkdir_recursive(&outpath.dir_path(), old_io::USER_DIR).unwrap();
+        fs::create_dir_all(&outpath.dir_path()).unwrap();
 
         if (&*file.file_name).ends_with("/") {
             create_directory(outpath);
@@ -36,17 +37,16 @@ fn main()
     }
 }
 
-fn write_file(zipcontainer: &zip::ZipReader<old_io::File>, file: &zip::ZipFile, outpath: Path)
+fn write_file(zipcontainer: &zip::ZipReader<fs::File>, file: &zip::ZipFile, outpath: Path)
 {
-    let mut outfile = old_io::File::create(&outpath);
+    let mut outfile = fs::File::create(&outpath).unwrap();
     let mut reader = zipcontainer.read_file(file).unwrap();
-    old_io::util::copy(&mut reader, &mut outfile).unwrap();
-    old_io::fs::chmod(&outpath, old_io::USER_FILE).unwrap();
+    io::copy(&mut reader, &mut outfile).unwrap();
 }
 
 fn create_directory(outpath: Path)
 {
-    old_io::fs::mkdir_recursive(&outpath, old_io::USER_DIR).unwrap();
+    fs::create_dir_all(&outpath).unwrap();
 }
 
 fn sanitize_filename(filename: &str) -> Path
