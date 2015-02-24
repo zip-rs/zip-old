@@ -10,7 +10,6 @@ use std::cell::{RefCell, BorrowState};
 use std::collections::HashMap;
 use flate2::FlateReadExt;
 use bzip2::reader::BzDecompressor;
-use ioconverter::IoConverter;
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -130,7 +129,7 @@ impl<T: Read+io::Seek> ZipReader<T>
             },
             CompressionMethod::Bzip2 =>
             {
-                let bzip2_reader = IoConverter::new(BzDecompressor::new(IoConverter::new(limit_reader)));
+                let bzip2_reader = BzDecompressor::new(limit_reader);
                 Box::new(
                     Crc32Reader::new(
                         bzip2_reader,

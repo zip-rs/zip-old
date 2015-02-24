@@ -11,5 +11,8 @@ Library to support the reading and writing of zip files.
 
 [dependencies]
 flate2 = "*"
-bzip2 = "*"
 time = "*"
+
+[dependencies.bzip2]
+git = "https://github.com/mvdnes/bzip2-rs"
+branch = "new_io"

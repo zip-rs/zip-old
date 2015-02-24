@@ -14,14 +14,13 @@ use flate2::FlateWriteExt;
 use flate2::write::DeflateEncoder;
 use bzip2;
 use bzip2::writer::BzCompressor;
-use ioconverter::IoConverter;
 
 enum GenericZipWriter<W>
 {
     Closed,
     Storer(W),
     Deflater(DeflateEncoder<W>),
-    Bzip2(IoConverter<BzCompressor<IoConverter<W>>>),
+    Bzip2(BzCompressor<W>),
 }
 
 /// Generator for ZIP files.
@@ -236,7 +235,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         {
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
-            GenericZipWriter::Bzip2(w) => match w.into_inner().into_inner() { Ok(r) => r.into_inner(), Err((_, err)) => try!(Err(err)) },
+            GenericZipWriter::Bzip2(w) => match w.into_inner() { Ok(r) => r, Err((_, err)) => try!(Err(err)) },
             GenericZipWriter::Closed => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None))),
         };
 
@@ -244,7 +243,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
-            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(IoConverter::new(BzCompressor::new(IoConverter::new(bare), bzip2::CompressionLevel::Default))),
+            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::CompressionLevel::Default)),
             _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
         };
 
