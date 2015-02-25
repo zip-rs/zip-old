@@ -1,7 +1,7 @@
 zip-rs
 ======
 
-[![Build Status](https://travis-ci.org/mvdnes/zip-rs.svg)](https://travis-ci.org/mvdnes/zip-rs)
+[![Build Status](https://travis-ci.org/mvdnes/zip-rs.svg?branch=master)](https://travis-ci.org/mvdnes/zip-rs)
 
 [Documentation](http://mvdnes.github.io/zip-rs/)
 
