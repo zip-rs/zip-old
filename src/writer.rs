@@ -15,7 +15,7 @@ use flate2::write::DeflateEncoder;
 use bzip2;
 use bzip2::writer::BzCompressor;
 
-enum GenericZipWriter<W>
+enum GenericZipWriter<W: Write + io::Seek>
 {
     Closed,
     Storer(W),
@@ -46,7 +46,7 @@ enum GenericZipWriter<W>
 ///
 /// println!("Result: {:?}", doit());
 /// ```
-pub struct ZipWriter<W>
+pub struct ZipWriter<W: Write + io::Seek>
 {
     inner: GenericZipWriter<W>,
     files: Vec<ZipFile>,
@@ -243,7 +243,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
-            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::CompressionLevel::Default)),
+            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::Compress::Default)),
             _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
         };
 
