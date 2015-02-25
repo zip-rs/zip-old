@@ -11,5 +11,5 @@ Library to support the reading and writing of zip files.
 
 [dependencies]
 flate2 = "^0.1"
-bzip2 = "*"
+bzip2 = "^0.1"
 time = "*"
