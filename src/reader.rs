@@ -44,6 +44,18 @@ pub struct ZipReader<T>
     names_map: HashMap<String, usize>,
 }
 
+pub struct ZipFileIterator<'a>
+{
+    inner: ::std::slice::Iter<'a, ZipFile>,
+}
+
+impl<'a> Iterator for ZipFileIterator<'a> {
+    type Item = &'a ZipFile;
+    fn next(&mut self) -> Option<&'a ZipFile> {
+        self.inner.next()
+    }
+}
+
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 {
     Err(ZipError::UnsupportedZipFile(detail))
@@ -76,9 +88,9 @@ impl<T: Read+io::Seek> ZipReader<T>
     }
 
     /// An iterator over the information of all contained files.
-    pub fn files(&self) -> ::std::slice::Iter<ZipFile>
+    pub fn files(&self) -> ZipFileIterator
     {
-        (&*self.files).iter()
+        ZipFileIterator { inner: (&*self.files).iter(), }
     }
 
     /// Search for a file entry by name
