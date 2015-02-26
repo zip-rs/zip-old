@@ -160,11 +160,4 @@ impl<T: Read+io::Seek> ZipReader<T>
     {
         self.inner.into_inner()
     }
-
-    /// Deprecated method equal to `into_inner()`
-    #[deprecated="renamed to into_inner()"]
-    pub fn unwrap(self) -> T
-    {
-        self.into_inner()
-    }
 }
