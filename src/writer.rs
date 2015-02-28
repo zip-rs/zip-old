@@ -1,3 +1,5 @@
+//! Structs for creating a new zip archive
+
 use compression::CompressionMethod;
 use types::ZipFile;
 use spec;

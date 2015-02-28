@@ -1,3 +1,5 @@
+//! Structs for reading a ZIP archive
+
 use crc32::Crc32Reader;
 use types::ZipFile;
 use compression::CompressionMethod;
@@ -44,6 +46,7 @@ pub struct ZipReader<T>
     names_map: HashMap<String, usize>,
 }
 
+/// Iterator over the files contained in a zip archive
 pub struct ZipFileIterator<'a>
 {
     inner: ::std::slice::Iter<'a, ZipFile>,
