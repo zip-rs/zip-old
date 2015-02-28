@@ -57,6 +57,9 @@ impl<'a> Iterator for ZipFileIterator<'a> {
     fn next(&mut self) -> Option<&'a ZipFile> {
         self.inner.next()
     }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
 }
 
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
