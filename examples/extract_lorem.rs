@@ -1,4 +1,6 @@
-#![feature(old_path, old_io, env)]
+#![feature(old_path, io, fs, env)]
+
+use std::io::prelude::*;
 
 extern crate zip;
 
@@ -11,17 +13,17 @@ fn main()
         return;
     }
     let fname = Path::new(&*args[1]);
-    let file = std::old_io::File::open(&fname).unwrap();
+    let zipfile = std::fs::File::open(&fname).unwrap();
 
-    let zipcontainer = zip::ZipReader::new(file).unwrap();
+    let mut archive = zip::ZipArchive::new(zipfile).unwrap();
     
-    let file = match zipcontainer.get("test/lorem_ipsum.txt")
+    let mut file = match archive.by_name("test/lorem_ipsum.txt")
     {
-        Some(file) => file,
-        None => { println!("File test/lorem_ipsum.txt not found"); return }
+        Ok(file) => file,
+        Err(..) => { println!("File test/lorem_ipsum.txt not found"); return }
     };
 
-    let data = zipcontainer.read_file(file).unwrap().read_to_end().unwrap();
-    let contents = String::from_utf8(data).unwrap();
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
     println!("{}", contents);
 }

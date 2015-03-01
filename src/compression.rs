@@ -37,5 +37,5 @@ pub enum CompressionMethod
     /// PPMd version I, Rev 1
     PPMdI1 = 98,
     /// Unknown (invalid) compression
-    Unknown = 100000,
+    Unknown = 10000,
 }

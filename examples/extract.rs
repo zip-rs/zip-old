@@ -1,8 +1,9 @@
-#![feature(old_path, old_io, env)]
+#![feature(old_path, io, fs, env)]
 
 extern crate zip;
 
-use std::old_io;
+use std::io;
+use std::fs;
 
 fn main()
 {
@@ -13,40 +14,41 @@ fn main()
         return;
     }
     let fname = Path::new(&*args[1]);
-    let file = old_io::File::open(&fname).unwrap();
+    let file = fs::File::open(&fname).unwrap();
 
-    let zipcontainer = zip::ZipReader::new(file).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
 
-    for file in zipcontainer.files()
+    for i in 1..archive.len()
     {
-        let outpath = sanitize_filename(&*file.file_name);
+        let mut file = archive.by_index(i).unwrap();
+        let outpath = sanitize_filename(file.name());
         println!("{}", outpath.display());
 
-        let comment = &file.file_comment;
-        if comment.len() > 0 { println!("  File comment: {}", comment); }
+        {
+            let comment = file.comment();
+            if comment.len() > 0 { println!("  File comment: {}", comment); }
+        }
 
-        old_io::fs::mkdir_recursive(&outpath.dir_path(), old_io::USER_DIR).unwrap();
+        fs::create_dir_all(&outpath.dir_path()).unwrap();
 
-        if (&*file.file_name).ends_with("/") {
+        if (&*file.name()).ends_with("/") {
             create_directory(outpath);
         }
         else {
-            write_file(&zipcontainer, file, outpath);
+            write_file(&mut file, outpath);
         }
     }
 }
 
-fn write_file(zipcontainer: &zip::ZipReader<old_io::File>, file: &zip::ZipFile, outpath: Path)
+fn write_file(reader: &mut zip::read::ZipFileReader, outpath: Path)
 {
-    let mut outfile = old_io::File::create(&outpath);
-    let mut reader = zipcontainer.read_file(file).unwrap();
-    old_io::util::copy(&mut reader, &mut outfile).unwrap();
-    old_io::fs::chmod(&outpath, old_io::USER_FILE).unwrap();
+    let mut outfile = fs::File::create(&outpath).unwrap();
+    io::copy(reader, &mut outfile).unwrap();
 }
 
 fn create_directory(outpath: Path)
 {
-    old_io::fs::mkdir_recursive(&outpath, old_io::USER_DIR).unwrap();
+    fs::create_dir_all(&outpath).unwrap();
 }
 
 fn sanitize_filename(filename: &str) -> Path
