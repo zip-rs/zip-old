@@ -40,7 +40,7 @@ fn main()
     }
 }
 
-fn write_file(reader: &mut zip::read::ZipFileReader, outpath: Path)
+fn write_file(reader: &mut zip::read::ZipFile, outpath: Path)
 {
     let mut outfile = fs::File::create(&outpath).unwrap();
     io::copy(reader, &mut outfile).unwrap();
