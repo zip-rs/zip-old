@@ -1,6 +1,5 @@
 use time;
 use time::Tm;
-use std::cell::RefMut;
 use std::io;
 use std::io::prelude::*;
 
@@ -40,27 +39,6 @@ pub fn tm_to_msdos_time(time: Tm) -> u16
 pub fn tm_to_msdos_date(time: Tm) -> u16
 {
     (time.tm_mday | ((time.tm_mon + 1) << 5) | ((time.tm_year - 80) << 9)) as u16
-}
-
-pub struct RefMutReader<'a, R:'a>
-{
-    inner: RefMut<'a, R>,
-}
-
-impl<'a, R> RefMutReader<'a, R>
-{
-    pub fn new(inner: RefMut<'a, R>) -> RefMutReader<'a, R>
-    {
-        RefMutReader { inner: inner, }
-    }
-}
-
-impl<'a, R: Read> Read for RefMutReader<'a, R>
-{
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>
-    {
-        self.inner.read(buf)
-    }
 }
 
 /// Additional integer write methods for a io::Read

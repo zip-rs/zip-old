@@ -1,7 +1,7 @@
 //! Structs for creating a new zip archive
 
 use compression::CompressionMethod;
-use types::ZipFile;
+use types::ZipFileData;
 use spec;
 use writer_spec;
 use crc32;
@@ -51,7 +51,7 @@ enum GenericZipWriter<W: Write + io::Seek>
 pub struct ZipWriter<W: Write + io::Seek>
 {
     inner: GenericZipWriter<W>,
-    files: Vec<ZipFile>,
+    files: Vec<ZipFileData>,
     stats: ZipWriterStats,
 }
 
@@ -123,7 +123,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             let writer = self.inner.get_plain();
             let header_start = try!(writer.seek(io::SeekFrom::Current(0)));
 
-            let mut file = ZipFile
+            let mut file = ZipFileData
             {
                 encrypted: false,
                 compression_method: compression,
@@ -246,7 +246,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
             CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::Compress::Default)),
-            _ => return Err(ZipError::UnsupportedZipFile("Unsupported compression")),
+            _ => return Err(ZipError::UnsupportedArchive("Unsupported compression")),
         };
 
         Ok(())

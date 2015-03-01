@@ -2,9 +2,8 @@
 
 use time;
 
-#[derive(Clone)]
 /// Structure representing a ZIP file.
-pub struct ZipFile
+pub struct ZipFileData
 {
     /// True if the file is encrypted.
     pub encrypted: bool,

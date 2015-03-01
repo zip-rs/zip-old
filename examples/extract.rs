@@ -16,32 +16,34 @@ fn main()
     let fname = Path::new(&*args[1]);
     let file = fs::File::open(&fname).unwrap();
 
-    let zipcontainer = zip::ZipReader::new(file).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
 
-    for file in zipcontainer.files()
+    for i in 1..archive.len()
     {
-        let outpath = sanitize_filename(&*file.file_name);
+        let mut file = archive.by_index(i).unwrap();
+        let outpath = sanitize_filename(file.name());
         println!("{}", outpath.display());
 
-        let comment = &file.file_comment;
-        if comment.len() > 0 { println!("  File comment: {}", comment); }
+        {
+            let comment = file.comment();
+            if comment.len() > 0 { println!("  File comment: {}", comment); }
+        }
 
         fs::create_dir_all(&outpath.dir_path()).unwrap();
 
-        if (&*file.file_name).ends_with("/") {
+        if (&*file.name()).ends_with("/") {
             create_directory(outpath);
         }
         else {
-            write_file(&zipcontainer, file, outpath);
+            write_file(&mut file, outpath);
         }
     }
 }
 
-fn write_file(zipcontainer: &zip::ZipReader<fs::File>, file: &zip::ZipFile, outpath: Path)
+fn write_file(reader: &mut zip::read::ZipFileReader, outpath: Path)
 {
     let mut outfile = fs::File::create(&outpath).unwrap();
-    let mut reader = zipcontainer.read_file(file).unwrap();
-    io::copy(&mut reader, &mut outfile).unwrap();
+    io::copy(reader, &mut outfile).unwrap();
 }
 
 fn create_directory(outpath: Path)

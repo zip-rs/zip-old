@@ -14,14 +14,14 @@ pub enum ZipError
     /// An Error caused by I/O
     Io(io::Error),
 
-    /// This file is probably not a zipfile. The argument is enclosed.
-    InvalidZipFile(&'static str),
+    /// This file is probably not a zip archive
+    InvalidArchive(&'static str),
 
-    /// This file is unsupported. The reason is enclosed.
-    UnsupportedZipFile(&'static str),
+    /// This archive is not supported
+    UnsupportedArchive(&'static str),
 
-    /// The ZipReader is not available.
-    ReaderUnavailable,
+    /// The requested file could not be found in the archive
+    FileNotFound,
 }
 
 impl ZipError
@@ -36,10 +36,10 @@ impl ZipError
             ZipError::Io(ref io_err) => {
                 ("Io Error: ".to_string() + io_err.description()).into_cow()
             },
-            ZipError::InvalidZipFile(msg) | ZipError::UnsupportedZipFile(msg) => {
+            ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
                 (self.description().to_string() + ": " + msg).into_cow()
             },
-            ZipError::ReaderUnavailable => {
+            ZipError::FileNotFound => {
                 self.description().into_cow()
             },
         }
@@ -69,9 +69,9 @@ impl error::Error for ZipError
         match *self
         {
             ZipError::Io(ref io_err) => io_err.description(),
-            ZipError::InvalidZipFile(..) => "Invalid Zip File",
-            ZipError::UnsupportedZipFile(..) => "Unsupported Zip File",
-            ZipError::ReaderUnavailable => "No reader available",
+            ZipError::InvalidArchive(..) => "Invalid Zip archive",
+            ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
+            ZipError::FileNotFound => "Specified file not found in archive",
         }
     }
 
