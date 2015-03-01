@@ -3,19 +3,22 @@
 use compression::CompressionMethod;
 use types::ZipFileData;
 use spec;
-use writer_spec;
 use crc32;
 use result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
+use std::error::Error;
+use std::ascii::AsciiExt;
 use time;
 use flate2;
 use flate2::FlateWriteExt;
 use flate2::write::DeflateEncoder;
 use bzip2;
 use bzip2::writer::BzCompressor;
+use util;
+use util::WriteIntExt;
 
 enum GenericZipWriter<W: Write + io::Seek>
 {
@@ -85,7 +88,7 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
         match result {
             Ok(..) => Ok(()),
             Err(ZipError::Io(io_err)) => Err(io_err),
-            Err(..) => Err(io::Error::new(io::ErrorKind::Other, "Error occured during finalization", None)),
+            Err(zip_err) => Err(io::Error::new(io::ErrorKind::Other, "A zip error occured", Some(zip_err.description().to_string()))),
         }
     }
 }
@@ -136,7 +139,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 header_start: header_start,
                 data_start: 0,
             };
-            try!(writer_spec::write_local_file_header(writer, &file));
+            try!(write_local_file_header(writer, &file));
 
             let header_end = try!(writer.seek(io::SeekFrom::Current(0)));
             self.stats.start = header_end;
@@ -167,7 +170,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
         file.uncompressed_size = self.stats.bytes_written;
         file.compressed_size = try!(writer.seek(io::SeekFrom::Current(0))) - self.stats.start;
 
-        try!(writer_spec::update_local_file_header(writer, file));
+        try!(update_local_file_header(writer, file));
         try!(writer.seek(io::SeekFrom::End(0)));
         Ok(())
     }
@@ -193,7 +196,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             let central_start = try!(writer.seek(io::SeekFrom::Current(0)));
             for file in self.files.iter()
             {
-                try!(writer_spec::write_central_directory_header(writer, file));
+                try!(write_central_directory_header(writer, file));
             }
             let central_size = try!(writer.seek(io::SeekFrom::Current(0))) - central_start;
 
@@ -278,4 +281,69 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
             _ => panic!("Should have switched to stored beforehand"),
         }
     }
+}
+
+fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
+{
+    try!(writer.write_le_u32(spec::LOCAL_FILE_HEADER_SIGNATURE));
+    try!(writer.write_le_u16(20));
+    let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
+    try!(writer.write_le_u16(flag));
+    try!(writer.write_le_u16(file.compression_method as u16));
+    try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
+    try!(writer.write_le_u16(util::tm_to_msdos_date(file.last_modified_time)));
+    try!(writer.write_le_u32(file.crc32));
+    try!(writer.write_le_u32(file.compressed_size as u32));
+    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    try!(writer.write_le_u16(file.file_name.as_bytes().len() as u16));
+    let extra_field = try!(build_extra_field(file));
+    try!(writer.write_le_u16(extra_field.len() as u16));
+    try!(writer.write_all(file.file_name.as_bytes()));
+    try!(writer.write_all(extra_field.as_slice()));
+
+    Ok(())
+}
+
+fn update_local_file_header<T: Write+io::Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
+{
+    static CRC32_OFFSET : u64 = 14;
+    try!(writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET)));
+    try!(writer.write_le_u32(file.crc32));
+    try!(writer.write_le_u32(file.compressed_size as u32));
+    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    Ok(())
+}
+
+fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
+{
+    try!(writer.write_le_u32(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
+    try!(writer.write_le_u16(0x14FF));
+    try!(writer.write_le_u16(20));
+    let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
+    try!(writer.write_le_u16(flag));
+    try!(writer.write_le_u16(file.compression_method as u16));
+    try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
+    try!(writer.write_le_u16(util::tm_to_msdos_date(file.last_modified_time)));
+    try!(writer.write_le_u32(file.crc32));
+    try!(writer.write_le_u32(file.compressed_size as u32));
+    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    try!(writer.write_le_u16(file.file_name.as_bytes().len() as u16));
+    let extra_field = try!(build_extra_field(file));
+    try!(writer.write_le_u16(extra_field.len() as u16));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u16(0));
+    try!(writer.write_le_u32(0));
+    try!(writer.write_le_u32(file.header_start as u32));
+    try!(writer.write_all(file.file_name.as_bytes()));
+    try!(writer.write_all(extra_field.as_slice()));
+
+    Ok(())
+}
+
+fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>>
+{
+    let writer = Vec::new();
+    // Future work
+    Ok(writer)
 }

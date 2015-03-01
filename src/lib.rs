@@ -15,7 +15,6 @@ pub use compression::CompressionMethod;
 
 mod util;
 mod spec;
-mod writer_spec;
 mod crc32;
 mod types;
 pub mod read;
