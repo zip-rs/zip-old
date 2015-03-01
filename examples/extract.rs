@@ -18,7 +18,7 @@ fn main()
 
     let mut archive = zip::ZipArchive::new(file).unwrap();
 
-    for i in 1..archive.len()
+    for i in 0..archive.len()
     {
         let mut file = archive.by_index(i).unwrap();
         let outpath = sanitize_filename(file.name());

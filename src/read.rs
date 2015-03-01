@@ -29,7 +29,7 @@ use types::ZipFileData;
 ///
 ///     let mut zip = try!(zip::ZipArchive::new(reader));
 ///
-///     for i in 1..zip.len()
+///     for i in 0..zip.len()
 ///     {
 ///         let mut file = zip.by_index(i).unwrap();
 ///         println!("Filename: {}", file.name());
@@ -96,7 +96,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     /// fn iter() {
     ///     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
     ///
-    ///     for i in 1..zip.len() {
+    ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i).unwrap();
     ///         // Do something with file i
     ///     }
