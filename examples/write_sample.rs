@@ -1,4 +1,4 @@
-#![feature(io, fs, old_path, env)]
+#![feature(io, fs, path, exit_status)]
 
 use std::io::prelude::*;
 
@@ -23,7 +23,7 @@ fn main()
 
 fn doit(filename: &str) -> zip::result::ZipResult<()>
 {
-    let path = Path::new(filename);
+    let path = std::path::Path::new(filename);
     let file = std::fs::File::create(&path).unwrap();
 
     let mut zip = zip::ZipWriter::new(file);

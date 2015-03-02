@@ -1,4 +1,4 @@
-#![feature(old_path, io, fs, env)]
+#![feature(path, io, fs, exit_status)]
 
 use std::io::prelude::*;
 
@@ -12,7 +12,7 @@ fn main()
         std::env::set_exit_status(1);
         return;
     }
-    let fname = Path::new(&*args[1]);
+    let fname = std::path::Path::new(&*args[1]);
     let zipfile = std::fs::File::open(&fname).unwrap();
 
     let mut archive = zip::ZipArchive::new(zipfile).unwrap();
