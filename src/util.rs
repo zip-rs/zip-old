@@ -25,7 +25,7 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     {
         Ok(tm) => tm,
         Err(m) => {
-            let _ = write!(&mut ::std::old_io::stdio::stderr(), "Failed parsing date: {}", m);
+            let _ = write!(&mut io::stderr(), "Failed parsing date: {}", m);
             time::empty_tm()
         },
     }
