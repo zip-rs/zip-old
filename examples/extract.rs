@@ -1,4 +1,4 @@
-#![feature(path, io, fs, exit_status)]
+#![feature(path, io, exit_status)]
 
 extern crate zip;
 
