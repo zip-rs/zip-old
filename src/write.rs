@@ -18,7 +18,7 @@ use flate2::write::DeflateEncoder;
 use bzip2;
 use bzip2::writer::BzCompressor;
 use util;
-use util::WriteIntExt;
+use podio::{WritePodExt, LittleEndian};
 
 enum GenericZipWriter<W: Write + io::Seek>
 {
@@ -285,19 +285,19 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
 
 fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
-    try!(writer.write_le_u32(spec::LOCAL_FILE_HEADER_SIGNATURE));
-    try!(writer.write_le_u16(20));
+    try!(writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE));
+    try!(writer.write_u16::<LittleEndian>(20));
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
-    try!(writer.write_le_u16(flag));
-    try!(writer.write_le_u16(file.compression_method as u16));
-    try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
-    try!(writer.write_le_u16(util::tm_to_msdos_date(file.last_modified_time)));
-    try!(writer.write_le_u32(file.crc32));
-    try!(writer.write_le_u32(file.compressed_size as u32));
-    try!(writer.write_le_u32(file.uncompressed_size as u32));
-    try!(writer.write_le_u16(file.file_name.as_bytes().len() as u16));
+    try!(writer.write_u16::<LittleEndian>(flag));
+    try!(writer.write_u16::<LittleEndian>(file.compression_method as u16));
+    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_time(file.last_modified_time)));
+    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_date(file.last_modified_time)));
+    try!(writer.write_u32::<LittleEndian>(file.crc32));
+    try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
+    try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
+    try!(writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16));
     let extra_field = try!(build_extra_field(file));
-    try!(writer.write_le_u16(extra_field.len() as u16));
+    try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16));
     try!(writer.write_all(file.file_name.as_bytes()));
     try!(writer.write_all(extra_field.as_slice()));
 
@@ -308,33 +308,33 @@ fn update_local_file_header<T: Write+io::Seek>(writer: &mut T, file: &ZipFileDat
 {
     static CRC32_OFFSET : u64 = 14;
     try!(writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET)));
-    try!(writer.write_le_u32(file.crc32));
-    try!(writer.write_le_u32(file.compressed_size as u32));
-    try!(writer.write_le_u32(file.uncompressed_size as u32));
+    try!(writer.write_u32::<LittleEndian>(file.crc32));
+    try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
+    try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
     Ok(())
 }
 
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
-    try!(writer.write_le_u32(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
-    try!(writer.write_le_u16(0x14FF));
-    try!(writer.write_le_u16(20));
+    try!(writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
+    try!(writer.write_u16::<LittleEndian>(0x14FF));
+    try!(writer.write_u16::<LittleEndian>(20));
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
-    try!(writer.write_le_u16(flag));
-    try!(writer.write_le_u16(file.compression_method as u16));
-    try!(writer.write_le_u16(util::tm_to_msdos_time(file.last_modified_time)));
-    try!(writer.write_le_u16(util::tm_to_msdos_date(file.last_modified_time)));
-    try!(writer.write_le_u32(file.crc32));
-    try!(writer.write_le_u32(file.compressed_size as u32));
-    try!(writer.write_le_u32(file.uncompressed_size as u32));
-    try!(writer.write_le_u16(file.file_name.as_bytes().len() as u16));
+    try!(writer.write_u16::<LittleEndian>(flag));
+    try!(writer.write_u16::<LittleEndian>(file.compression_method as u16));
+    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_time(file.last_modified_time)));
+    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_date(file.last_modified_time)));
+    try!(writer.write_u32::<LittleEndian>(file.crc32));
+    try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
+    try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
+    try!(writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16));
     let extra_field = try!(build_extra_field(file));
-    try!(writer.write_le_u16(extra_field.len() as u16));
-    try!(writer.write_le_u16(0));
-    try!(writer.write_le_u16(0));
-    try!(writer.write_le_u16(0));
-    try!(writer.write_le_u32(0));
-    try!(writer.write_le_u32(file.header_start as u32));
+    try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16));
+    try!(writer.write_u16::<LittleEndian>(0));
+    try!(writer.write_u16::<LittleEndian>(0));
+    try!(writer.write_u16::<LittleEndian>(0));
+    try!(writer.write_u32::<LittleEndian>(0));
+    try!(writer.write_u32::<LittleEndian>(file.header_start as u32));
     try!(writer.write_all(file.file_name.as_bytes()));
     try!(writer.write_all(extra_field.as_slice()));
 

@@ -13,3 +13,4 @@ Library to support the reading and writing of zip files.
 flate2 = "^0.2"
 bzip2 = "^0.2"
 time = "*"
+podio = "^0.0"

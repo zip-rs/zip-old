@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 use result::{ZipResult, ZipError};
 use std::iter::range_step_inclusive;
-use util::{ReadIntExt, WriteIntExt};
+use podio::{ReadPodExt, WritePodExt, LittleEndian};
 
 pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
 pub static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
@@ -23,18 +23,18 @@ impl CentralDirectoryEnd
 {
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
     {
-        let magic = try!(reader.read_le_u32());
+        let magic = try!(reader.read_u32::<LittleEndian>());
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE
         {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"))
         }
-        let disk_number = try!(reader.read_le_u16());
-        let disk_with_central_directory = try!(reader.read_le_u16());
-        let number_of_files_on_this_disk = try!(reader.read_le_u16());
-        let number_of_files = try!(reader.read_le_u16());
-        let central_directory_size = try!(reader.read_le_u32());
-        let central_directory_offset = try!(reader.read_le_u32());
-        let zip_file_comment_length = try!(reader.read_le_u16()) as usize;
+        let disk_number = try!(reader.read_u16::<LittleEndian>());
+        let disk_with_central_directory = try!(reader.read_u16::<LittleEndian>());
+        let number_of_files_on_this_disk = try!(reader.read_u16::<LittleEndian>());
+        let number_of_files = try!(reader.read_u16::<LittleEndian>());
+        let central_directory_size = try!(reader.read_u32::<LittleEndian>());
+        let central_directory_offset = try!(reader.read_u32::<LittleEndian>());
+        let zip_file_comment_length = try!(reader.read_u16::<LittleEndian>()) as usize;
         let zip_file_comment = try!(reader.read_exact(zip_file_comment_length));
 
         Ok(CentralDirectoryEnd
@@ -59,10 +59,10 @@ impl CentralDirectoryEnd
         for pos in range_step_inclusive(file_length - header_size, search_upper_bound, -1)
         {
             try!(reader.seek(io::SeekFrom::Start(pos as u64)));
-            if try!(reader.read_le_u32()) == CENTRAL_DIRECTORY_END_SIGNATURE
+            if try!(reader.read_u32::<LittleEndian>()) == CENTRAL_DIRECTORY_END_SIGNATURE
             {
                 try!(reader.seek(io::SeekFrom::Current(bytes_between_magic_and_comment_size)));
-                let comment_length = try!(reader.read_le_u16()) as i64;
+                let comment_length = try!(reader.read_u16::<LittleEndian>()) as i64;
                 if file_length - pos - header_size == comment_length
                 {
                     try!(reader.seek(io::SeekFrom::Start(pos as u64)));
@@ -75,14 +75,14 @@ impl CentralDirectoryEnd
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()>
     {
-        try!(writer.write_le_u32(CENTRAL_DIRECTORY_END_SIGNATURE));
-        try!(writer.write_le_u16(self.disk_number));
-        try!(writer.write_le_u16(self.disk_with_central_directory));
-        try!(writer.write_le_u16(self.number_of_files_on_this_disk));
-        try!(writer.write_le_u16(self.number_of_files));
-        try!(writer.write_le_u32(self.central_directory_size));
-        try!(writer.write_le_u32(self.central_directory_offset));
-        try!(writer.write_le_u16(self.zip_file_comment.len() as u16));
+        try!(writer.write_u32::<LittleEndian>(CENTRAL_DIRECTORY_END_SIGNATURE));
+        try!(writer.write_u16::<LittleEndian>(self.disk_number));
+        try!(writer.write_u16::<LittleEndian>(self.disk_with_central_directory));
+        try!(writer.write_u16::<LittleEndian>(self.number_of_files_on_this_disk));
+        try!(writer.write_u16::<LittleEndian>(self.number_of_files));
+        try!(writer.write_u32::<LittleEndian>(self.central_directory_size));
+        try!(writer.write_u32::<LittleEndian>(self.central_directory_offset));
+        try!(writer.write_u16::<LittleEndian>(self.zip_file_comment.len() as u16));
         try!(writer.write_all(self.zip_file_comment.as_slice()));
         Ok(())
     }
