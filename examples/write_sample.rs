@@ -1,4 +1,4 @@
-#![feature(io, path, exit_status)]
+#![feature(exit_status)]
 
 use std::io::prelude::*;
 
