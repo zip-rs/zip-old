@@ -7,7 +7,6 @@ use result::{ZipResult, ZipError};
 use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
-use std::num::FromPrimitive;
 use flate2;
 use flate2::FlateReadExt;
 use bzip2::reader::BzDecompressor;
@@ -231,7 +230,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let mut result = ZipFileData
     {
         encrypted: encrypted,
-        compression_method: FromPrimitive::from_u16(compression_method).unwrap_or(CompressionMethod::Unknown),
+        compression_method: CompressionMethod::from_u16(compression_method),
         last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
         crc32: crc32,
         compressed_size: compressed_size as u64,
