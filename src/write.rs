@@ -289,7 +289,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     try!(writer.write_u16::<LittleEndian>(20));
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
-    try!(writer.write_u16::<LittleEndian>(file.compression_method as u16));
+    try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
     try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_time(file.last_modified_time)));
     try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_date(file.last_modified_time)));
     try!(writer.write_u32::<LittleEndian>(file.crc32));
@@ -321,7 +321,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     try!(writer.write_u16::<LittleEndian>(20));
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
-    try!(writer.write_u16::<LittleEndian>(file.compression_method as u16));
+    try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
     try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_time(file.last_modified_time)));
     try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_date(file.last_modified_time)));
     try!(writer.write_u32::<LittleEndian>(file.crc32));

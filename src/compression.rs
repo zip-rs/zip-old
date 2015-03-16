@@ -5,13 +5,13 @@
 pub enum CompressionMethod
 {
     /// The file is stored (no compression)
-    Stored = 0,
+    Stored,
     /// The file is Deflated
-    Deflated = 8,
+    Deflated,
     /// File is compressed using BZIP2 algorithm
-    Bzip2 = 12,
+    Bzip2,
     /// Unsupported compression method
-    Unsupported = ::std::u16::MAX as isize,
+    Unsupported(u16),
 }
 
 impl CompressionMethod {
@@ -21,7 +21,17 @@ impl CompressionMethod {
             0 => CompressionMethod::Stored,
             8 => CompressionMethod::Deflated,
             12 => CompressionMethod::Bzip2,
-            _ => CompressionMethod::Unsupported,
+            v => CompressionMethod::Unsupported(v),
+        }
+    }
+
+    /// Converts a CompressionMethod to a u16
+    pub fn to_u16(self) -> u16 {
+        match self {
+            CompressionMethod::Stored => 0,
+            CompressionMethod::Deflated => 8,
+            CompressionMethod::Bzip2 => 12,
+            CompressionMethod::Unsupported(v) => v,
         }
     }
 }
@@ -31,26 +41,26 @@ mod test {
     use super::CompressionMethod;
 
     #[test]
-    fn from_u16() {
+    fn from_eq_to() {
         for v in (0..::std::u16::MAX as u32 + 1)
         {
-            let method = CompressionMethod::from_u16(v as u16);
-            match method {
-                CompressionMethod::Unsupported => {},
-                supported => assert_eq!(v, supported as u32),
-            }
+            let from = CompressionMethod::from_u16(v as u16);
+            let to = from.to_u16() as u32;
+            assert_eq!(v, to);
         }
     }
 
     #[test]
-    fn to_u16() {
+    fn to_eq_from() {
         fn check_match(method: CompressionMethod) {
-            assert!(method as u32 == CompressionMethod::from_u16(method as u16) as u32);
+            let to = method.to_u16();
+            let from = CompressionMethod::from_u16(to);
+            let back = from.to_u16();
+            assert_eq!(to, back);
         }
 
         check_match(CompressionMethod::Stored);
         check_match(CompressionMethod::Deflated);
         check_match(CompressionMethod::Bzip2);
-        check_match(CompressionMethod::Unsupported);
     }
 }
