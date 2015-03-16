@@ -299,7 +299,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     let extra_field = try!(build_extra_field(file));
     try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16));
     try!(writer.write_all(file.file_name.as_bytes()));
-    try!(writer.write_all(extra_field.as_slice()));
+    try!(writer.write_all(&extra_field));
 
     Ok(())
 }
@@ -336,7 +336,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     try!(writer.write_u32::<LittleEndian>(0));
     try!(writer.write_u32::<LittleEndian>(file.header_start as u32));
     try!(writer.write_all(file.file_name.as_bytes()));
-    try!(writer.write_all(extra_field.as_slice()));
+    try!(writer.write_all(&extra_field));
 
     Ok(())
 }

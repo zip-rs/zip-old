@@ -83,7 +83,7 @@ impl CentralDirectoryEnd
         try!(writer.write_u32::<LittleEndian>(self.central_directory_size));
         try!(writer.write_u32::<LittleEndian>(self.central_directory_offset));
         try!(writer.write_u16::<LittleEndian>(self.zip_file_comment.len() as u16));
-        try!(writer.write_all(self.zip_file_comment.as_slice()));
+        try!(writer.write_all(&self.zip_file_comment));
         Ok(())
     }
 }
