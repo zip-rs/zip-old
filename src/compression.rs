@@ -1,7 +1,7 @@
 //! Possible ZIP compression methods.
 
 /// Compression methods for the contents of a ZIP file.
-#[derive(Clone, Copy)]
+#[derive(Copy)]
 pub enum CompressionMethod
 {
     /// The file is stored (no compression)
