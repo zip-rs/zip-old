@@ -9,7 +9,6 @@ use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
-use std::error::Error;
 use std::ascii::AsciiExt;
 use time;
 use flate2;
@@ -83,12 +82,12 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
 
     fn flush(&mut self) -> io::Result<()>
     {
-        let result = self.finalize();
-        self.inner = GenericZipWriter::Closed;
-        match result {
-            Ok(..) => Ok(()),
-            Err(ZipError::Io(io_err)) => Err(io_err),
-            Err(zip_err) => Err(io::Error::new(io::ErrorKind::Other, "A zip error occured", Some(zip_err.description().to_string()))),
+        match self.inner
+        {
+            GenericZipWriter::Storer(ref mut w) => w.flush(),
+            GenericZipWriter::Deflater(ref mut w) => w.flush(),
+            GenericZipWriter::Bzip2(ref mut w) => w.flush(),
+            GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
         }
     }
 }
