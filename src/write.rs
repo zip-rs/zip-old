@@ -71,23 +71,19 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
     {
         if self.files.len() == 0 { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started", None)) }
         self.stats.update(buf);
-        match self.inner
+        match self.inner.ref_mut()
         {
-            GenericZipWriter::Storer(ref mut w) => w.write(buf),
-            GenericZipWriter::Deflater(ref mut w) => w.write(buf),
-            GenericZipWriter::Bzip2(ref mut w) => w.write(buf),
-            GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
+            Some(ref mut w) => w.write(buf),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
         }
     }
 
     fn flush(&mut self) -> io::Result<()>
     {
-        match self.inner
+        match self.inner.ref_mut()
         {
-            GenericZipWriter::Storer(ref mut w) => w.flush(),
-            GenericZipWriter::Deflater(ref mut w) => w.flush(),
-            GenericZipWriter::Bzip2(ref mut w) => w.flush(),
-            GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
+            Some(ref mut w) => w.flush(),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
         }
     }
 }
@@ -252,6 +248,15 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         };
 
         Ok(())
+    }
+
+    fn ref_mut(&mut self) -> Option<&mut Write> {
+        match *self {
+            GenericZipWriter::Storer(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Closed => None,
+        }
     }
 
     fn is_closed(&self) -> bool
