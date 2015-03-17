@@ -231,6 +231,12 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
 {
     fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()>
     {
+        match self.current_compression() {
+            Some(method) if method == compression => return Ok(()),
+            None => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None))),
+            _ => {},
+        }
+
         let bare = match mem::replace(self, GenericZipWriter::Closed)
         {
             GenericZipWriter::Storer(w) => w,
@@ -244,7 +250,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
             CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::Compress::Default)),
-            _ => return Err(ZipError::UnsupportedArchive("Unsupported compression")),
+            CompressionMethod::Unsupported(..) => return Err(ZipError::UnsupportedArchive("Unsupported compression")),
         };
 
         Ok(())
@@ -274,6 +280,15 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         {
             GenericZipWriter::Storer(ref mut w) => w,
             _ => panic!("Should have switched to stored beforehand"),
+        }
+    }
+
+    fn current_compression(&self) -> Option<CompressionMethod> {
+        match *self {
+            GenericZipWriter::Storer(..) => Some(CompressionMethod::Stored),
+            GenericZipWriter::Deflater(..) => Some(CompressionMethod::Deflated),
+            GenericZipWriter::Bzip2(..) => Some(CompressionMethod::Bzip2),
+            GenericZipWriter::Closed => None,
         }
     }
 
