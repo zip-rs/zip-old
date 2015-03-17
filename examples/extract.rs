@@ -29,7 +29,7 @@ fn main()
             if comment.len() > 0 { println!("  File comment: {}", comment); }
         }
 
-        fs::create_dir_all(outpath.parent().unwrap_or(std::path::Path::new(""))).unwrap();
+        create_directory(outpath.parent().unwrap_or(std::path::Path::new("")));
 
         if (&*file.name()).ends_with("/") {
             create_directory(&outpath);
@@ -61,7 +61,7 @@ fn sanitize_filename(filename: &str) -> std::path::PathBuf
     std::path::Path::new(no_null_filename)
         .components()
         .filter(|component| *component != std::path::Component::ParentDir)
-        .fold(std::path::PathBuf::new(""), |mut path, ref cur| {
+        .fold(std::path::PathBuf::new("."), |mut path, ref cur| {
             path.push(cur.as_os_str());
             path
         })
