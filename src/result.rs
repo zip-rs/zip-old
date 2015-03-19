@@ -34,7 +34,7 @@ impl ZipError
         match *self
         {
             ZipError::Io(ref io_err) => {
-                ("Io Error: ".to_string() + io_err.description()).into_cow()
+                ("Io Error: ".to_string() + (io_err as &error::Error).description()).into_cow()
             },
             ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
                 (self.description().to_string() + ": " + msg).into_cow()
@@ -68,7 +68,7 @@ impl error::Error for ZipError
     {
         match *self
         {
-            ZipError::Io(ref io_err) => io_err.description(),
+            ZipError::Io(ref io_err) => (io_err as &error::Error).description(),
             ZipError::InvalidArchive(..) => "Invalid Zip archive",
             ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
             ZipError::FileNotFound => "Specified file not found in archive",
