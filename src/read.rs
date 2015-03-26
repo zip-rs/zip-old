@@ -121,7 +121,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     {
         if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
         let ref data = self.files[file_number];
-        let pos = data.data_start as u64;
+        let pos = data.data_start;
 
         if data.encrypted
         {
@@ -129,7 +129,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         }
 
         try!(self.reader.seek(io::SeekFrom::Start(pos)));
-        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size as u64);
+        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
         let reader = match data.compression_method
         {
@@ -224,7 +224,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let file_name_length = try!(reader.read_u16::<LittleEndian>()) as u64;
     let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
-    let data_start = offset as u64 + magic_and_header + file_name_length + extra_field_length;
+    let data_start = offset + magic_and_header + file_name_length + extra_field_length;
 
     // Construct the result
     let mut result = ZipFileData
@@ -237,7 +237,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
         uncompressed_size: uncompressed_size as u64,
         file_name: file_name,
         file_comment: file_comment,
-        header_start: offset as u64,
+        header_start: offset,
         data_start: data_start,
     };
 
