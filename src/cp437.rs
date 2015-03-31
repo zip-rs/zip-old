@@ -149,9 +149,9 @@ mod test
     #[test]
     fn to_char_valid()
     {
-        for i in ::std::iter::range_inclusive(0x00, 0xFF)
+        for i in 0x00_u32 .. 0x100
         {
-            super::to_char(i);
+            super::to_char(i as u8);
         }
     }
 }

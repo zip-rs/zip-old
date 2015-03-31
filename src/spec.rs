@@ -1,7 +1,6 @@
 use std::io;
 use std::io::prelude::*;
 use result::{ZipResult, ZipError};
-use std::iter::range_step_inclusive;
 use podio::{ReadPodExt, WritePodExt, LittleEndian};
 
 pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
@@ -56,7 +55,7 @@ impl CentralDirectoryEnd
         let file_length = try!(reader.seek(io::SeekFrom::End(0))) as i64;
 
         let search_upper_bound = ::std::cmp::max(0, file_length - header_size - ::std::u16::MAX as i64);
-        for pos in range_step_inclusive(file_length - header_size, search_upper_bound, -1)
+        for pos in (file_length - header_size .. search_upper_bound - 1).step_by(-1)
         {
             try!(reader.seek(io::SeekFrom::Start(pos as u64)));
             if try!(reader.read_u32::<LittleEndian>()) == CENTRAL_DIRECTORY_END_SIGNATURE
