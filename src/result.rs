@@ -29,18 +29,17 @@ impl ZipError
     fn detail(&self) -> ::std::borrow::Cow<str>
     {
         use ::std::error::Error;
-        use ::std::borrow::IntoCow;
 
         match *self
         {
             ZipError::Io(ref io_err) => {
-                ("Io Error: ".to_string() + (io_err as &error::Error).description()).into_cow()
+                ("Io Error: ".to_string() + (io_err as &error::Error).description()).into()
             },
             ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
-                (self.description().to_string() + ": " + msg).into_cow()
+                (self.description().to_string() + ": " + msg).into()
             },
             ZipError::FileNotFound => {
-                self.description().into_cow()
+                self.description().into()
             },
         }
     }
