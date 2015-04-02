@@ -69,12 +69,12 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize>
     {
-        if self.files.len() == 0 { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started", None)) }
+        if self.files.len() == 0 { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started")) }
         self.stats.update(buf);
         match self.inner.ref_mut()
         {
             Some(ref mut w) => w.write(buf),
-            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed")),
         }
     }
 
@@ -83,7 +83,7 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
         match self.inner.ref_mut()
         {
             Some(ref mut w) => w.flush(),
-            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None)),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed")),
         }
     }
 }
@@ -233,7 +233,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
     {
         match self.current_compression() {
             Some(method) if method == compression => return Ok(()),
-            None => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None))),
+            None => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed"))),
             _ => {},
         }
 
@@ -242,7 +242,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
             GenericZipWriter::Bzip2(w) => match w.into_inner() { Ok(r) => r, Err((_, err)) => try!(Err(err)) },
-            GenericZipWriter::Closed => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed", None))),
+            GenericZipWriter::Closed => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed"))),
         };
 
         *self = match compression

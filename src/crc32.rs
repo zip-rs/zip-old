@@ -95,7 +95,7 @@ impl<R: Read> Read for Crc32Reader<R>
     {
         let count = match self.inner.read(buf)
         {
-            Ok(0) if !self.check_matches() => { return Err(io::Error::new(io::ErrorKind::Other, "Invalid checksum", None)) },
+            Ok(0) if !self.check_matches() => { return Err(io::Error::new(io::ErrorKind::Other, "Invalid checksum")) },
             Ok(n) => n,
             Err(e) => return Err(e),
         };

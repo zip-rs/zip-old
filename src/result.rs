@@ -28,7 +28,7 @@ impl ZipError
 {
     fn detail(&self) -> ::std::borrow::Cow<str>
     {
-        use ::std::error::Error;
+        use std::error::Error;
 
         match *self
         {
@@ -45,9 +45,9 @@ impl ZipError
     }
 }
 
-impl error::FromError<io::Error> for ZipError
+impl ::std::convert::From<io::Error> for ZipError
 {
-    fn from_error(err: io::Error) -> ZipError
+    fn from(err: io::Error) -> ZipError
     {
         ZipError::Io(err)
     }
