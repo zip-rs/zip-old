@@ -55,7 +55,9 @@ impl CentralDirectoryEnd
         let file_length = try!(reader.seek(io::SeekFrom::End(0))) as i64;
 
         let search_upper_bound = ::std::cmp::max(0, file_length - header_size - ::std::u16::MAX as i64);
-        for pos in (file_length - header_size .. search_upper_bound - 1).step_by(-1)
+
+        let mut pos = file_length - header_size;
+        while pos >= search_upper_bound
         {
             try!(reader.seek(io::SeekFrom::Start(pos as u64)));
             if try!(reader.read_u32::<LittleEndian>()) == CENTRAL_DIRECTORY_END_SIGNATURE
@@ -68,6 +70,7 @@ impl CentralDirectoryEnd
                     return CentralDirectoryEnd::parse(reader);
                 }
             }
+            pos -= 1;
         }
         Err(ZipError::InvalidArchive("Could not find central directory end"))
     }

@@ -2,8 +2,6 @@
 
 #![warn(missing_docs)]
 
-#![feature(step_by)]
-
 extern crate time;
 extern crate flate2;
 extern crate bzip2;
