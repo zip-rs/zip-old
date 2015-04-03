@@ -1,17 +1,18 @@
-#![feature(exit_status)]
-
 extern crate zip;
 
 use std::io;
 use std::fs;
 
-fn main()
+fn main() {
+    std::process::exit(real_main());
+}
+
+fn real_main() -> i32
 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage: {} <filename>", args[0]);
-        std::env::set_exit_status(1);
-        return;
+        return 1;
     }
     let fname = std::path::Path::new(&*args[1]);
     let file = fs::File::open(&fname).unwrap();
@@ -38,6 +39,8 @@ fn main()
             write_file(&mut file, &outpath);
         }
     }
+
+    return 0;
 }
 
 fn write_file(reader: &mut zip::read::ZipFile, outpath: &std::path::Path)

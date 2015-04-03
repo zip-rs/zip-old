@@ -1,16 +1,18 @@
-#![feature(exit_status)]
-
 use std::io::prelude::*;
 
 extern crate zip;
 
 fn main()
 {
+    std::process::exit(real_main());
+}
+
+fn real_main() -> i32
+{
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage: {} <filename>", args[0]);
-        std::env::set_exit_status(1);
-        return;
+        return 1;
     }
 
     let filename = &*args[1];
@@ -19,6 +21,8 @@ fn main()
         Ok(_) => println!("File written to {}", filename),
         Err(e) => println!("Error: {:?}", e),
     }
+
+    return 0;
 }
 
 fn doit(filename: &str) -> zip::result::ZipResult<()>
