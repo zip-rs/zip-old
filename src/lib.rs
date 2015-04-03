@@ -1,6 +1,5 @@
 //! A basic ZipReader/Writer crate
 
-#![feature(unsafe_destructor)]
 #![warn(missing_docs)]
 
 #![feature(step_by)]

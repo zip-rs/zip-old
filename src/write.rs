@@ -213,7 +213,6 @@ impl<W: Write+io::Seek> ZipWriter<W>
     }
 }
 
-#[unsafe_destructor]
 impl<W: Write+io::Seek> Drop for ZipWriter<W>
 {
     fn drop(&mut self)
