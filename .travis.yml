@@ -9,6 +9,8 @@ env:
   global:
   - secure: "VeXvD0tLJyu38t87p8AAztSQVBxsCE1y016l/Nc44203V/RUxj4tz5ifaZcKziPqFHK2ITs2T6fBE1uu404zMVwA0W0J8vmG6+xDoJJLsbwKp4W3SlAI+oIEmFSTIxgzAB7hio17VPDmAqKbnbhbmbP+U94ygoztRNN3ObCZ8yo="
 
+sudo: false
+
 script:
 - cargo build
 - cargo test
