@@ -11,15 +11,11 @@ notifications:
         on_success: never
         on_failure: always
 
-env:
-    global:
-        - secure: "VeXvD0tLJyu38t87p8AAztSQVBxsCE1y016l/Nc44203V/RUxj4tz5ifaZcKziPqFHK2ITs2T6fBE1uu404zMVwA0W0J8vmG6+xDoJJLsbwKp4W3SlAI+oIEmFSTIxgzAB7hio17VPDmAqKbnbhbmbP+U94ygoztRNN3ObCZ8yo="
-
 script:
     - cargo build
     - cargo test
-    - cargo doc --no-deps
+    - cargo doc
     - rustdoc --test README.md -L target
 
 after_success:
-    - .travis/publish_doc.sh
+    - .travis/travis-doc-upload.sh

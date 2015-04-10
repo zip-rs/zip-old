@@ -3,7 +3,7 @@ zip-rs
 
 [![Build Status](https://travis-ci.org/mvdnes/zip-rs.svg?branch=master)](https://travis-ci.org/mvdnes/zip-rs)
 
-[Documentation](http://mvdnes.github.io/zip-rs/)
+[Documentation](http://mvdnes.github.io/rust-docs/zip-rs/zip/index.html)
 
 A zip library for rust wich supports reading and writing of simple ZIP files.
 
