@@ -14,7 +14,7 @@ notifications:
 script:
     - cargo build
     - cargo test
-    - cargo doc
+    - cargo doc --no-deps
     - rustdoc --test README.md -L target
 
 after_success:
