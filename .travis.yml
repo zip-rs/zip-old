@@ -18,4 +18,4 @@ script:
     - rustdoc --test README.md -L target
 
 after_success:
-    - .travis/travis-doc-upload.sh
+    - curl https://mvdnes.github.io/rust-docs/travis-doc-upload.sh | sh
