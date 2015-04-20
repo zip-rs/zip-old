@@ -1,8 +1,9 @@
 //! Error types that can be emitted from this library
 
-use std::io;
+use std::convert;
 use std::error;
 use std::fmt;
+use std::io;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
@@ -45,11 +46,19 @@ impl ZipError
     }
 }
 
-impl ::std::convert::From<io::Error> for ZipError
+impl convert::From<io::Error> for ZipError
 {
     fn from(err: io::Error) -> ZipError
     {
         ZipError::Io(err)
+    }
+}
+
+impl convert::From<ZipError> for io::Error
+{
+    fn from(err: ZipError) -> io::Error
+    {
+        io::Error::new(io::ErrorKind::Other, err)
     }
 }
 
