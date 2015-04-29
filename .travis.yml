@@ -15,7 +15,4 @@ script:
     - cargo build
     - cargo test
     - cargo doc --no-deps
-    - rustdoc --test README.md -L target
-
-after_success:
-    - curl https://mvdnes.github.io/rust-docs/travis-doc-upload.sh | sh
+    - rustdoc --test README.md -L target/debug
