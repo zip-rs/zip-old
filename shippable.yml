@@ -3,8 +3,7 @@ python:
     - 2.7
 
 env:
-    - RUST_VERSION=beta
-    - RUST_VERSION=nightly
+    - RUST_VERSION=stable
 
 notifications:
     email:
@@ -15,7 +14,7 @@ notifications:
 
 install:
     - curl -o ~/rustup.sh https://static.rust-lang.org/rustup.sh
-    - sudo sh ~/rustup.sh --spec=$RUST_VERSION 2> /dev/null
+    - sudo sh ~/rustup.sh --spec=$RUST_VERSION --disable-sudo -y 2> /dev/null
 
 before_script:
     - rustc --version
