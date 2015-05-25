@@ -113,7 +113,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
     }
 
     /// Start a new file for with the requested compression method.
-    pub fn start_file(&mut self, name: &str, compression: CompressionMethod) -> ZipResult<()>
+    pub fn start_file<S>(&mut self, name: S, compression: CompressionMethod) -> ZipResult<()>
+        where S: Into<String>
     {
         try!(self.finish_file());
 
@@ -129,7 +130,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: name.to_string(),
+                file_name: name.into(),
                 file_comment: String::new(),
                 header_start: header_start,
                 data_start: 0,
