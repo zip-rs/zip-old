@@ -13,6 +13,7 @@ use bzip2::reader::BzDecompressor;
 use util;
 use podio::{ReadPodExt, LittleEndian};
 use types::ZipFileData;
+use cp437::FromCp437;
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -201,12 +202,12 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let file_name = match is_utf8
     {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
-        false => ::cp437::to_string(&*file_name_raw),
+        false => file_name_raw.from_cp437(),
     };
     let file_comment = match is_utf8
     {
         true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
-        false => ::cp437::to_string(&*file_comment_raw),
+        false => file_comment_raw.from_cp437(),
     };
 
     // Remember end of central header

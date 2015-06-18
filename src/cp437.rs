@@ -1,8 +1,40 @@
-/// Conversion module to convert a String to IBM codepage 437
+//! Convert a string in IBM codepage 437 to UTF-8
 
-pub fn to_string(input: &[u8]) -> String
-{
-    input.iter().map(|c| to_char(*c)).collect()
+/// Trait to convert IBM codepage 437 to the target type
+pub trait FromCp437 {
+    /// Target type
+    type Target;
+
+    /// Function that does the conversion from cp437.
+    /// Gennerally allocations will be avoided if all data falls into the ASCII range.
+    fn from_cp437(self) -> Self::Target;
+}
+
+impl<'a> FromCp437 for &'a [u8] {
+    type Target = ::std::borrow::Cow<'a, str>;
+
+    fn from_cp437(self) -> Self::Target
+    {
+        if self.iter().all(|c| *c < 0x80) {
+            ::std::str::from_utf8(self).unwrap().into()
+        }
+        else {
+            self.iter().map(|c| to_char(*c)).collect::<String>().into()
+        }
+    }
+}
+
+impl FromCp437 for Vec<u8> {
+    type Target = String;
+
+    fn from_cp437(self) -> Self::Target {
+        if self.iter().all(|c| *c < 0x80) {
+            String::from_utf8(self).unwrap()
+        }
+        else {
+            self.into_iter().map(|c| to_char(c)).collect()
+        }
+    }
 }
 
 fn to_char(input: u8) -> char
@@ -138,7 +170,7 @@ fn to_char(input: u8) -> char
         0xfd => 0x00b2,
         0xfe => 0x25a0,
         0xff => 0x00a0,
-        _ => 0xfffd,
+        _ => unreachable!(),
     };
     ::std::char::from_u32(output).unwrap()
 }
@@ -153,5 +185,28 @@ mod test
         {
             super::to_char(i as u8);
         }
+    }
+
+    #[test]
+    fn ascii() {
+        for i in 0x00 .. 0x80 {
+            assert_eq!(super::to_char(i), i as char);
+        }
+    }
+
+    #[test]
+    fn example_slice() {
+        use super::FromCp437;
+        let data : &[u8] = &[0x43, 0x75, 0x72, 0x61, 0x87, 0x61, 0x6F];
+        assert!(::std::str::from_utf8(data).is_err());
+        assert_eq!(data.from_cp437(), "Curaçao");
+    }
+
+    #[test]
+    fn example_vec() {
+        use super::FromCp437;
+        let data = vec![0xCC, 0xCD, 0xCD, 0xB9];
+        assert!(String::from_utf8(data.clone()).is_err());
+        assert_eq!(&data.from_cp437(), "╠══╣");
     }
 }
