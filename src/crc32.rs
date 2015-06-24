@@ -52,14 +52,14 @@ static CRC32_TABLE : [u32; 256] = [
 /// Update the checksum prev based upon the contents of buf.
 pub fn update(prev: u32, buf: &[u8]) -> u32
 {
-    let mut crc = prev ^ !0u32;
+    let mut crc = !prev;
 
     for byte in buf.iter()
     {
-        crc = CRC32_TABLE[((crc ^ (*byte as u32)) & 0xFF) as usize] ^ (crc >> 8);
+        crc = CRC32_TABLE[(crc as u8 ^ *byte) as usize] ^ (crc >> 8);
     }
 
-    return crc ^ !0u32;
+    !crc
 }
 
 /// Reader that validates the CRC32 when it reaches the EOF.
