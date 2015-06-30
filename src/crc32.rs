@@ -54,9 +54,9 @@ pub fn update(prev: u32, buf: &[u8]) -> u32
 {
     let mut crc = !prev;
 
-    for byte in buf.iter()
+    for &byte in buf.iter()
     {
-        crc = CRC32_TABLE[(crc as u8 ^ *byte) as usize] ^ (crc >> 8);
+        crc = CRC32_TABLE[((crc as u8) ^ byte) as usize] ^ (crc >> 8);
     }
 
     !crc
