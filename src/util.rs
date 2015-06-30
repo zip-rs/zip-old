@@ -23,7 +23,7 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     };
 
     // Re-parse the possibly incorrect timestamp to get a correct one.
-    // This every value will be in range
+    // This ensures every value will be in range
     time::at_utc(tm.to_timespec())
 }
 
