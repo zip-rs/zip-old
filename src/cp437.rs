@@ -197,7 +197,7 @@ mod test
     #[test]
     fn example_slice() {
         use super::FromCp437;
-        let data : &[u8] = &[0x43, 0x75, 0x72, 0x61, 0x87, 0x61, 0x6F];
+        let data = b"Cura\x87ao";
         assert!(::std::str::from_utf8(data).is_err());
         assert_eq!(data.from_cp437(), "Curaçao");
     }
