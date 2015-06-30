@@ -1,7 +1,4 @@
-use time;
-use time::Tm;
-use std::io;
-use std::io::prelude::*;
+use time::{Tm, empty_tm};
 
 pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
 {
@@ -12,22 +9,17 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
     let months =  (date & 0b0000000111100000) >> 5;
     let years =   (date & 0b1111111000000000) >> 9;
 
-    let datetime = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                           years as u32 + 1980,
-                           months,
-                           days,
-                           hours,
-                           minutes,
-                           seconds);
-    let format = "%Y-%m-%d %H:%M:%S";
+    // Month range: Dos [1..12], Tm [0..11]
+    // Year zero: Dos 1980, Tm 1900
 
-    match time::strptime(&*datetime, format)
-    {
-        Ok(tm) => tm,
-        Err(m) => {
-            let _ = write!(&mut io::stderr(), "Failed parsing date: {}", m);
-            time::empty_tm()
-        },
+    Tm {
+        tm_sec: seconds as i32,
+        tm_min: minutes as i32,
+        tm_hour: hours as i32,
+        tm_mday: days as i32,
+        tm_mon: months as i32 - 1,
+        tm_year: years as i32 + 80,
+        ..empty_tm()
     }
 }
 
