@@ -5,6 +5,9 @@ environment:
         - RUST_INSTALL_TRIPLE: x86_64-pc-windows-gnu
           RUST_CHANNEL: stable
 
+platform:
+    - x64
+
 install:
     - ps: Start-FileDownload "http://static.rust-lang.org/dist/channel-rust-${env:RUST_CHANNEL}"
     - ps: $env:RUST_INSTALLER = Select-String "${env:RUST_INSTALL_TRIPLE}.*exe" "channel-rust-${env:RUST_CHANNEL}" | select -exp line
