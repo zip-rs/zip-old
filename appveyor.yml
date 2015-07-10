@@ -15,7 +15,7 @@ install:
     - '%RUST_INSTALLER% /VERYSILENT /NORESTART /DIR="C:\Rust"'
     - call "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall.bat" amd64
     - SET PATH=C:\Rust\bin;%PATH%
-    - SET PATH=%PATH%;C:\MinGW\bin
+    - SET PATH=C:\Rust\bin\rustlib\%RUST_INSTALL_TRIPLE%\bin;%PATH%
     - rustc --version
     - cargo --version
 
