@@ -24,7 +24,9 @@ pub fn msdos_datetime_to_tm(time: u16, date: u16) -> Tm
 
     // Re-parse the possibly incorrect timestamp to get a correct one.
     // This ensures every value will be in range
-    time::at_utc(tm.to_timespec())
+    // TODO: Find an alternative way to do this since it may panic on Windows.
+    //time::at_utc(tm.to_timespec())
+    tm
 }
 
 pub fn tm_to_msdos_time(time: Tm) -> u16
@@ -59,7 +61,8 @@ mod dos_tm_test {
         // The 0 date is actually not a correct msdos date, but we
         // will parse it and adjust accordingly.
         let tm = msdos_datetime_to_tm(0, 0);
-        check_date(tm, 30, 11, 1979);
+        //check_date(tm, 30, 11, 1979); // TODO: this is actually the preferred result, but not possible to obtain on Windows
+        check_date(tm, 0, 0, 1980);
         check_time(tm, 0, 0, 0);
 
         // This is the actual smallest date possible
