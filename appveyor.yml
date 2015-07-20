@@ -19,10 +19,14 @@ install:
     - call "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall.bat" amd64
     - ps: $env:path = "C:\Rust\bin;" + $env:path
     - ps: |
-        if ($env:RUST_INSTALL_TRIPLE -like "*-gnu") {
+        if ($env:RUST_INSTALL_TRIPLE -like "x86_64-*-gnu") {
             Start-FileDownload "http://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/5.1.0/threads-win32/seh/x86_64-5.1.0-release-win32-seh-rt_v4-rev0.7z/download" -FileName mingw64.7z
             7z x -oC:\ mingw64.7z > $null
             $env:path = "C:\mingw64\bin;" + $env:path
+            gcc --version
+        }
+        elseif ($env:RUST_INSTALL_TRIPLE -like "i686-*-gnu") {
+            $env:path = "C:\mingw\bin;" + $env:path
             gcc --version
         }
     - rustc --version --verbose
