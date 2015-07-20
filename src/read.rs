@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use flate2;
 use flate2::FlateReadExt;
 use bzip2::reader::BzDecompressor;
-use util;
 use podio::{ReadPodExt, LittleEndian};
 use types::ZipFileData;
 use cp437::FromCp437;
+use msdos_time::{TmMsDosExt, MsDosDateTime};
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -232,7 +232,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     {
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
-        last_modified_time: util::msdos_datetime_to_tm(last_mod_time, last_mod_date),
+        last_modified_time: try!(::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date))),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,

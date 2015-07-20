@@ -2,16 +2,16 @@
 
 #![warn(missing_docs)]
 
-extern crate time;
-extern crate flate2;
 extern crate bzip2;
+extern crate flate2;
+extern crate msdos_time;
 extern crate podio;
+extern crate time;
 
 pub use read::ZipArchive;
 pub use write::ZipWriter;
 pub use compression::CompressionMethod;
 
-mod util;
 mod spec;
 mod crc32;
 mod types;

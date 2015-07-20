@@ -16,8 +16,8 @@ use flate2::FlateWriteExt;
 use flate2::write::DeflateEncoder;
 use bzip2;
 use bzip2::writer::BzCompressor;
-use util;
 use podio::{WritePodExt, LittleEndian};
+use msdos_time::TmMsDosExt;
 
 enum GenericZipWriter<W: Write + io::Seek>
 {
@@ -309,8 +309,9 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
-    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_time(file.last_modified_time)));
-    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_date(file.last_modified_time)));
+    let msdos_datetime = try!(file.last_modified_time.to_msdos());
+    try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
+    try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
     try!(writer.write_u32::<LittleEndian>(file.crc32));
     try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
     try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
@@ -341,8 +342,9 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
-    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_time(file.last_modified_time)));
-    try!(writer.write_u16::<LittleEndian>(util::tm_to_msdos_date(file.last_modified_time)));
+    let msdos_datetime = try!(file.last_modified_time.to_msdos());
+    try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
+    try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
     try!(writer.write_u32::<LittleEndian>(file.crc32));
     try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
     try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
