@@ -1,6 +1,7 @@
 //! A basic ZipReader/Writer crate
 
 #![warn(missing_docs)]
+#![feature(read_exact)]
 
 extern crate bzip2;
 extern crate flate2;

@@ -195,9 +195,12 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     try!(reader.read_u16::<LittleEndian>());
     try!(reader.read_u32::<LittleEndian>());
     let offset = try!(reader.read_u32::<LittleEndian>()) as u64;
-    let file_name_raw = try!(reader.read_exact(file_name_length));
-    let extra_field = try!(reader.read_exact(extra_field_length));
-    let file_comment_raw  = try!(reader.read_exact(file_comment_length));
+    let mut file_name_raw = vec![0; file_name_length];
+    try!(reader.read_exact(&mut file_name_raw));
+    let mut extra_field = vec![0; extra_field_length];
+    try!(reader.read_exact(&mut extra_field));
+    let mut file_comment_raw = vec![0; file_comment_length];
+    try!(reader.read_exact(&mut file_comment_raw));
 
     let file_name = match is_utf8
     {
@@ -206,7 +209,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     };
     let file_comment = match is_utf8
     {
-        true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
+        true => String::from_utf8_lossy(&file_comment_raw).into_owned(),
         false => file_comment_raw.from_cp437(),
     };
 
