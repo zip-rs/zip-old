@@ -34,7 +34,8 @@ impl CentralDirectoryEnd
         let central_directory_size = try!(reader.read_u32::<LittleEndian>());
         let central_directory_offset = try!(reader.read_u32::<LittleEndian>());
         let zip_file_comment_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-        let zip_file_comment = try!(reader.read_exact(zip_file_comment_length));
+        let mut zip_file_comment = vec![0; zip_file_comment_length];
+        try!(reader.read_exact(&mut zip_file_comment));
 
         Ok(CentralDirectoryEnd
            {
