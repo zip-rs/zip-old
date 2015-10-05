@@ -2,6 +2,7 @@
 
 #![warn(missing_docs)]
 
+#[cfg(feature = "bzip2")]
 extern crate bzip2;
 extern crate flate2;
 extern crate msdos_time;

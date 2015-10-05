@@ -9,6 +9,7 @@ pub enum CompressionMethod
     /// The file is Deflated
     Deflated,
     /// File is compressed using BZIP2 algorithm
+    #[cfg(feature = "bzip2")]
     Bzip2,
     /// Unsupported compression method
     Unsupported(u16),
@@ -20,6 +21,7 @@ impl CompressionMethod {
         match val {
             0 => CompressionMethod::Stored,
             8 => CompressionMethod::Deflated,
+            #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
             v => CompressionMethod::Unsupported(v),
         }
@@ -30,6 +32,7 @@ impl CompressionMethod {
         match self {
             CompressionMethod::Stored => 0,
             CompressionMethod::Deflated => 8,
+            #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
             CompressionMethod::Unsupported(v) => v,
         }
@@ -50,6 +53,16 @@ mod test {
         }
     }
 
+    #[cfg(not(feature = "bzip2"))]
+    fn methods() -> Vec<CompressionMethod> {
+        vec![CompressionMethod::Stored, CompressionMethod::Deflated]
+    }
+
+    #[cfg(feature = "bzip2")]
+    fn methods() -> Vec<CompressionMethod> {
+        vec![CompressionMethod::Stored, CompressionMethod::Deflated, CompressionMethod::Bzip2]
+    }
+
     #[test]
     fn to_eq_from() {
         fn check_match(method: CompressionMethod) {
@@ -59,8 +72,8 @@ mod test {
             assert_eq!(to, back);
         }
 
-        check_match(CompressionMethod::Stored);
-        check_match(CompressionMethod::Deflated);
-        check_match(CompressionMethod::Bzip2);
+        for method in methods() {
+            check_match(method);
+        }
     }
 }
