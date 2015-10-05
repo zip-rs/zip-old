@@ -23,3 +23,20 @@ Currently unsupported zip extensions:
 * ZIP64
 * Encryption
 * Multi-disk
+
+Usage
+-----
+
+With all default features:
+
+```toml
+[dependencies]
+zip = "0.1"
+```
+
+Without the default features:
+
+```toml
+[dependencies]
+zip = { version = "0.1", default-features = false }
+```
