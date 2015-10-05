@@ -20,4 +20,3 @@ bzip2 = { version = "0.2", optional = true }
 
 [features]
 default = ["bzip2"]
-no-bzip2 = []
