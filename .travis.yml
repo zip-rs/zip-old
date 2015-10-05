@@ -11,8 +11,8 @@ notifications:
         on_failure: always
 
 script:
-    - cargo build
     - cargo test
+    - cargo test --no-default-features
     - cargo doc --no-deps
     - rustdoc --test README.md -L target/debug
 
