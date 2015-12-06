@@ -74,10 +74,16 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
     fn write(&mut self, buf: &[u8]) -> io::Result<usize>
     {
         if self.files.len() == 0 { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started")) }
-        self.stats.update(buf);
         match self.inner.ref_mut()
         {
-            Some(ref mut w) => w.write(buf),
+            Some(ref mut w) => {
+                let write_result = w.write(buf);
+                if let Ok(count) = write_result {
+                    self.stats.update(&buf[0..count]);
+                }
+                write_result
+
+            }
             None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed")),
         }
     }
