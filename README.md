@@ -10,7 +10,7 @@ zip-rs
 Info
 ----
 
-A zip library for rust wich supports reading and writing of simple ZIP files.
+A zip library for rust which supports reading and writing of simple ZIP files.
 
 Supported compression formats:
 
