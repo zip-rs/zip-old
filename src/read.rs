@@ -83,7 +83,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         let mut names_map = HashMap::new();
 
         try!(reader.seek(io::SeekFrom::Start(directory_start)));
-        for _ in (0 .. number_of_files)
+        for _ in 0 .. number_of_files
         {
             let file = try!(central_header_to_zip_file(&mut reader));
             names_map.insert(file.file_name.clone(), files.len());
