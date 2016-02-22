@@ -185,7 +185,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
     ///
     /// This will return the writer, but one should normally not append any data to the end of the file.  
     /// Note that the zipfile will also be finished on drop.
-    pub fn finish(mut self) -> ZipResult<W>
+    pub fn finish(&mut self) -> ZipResult<W>
     {
         try!(self.finalize());
         let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
