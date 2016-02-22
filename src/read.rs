@@ -15,7 +15,7 @@ use cp437::FromCp437;
 use msdos_time::{TmMsDosExt, MsDosDateTime};
 
 #[cfg(feature = "bzip2")]
-use bzip2::reader::BzDecompressor;
+use bzip2::read::BzDecoder;
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -54,7 +54,7 @@ enum ZipFileReader<'a> {
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecompressor<io::Take<&'a mut Read>>>),
+    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
 
 /// A struct for reading a zip file
@@ -153,7 +153,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 =>
             {
-                let bzip2_reader = BzDecompressor::new(limit_reader);
+                let bzip2_reader = BzDecoder::new(limit_reader);
                 ZipFileReader::Bzip2(Crc32Reader::new(
                     bzip2_reader,
                     data.crc32))

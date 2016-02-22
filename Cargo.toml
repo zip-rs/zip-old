@@ -16,7 +16,7 @@ flate2 = "0.2"
 time = "0.1"
 podio = "0.1"
 msdos_time = "0.1"
-bzip2 = { version = "0.2", optional = true }
+bzip2 = { version = "0.3", optional = true }
 
 [features]
 default = ["bzip2"]

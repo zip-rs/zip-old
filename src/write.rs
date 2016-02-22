@@ -20,7 +20,7 @@ use msdos_time::TmMsDosExt;
 #[cfg(feature = "bzip2")]
 use bzip2;
 #[cfg(feature = "bzip2")]
-use bzip2::writer::BzCompressor;
+use bzip2::write::BzEncoder;
 
 enum GenericZipWriter<W: Write + io::Seek>
 {
@@ -28,7 +28,7 @@ enum GenericZipWriter<W: Write + io::Seek>
     Storer(W),
     Deflater(DeflateEncoder<W>),
     #[cfg(feature = "bzip2")]
-    Bzip2(BzCompressor<W>),
+    Bzip2(BzEncoder<W>),
 }
 
 /// Generator for ZIP files.
@@ -252,7 +252,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
             GenericZipWriter::Storer(w) => w,
             GenericZipWriter::Deflater(w) => try!(w.finish()),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(w) => match w.into_inner() { Ok(r) => r, Err((_, err)) => try!(Err(err)) },
+            GenericZipWriter::Bzip2(w) => try!(w.finish()),
             GenericZipWriter::Closed => try!(Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed"))),
         };
 
@@ -261,7 +261,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
             #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzCompressor::new(bare, bzip2::Compress::Default)),
+            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default)),
             CompressionMethod::Unsupported(..) => return Err(ZipError::UnsupportedArchive("Unsupported compression")),
         };
 
