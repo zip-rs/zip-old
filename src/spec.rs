@@ -3,9 +3,9 @@ use std::io::prelude::*;
 use result::{ZipResult, ZipError};
 use podio::{ReadPodExt, WritePodExt, LittleEndian};
 
-pub static LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
-pub static CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
-static CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
+pub const LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
+pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
+const CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
 
 pub struct CentralDirectoryEnd
 {

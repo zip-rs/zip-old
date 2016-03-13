@@ -434,7 +434,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
 
 fn update_local_file_header<T: Write+io::Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
-    static CRC32_OFFSET : u64 = 14;
+    const CRC32_OFFSET : u64 = 14;
     try!(writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET)));
     try!(writer.write_u32::<LittleEndian>(file.crc32));
     try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
