@@ -10,12 +10,17 @@ use std::collections::HashMap;
 use flate2;
 use flate2::FlateReadExt;
 use podio::{ReadPodExt, LittleEndian};
-use types::ZipFileData;
+use types::{ZipFileData, SYSTEM_MSDOS, SYSTEM_UNIX};
 use cp437::FromCp437;
 use msdos_time::{TmMsDosExt, MsDosDateTime};
 
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
+
+mod ffi {
+    pub const S_IFDIR: u32 = 0o0040000;
+    pub const S_IFREG: u32 = 0o0100000;
+}
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -181,8 +186,8 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
         return Err(ZipError::InvalidArchive("Invalid Central Directory header"))
     }
 
-    try!(reader.read_u16::<LittleEndian>());
-    try!(reader.read_u16::<LittleEndian>());
+    let version_made_by = try!(reader.read_u16::<LittleEndian>());
+    let _version_to_extract = try!(reader.read_u16::<LittleEndian>());
     let flags = try!(reader.read_u16::<LittleEndian>());
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
@@ -195,9 +200,9 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let file_name_length = try!(reader.read_u16::<LittleEndian>()) as usize;
     let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as usize;
     let file_comment_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    try!(reader.read_u16::<LittleEndian>());
-    try!(reader.read_u16::<LittleEndian>());
-    try!(reader.read_u32::<LittleEndian>());
+    let _disk_number = try!(reader.read_u16::<LittleEndian>());
+    let _internal_file_attributes = try!(reader.read_u16::<LittleEndian>());
+    let external_file_attributes = try!(reader.read_u32::<LittleEndian>());
     let offset = try!(reader.read_u32::<LittleEndian>()) as u64;
     let file_name_raw = try!(ReadPodExt::read_exact(reader, file_name_length));
     let extra_field = try!(ReadPodExt::read_exact(reader, extra_field_length));
@@ -234,6 +239,8 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     // Construct the result
     let mut result = ZipFileData
     {
+        system: (version_made_by >> 8) as u8,
+        version: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
         last_modified_time: try!(::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date))),
@@ -244,6 +251,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
         file_comment: file_comment,
         header_start: offset,
         data_start: data_start,
+        external_attributes: external_file_attributes,
     };
 
     try!(parse_extra_field(&mut result, &*extra_field));
@@ -280,6 +288,14 @@ impl<'a> ZipFile<'a> {
            ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
         }
     }
+    /// Get compatibility of the file attribute information
+    pub fn system(&self) -> u8 {
+        self.data.system
+    }
+    /// Get the version of the file
+    pub fn version(&self) -> u8 {
+        self.data.version
+    }
     /// Get the name of the file
     pub fn name(&self) -> &str {
         &*self.data.file_name
@@ -303,6 +319,28 @@ impl<'a> ZipFile<'a> {
     /// Get the time the file was last modified
     pub fn last_modified(&self) -> ::time::Tm {
         self.data.last_modified_time
+    }
+    /// Get mode for the file
+    pub fn unix_mode(&self) -> Option<u32> {
+        match self.data.system {
+            s if s == SYSTEM_UNIX => {
+                Some(self.data.external_attributes >> 16)
+            },
+            s if s == SYSTEM_MSDOS => {
+                // Interpret MSDOS directory bit
+                let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
+                    ffi::S_IFDIR | 0o0775
+                } else {
+                    ffi::S_IFREG | 0o0664
+                };
+                if 0x01 == (self.data.external_attributes & 0x01) {
+                    // Read-only bit; strip write permissions
+                    mode &= 0o0555;
+                }
+                Some(mode)
+            },
+            _ => None,
+        }
     }
 }
 

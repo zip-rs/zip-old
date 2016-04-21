@@ -1,7 +1,7 @@
 //! Structs for creating a new zip archive
 
 use compression::CompressionMethod;
-use types::ZipFileData;
+use types::{ZipFileData, SYSTEM_MSDOS, DEFAULT_VERSION};
 use spec;
 use crc32;
 use result::{ZipResult, ZipError};
@@ -134,6 +134,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
 
             let mut file = ZipFileData
             {
+                system: SYSTEM_MSDOS,
+                version: DEFAULT_VERSION,
                 encrypted: false,
                 compression_method: compression,
                 last_modified_time: time::now(),
@@ -144,6 +146,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 file_comment: String::new(),
                 header_start: header_start,
                 data_start: 0,
+                external_attributes: 0,
             };
             try!(write_local_file_header(writer, &file));
 
@@ -319,7 +322,8 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
 fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
     try!(writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE));
-    try!(writer.write_u16::<LittleEndian>(20));
+    let version_made_by = (file.system as u16) << 8 | (file.version as u16);
+    try!(writer.write_u16::<LittleEndian>(version_made_by));
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
