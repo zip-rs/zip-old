@@ -3,6 +3,9 @@ extern crate zip;
 use std::io;
 use std::fs;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 fn main() {
     std::process::exit(real_main());
 }
@@ -30,28 +33,51 @@ fn real_main() -> i32
             if comment.len() > 0 { println!("  File comment: {}", comment); }
         }
 
-        create_directory(outpath.parent().unwrap_or(std::path::Path::new("")));
+        create_directory(outpath.parent().unwrap_or(std::path::Path::new("")), None);
+
+        let perms = convert_permissions(file.unix_mode());
 
         if (&*file.name()).ends_with("/") {
-            create_directory(&outpath);
+            create_directory(&outpath, perms);
+            
         }
         else {
-            write_file(&mut file, &outpath);
+            write_file(&mut file, &outpath, perms);
         }
     }
 
     return 0;
 }
 
-fn write_file(reader: &mut zip::read::ZipFile, outpath: &std::path::Path)
+#[cfg(unix)]
+fn convert_permissions(mode: Option<u32>) -> Option<fs::Permissions>
 {
-    let mut outfile = fs::File::create(&outpath).unwrap();
-    io::copy(reader, &mut outfile).unwrap();
+    match mode {
+        Some(mode) => Some(fs::Permissions::from_mode(mode)),
+        None => None,
+    }
+}
+#[cfg(not(unix))]
+fn convert_permissions(_mode: Option<u32>) -> Option<fs::Permissions>
+{
+    None
 }
 
-fn create_directory(outpath: &std::path::Path)
+fn write_file(file: &mut zip::read::ZipFile, outpath: &std::path::Path, perms: Option<fs::Permissions>)
+{
+    let mut outfile = fs::File::create(&outpath).unwrap();
+    io::copy(file, &mut outfile).unwrap();
+    if let Some(perms) = perms {
+        fs::set_permissions(outpath, perms).unwrap();
+    }
+}
+
+fn create_directory(outpath: &std::path::Path, perms: Option<fs::Permissions>)
 {
     fs::create_dir_all(&outpath).unwrap();
+    if let Some(perms) = perms {
+        fs::set_permissions(outpath, perms).unwrap();
+    }
 }
 
 fn sanitize_filename(filename: &str) -> std::path::PathBuf
