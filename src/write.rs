@@ -1,7 +1,7 @@
 //! Structs for creating a new zip archive
 
 use compression::CompressionMethod;
-use types::{ZipFileData, SYSTEM_MSDOS, DEFAULT_VERSION};
+use types::{ZipFileData, System, DEFAULT_VERSION};
 use spec;
 use crc32;
 use result::{ZipResult, ZipError};
@@ -134,7 +134,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
 
             let mut file = ZipFileData
             {
-                system: SYSTEM_MSDOS,
+                system: System::Dos,
                 version: DEFAULT_VERSION,
                 encrypted: false,
                 compression_method: compression,

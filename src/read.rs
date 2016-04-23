@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use flate2;
 use flate2::FlateReadExt;
 use podio::{ReadPodExt, LittleEndian};
-use types::{ZipFileData, SYSTEM_MSDOS, SYSTEM_UNIX};
+use types::{ZipFileData, System};
 use cp437::FromCp437;
 use msdos_time::{TmMsDosExt, MsDosDateTime};
 
@@ -239,7 +239,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     // Construct the result
     let mut result = ZipFileData
     {
-        system: (version_made_by >> 8) as u8,
+        system: System::from_u8((version_made_by >> 8) as u8),
         version: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
@@ -289,7 +289,7 @@ impl<'a> ZipFile<'a> {
         }
     }
     /// Get compatibility of the file attribute information
-    pub fn system(&self) -> u8 {
+    pub fn system(&self) -> System {
         self.data.system
     }
     /// Get the version of the file
@@ -323,10 +323,10 @@ impl<'a> ZipFile<'a> {
     /// Get mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
         match self.data.system {
-            s if s == SYSTEM_UNIX => {
+            System::Unix => {
                 Some(self.data.external_attributes >> 16)
             },
-            s if s == SYSTEM_MSDOS => {
+            System::Dos => {
                 // Interpret MSDOS directory bit
                 let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
                     ffi::S_IFDIR | 0o0775

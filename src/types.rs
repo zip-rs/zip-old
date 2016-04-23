@@ -2,8 +2,27 @@
 
 use time;
 
-pub const SYSTEM_MSDOS: u8 = 0;
-pub const SYSTEM_UNIX: u8 = 3;
+
+#[derive(Clone, Copy)]
+pub enum System
+{
+    Dos,
+    Unix,
+    Unknown,
+}
+
+impl System {
+    pub fn from_u8(system: u8) -> System
+    {
+        use self::System::*;
+
+        match system {
+            0 => Dos,
+            3 => Unix,
+            _ => Unknown,
+        }
+    }
+}
 
 pub const DEFAULT_VERSION: u8 = 20;
 
@@ -11,7 +30,7 @@ pub const DEFAULT_VERSION: u8 = 20;
 pub struct ZipFileData
 {
     /// Compatibility of the file attribute information
-    pub system: u8,
+    pub system: System,
     /// Specification version
     pub version: u8,
     /// True if the file is encrypted.
