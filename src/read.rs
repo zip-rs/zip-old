@@ -289,11 +289,13 @@ impl<'a> ZipFile<'a> {
         }
     }
     /// Get compatibility of the file attribute information
-    pub fn system(&self) -> System {
+    #[allow(dead_code)]
+    fn system(&self) -> System {
         self.data.system
     }
     /// Get the version of the file
-    pub fn version(&self) -> u8 {
+    #[allow(dead_code)]
+    fn version(&self) -> u8 {
         self.data.version
     }
     /// Get the name of the file
@@ -320,7 +322,7 @@ impl<'a> ZipFile<'a> {
     pub fn last_modified(&self) -> ::time::Tm {
         self.data.last_modified_time
     }
-    /// Get mode for the file
+    /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
         match self.data.system {
             System::Unix => {
