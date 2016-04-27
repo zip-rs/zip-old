@@ -9,6 +9,8 @@ pub enum System
     Dos,
     Unix,
     Unknown,
+    #[doc(hidden)]
+    __Nonexhaustive,
 }
 
 impl System {
@@ -32,7 +34,7 @@ pub struct ZipFileData
     /// Compatibility of the file attribute information
     pub system: System,
     /// Specification version
-    pub version: u8,
+    pub version_made_by: u8,
     /// True if the file is encrypted.
     pub encrypted: bool,
     /// Compression method used to store the file

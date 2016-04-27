@@ -135,7 +135,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             let mut file = ZipFileData
             {
                 system: System::Dos,
-                version: DEFAULT_VERSION,
+                version_made_by: DEFAULT_VERSION,
                 encrypted: false,
                 compression_method: compression,
                 last_modified_time: time::now(),
@@ -322,7 +322,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
 fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
     try!(writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE));
-    let version_made_by = (file.system as u16) << 8 | (file.version as u16);
+    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
     try!(writer.write_u16::<LittleEndian>(version_made_by));
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));

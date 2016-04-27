@@ -240,7 +240,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let mut result = ZipFileData
     {
         system: System::from_u8((version_made_by >> 8) as u8),
-        version: version_made_by as u8,
+        version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
         last_modified_time: try!(::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date))),
@@ -288,15 +288,9 @@ impl<'a> ZipFile<'a> {
            ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
         }
     }
-    /// Get compatibility of the file attribute information
-    #[allow(dead_code)]
-    fn system(&self) -> System {
-        self.data.system
-    }
     /// Get the version of the file
-    #[allow(dead_code)]
-    fn version(&self) -> u8 {
-        self.data.version
+    pub fn version_made_by(&self) -> (u8, u8) {
+        (self.data.version_made_by / 10, self.data.version_made_by % 10)
     }
     /// Get the name of the file
     pub fn name(&self) -> &str {
