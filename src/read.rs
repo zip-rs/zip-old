@@ -304,6 +304,10 @@ impl<'a> ZipFile<'a> {
     pub fn last_modified(&self) -> ::time::Tm {
         self.data.last_modified_time
     }
+    /// Get the CRC32 hash of the original file
+    pub fn crc32(&self) -> u32 {
+        self.data.crc32
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
