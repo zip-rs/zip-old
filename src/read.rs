@@ -338,6 +338,10 @@ impl<'a> ZipFile<'a> {
             _ => None,
         }
     }
+    /// Get the CRC32 hash of the original file
+    pub fn crc32(&self) -> u32 {
+        self.data.crc32
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
