@@ -48,6 +48,7 @@ mod ffi {
 ///
 /// println!("Result: {:?}", doit());
 /// ```
+#[derive(Debug)]
 pub struct ZipArchive<R: Read + io::Seek>
 {
     reader: R,

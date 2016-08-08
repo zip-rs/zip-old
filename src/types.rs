@@ -3,7 +3,7 @@
 use time;
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum System
 {
     Dos,
@@ -29,6 +29,7 @@ impl System {
 pub const DEFAULT_VERSION: u8 = 20;
 
 /// Structure representing a ZIP file.
+#[derive(Debug)]
 pub struct ZipFileData
 {
     /// Compatibility of the file attribute information
