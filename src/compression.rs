@@ -85,4 +85,17 @@ mod test {
             check_match(method);
         }
     }
+
+    #[test]
+    fn to_display_fmt() {
+        fn check_match(method: CompressionMethod) {
+            let debug_str = format!("{:?}", method);
+            let display_str = format!("{}", method);
+            assert_eq!(debug_str, display_str);
+        }
+
+        for method in methods() {
+            check_match(method);
+        }
+    }
 }
