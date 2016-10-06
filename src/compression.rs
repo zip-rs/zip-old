@@ -1,5 +1,7 @@
 //! Possible ZIP compression methods.
 
+use std::fmt;
+
 /// Compression methods for the contents of a ZIP file.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CompressionMethod
@@ -39,6 +41,13 @@ impl CompressionMethod {
     }
 }
 
+impl fmt::Display for CompressionMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Just duplicate what the Debug format looks like, i.e, the enum key:
+        write!(f, "{:?}", self)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::CompressionMethod;
@@ -70,6 +79,19 @@ mod test {
             let from = CompressionMethod::from_u16(to);
             let back = from.to_u16();
             assert_eq!(to, back);
+        }
+
+        for method in methods() {
+            check_match(method);
+        }
+    }
+
+    #[test]
+    fn to_display_fmt() {
+        fn check_match(method: CompressionMethod) {
+            let debug_str = format!("{:?}", method);
+            let display_str = format!("{}", method);
+            assert_eq!(debug_str, display_str);
         }
 
         for method in methods() {
