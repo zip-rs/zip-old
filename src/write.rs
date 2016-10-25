@@ -164,6 +164,64 @@ impl<W: Write+io::Seek> ZipWriter<W>
 
         Ok(())
     }
+    
+    /// Start a new file for with the requested compression method, last_time and unix_mode
+    /// small example, when copying one file from one zipfile to another
+    /// ```
+    ///  let unix_mode = match fichier_src.unix_mode() {
+    ///                                Some(x) => x,
+    ///                            _ => 33204 // ugo=rw-rw-r
+    ///                        };
+    /// if let Ok(value) = archive_destination.start_file_attributes(filename_destination, zip::CompressionMethod::Stored, file_source.last_modified(), unix_mode) {
+    /// ...
+    /// ```
+    /// unix_mode explanation :
+    /// 1000000 110 110 100 => ugo=rw-rw-r 
+    /// with     u   g   o
+    /// and     rwx rwx rwx
+    /// so   1000000 110 110 100 <=> ugo=rw-rw-r
+    /// and  1000000 110 100 100 <=> ugo<=>rw-r--r--    
+    pub fn start_file_attributes<S>(&mut self, name: S, compression: CompressionMethod, last_time :  time::Tm, unix_mode : u32) -> ZipResult<()>
+        where S: Into<String>
+    {
+        try!(self.finish_file());
+
+        {
+            let writer = self.inner.get_plain();
+            let header_start = try!(writer.seek(io::SeekFrom::Current(0)));
+
+            let mut file = ZipFileData
+            {
+                system: System::Dos,
+                version_made_by: DEFAULT_VERSION,
+                encrypted: false,
+                compression_method: compression,
+                last_modified_time: last_time,
+                crc32: 0,
+                compressed_size: 0,
+                uncompressed_size: 0,
+                file_name: name.into(),
+                file_comment: String::new(),
+                header_start: header_start,
+                data_start: 0,
+                external_attributes: unix_mode,
+            };
+            try!(write_local_file_header(writer, &file));
+
+            let header_end = try!(writer.seek(io::SeekFrom::Current(0)));
+            self.stats.start = header_end;
+            file.data_start = header_end;
+
+            self.stats.bytes_written = 0;
+            self.stats.crc32 = 0;
+
+            self.files.push(file);
+        }
+
+        try!(self.inner.switch_to(compression));
+
+        Ok(())
+    }
 
     fn finish_file(&mut self) -> ZipResult<()>
     {
@@ -366,14 +424,14 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     try!(writer.write_u32::<LittleEndian>(file.crc32));
     try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
     try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
-    try!(writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16));
+    try!(writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)); // File name length 
     let extra_field = try!(build_extra_field(file));
-    try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16));
-    try!(writer.write_u16::<LittleEndian>(0));
-    try!(writer.write_u16::<LittleEndian>(0));
-    try!(writer.write_u16::<LittleEndian>(0));
-    try!(writer.write_u32::<LittleEndian>(0));
-    try!(writer.write_u32::<LittleEndian>(file.header_start as u32));
+    try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16)); // Extra field length 
+    try!(writer.write_u16::<LittleEndian>(0)); // File comment length 
+    try!(writer.write_u16::<LittleEndian>(0)); // Disk number where file starts
+    try!(writer.write_u16::<LittleEndian>(0)); // internal attributes
+    try!(writer.write_u32::<LittleEndian>(file.external_attributes<<16)); // external attributes
+    try!(writer.write_u32::<LittleEndian>(file.header_start as u32)); // offset
     try!(writer.write_all(file.file_name.as_bytes()));
     try!(writer.write_all(&extra_field));
 
