@@ -175,6 +175,12 @@ impl<W: Write+io::Seek> ZipWriter<W>
     /// if let Ok(value) = archive_destination.start_file_attributes(filename_destination, zip::CompressionMethod::Stored, file_source.last_modified(), unix_mode) {
     /// ...
     /// ```
+    /// unix_mode explanation :
+    /// 1000000 110 110 100 => ugo=rw-rw-r 
+    /// with     u   g   o
+    /// and     rwx rwx rwx
+    /// so   1000000 110 110 100 <=> ugo=rw-rw-r
+    /// and  1000000 110 100 100 <=> ugo<=>rw-r--r--    
     pub fn start_file_attributes<S>(&mut self, name: S, compression: CompressionMethod, last_time :  time::Tm, unix_mode : u32) -> ZipResult<()>
         where S: Into<String>
     {
