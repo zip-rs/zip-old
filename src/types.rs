@@ -2,12 +2,11 @@
 
 use time;
 
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System
 {
-    Dos,
-    Unix,
+    Dos = 0,
+    Unix = 3,
     Unknown,
     #[doc(hidden)]
     __Nonexhaustive,
@@ -58,4 +57,16 @@ pub struct ZipFileData
     pub data_start: u64,
     /// External file attributes
     pub external_attributes: u32,
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn system() {
+        use super::System;
+        assert_eq!(System::Dos as u16, 0u16);
+        assert_eq!(System::Unix as u16, 3u16);
+        assert_eq!(System::from_u8(0), System::Dos);
+        assert_eq!(System::from_u8(3), System::Unix);
+    }
 }
