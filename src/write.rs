@@ -321,22 +321,34 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
 
 fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
+    // local file header signature
     try!(writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE));
+    // version needed to extract
     let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
     try!(writer.write_u16::<LittleEndian>(version_made_by));
+    // general purpose bit flag
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
+    // Compression method
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
+    // last mod file time and last mod file date
     let msdos_datetime = try!(file.last_modified_time.to_msdos());
     try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
     try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
+    // crc-32
     try!(writer.write_u32::<LittleEndian>(file.crc32));
+    // compressed size
     try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
+    // uncompressed size
     try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
+    // file name length
     try!(writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16));
+    // extra field length
     let extra_field = try!(build_extra_field(file));
     try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16));
+    // file name
     try!(writer.write_all(file.file_name.as_bytes()));
+    // extra field
     try!(writer.write_all(&extra_field));
 
     Ok(())
@@ -354,28 +366,48 @@ fn update_local_file_header<T: Write+io::Seek>(writer: &mut T, file: &ZipFileDat
 
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
+    // central file header signature
     try!(writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
+    // version made by
     try!(writer.write_u16::<LittleEndian>(0x14FF));
+    // version needed to extract
     try!(writer.write_u16::<LittleEndian>(20));
+    // general puprose bit flag
     let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
     try!(writer.write_u16::<LittleEndian>(flag));
+    // compression method
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
+    // last mod file time + date
     let msdos_datetime = try!(file.last_modified_time.to_msdos());
     try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
     try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
+    // crc-32
     try!(writer.write_u32::<LittleEndian>(file.crc32));
+    // compressed size
     try!(writer.write_u32::<LittleEndian>(file.compressed_size as u32));
+    // uncompressed size
     try!(writer.write_u32::<LittleEndian>(file.uncompressed_size as u32));
+    // file name length
     try!(writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16));
+    // extra field length
     let extra_field = try!(build_extra_field(file));
     try!(writer.write_u16::<LittleEndian>(extra_field.len() as u16));
+    // file comment length
     try!(writer.write_u16::<LittleEndian>(0));
+    // disk number start
     try!(writer.write_u16::<LittleEndian>(0));
+    // internal file attribytes
     try!(writer.write_u16::<LittleEndian>(0));
+    // external file attributes
     try!(writer.write_u32::<LittleEndian>(0));
+    // relative offset of local header
     try!(writer.write_u32::<LittleEndian>(file.header_start as u32));
+    // file name
     try!(writer.write_all(file.file_name.as_bytes()));
+    // extra field
     try!(writer.write_all(&extra_field));
+    // file comment
+    // <none>
 
     Ok(())
 }
