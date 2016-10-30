@@ -43,7 +43,8 @@ enum GenericZipWriter<W: Write + io::Seek>
 ///     let mut w = std::io::Cursor::new(buf);
 ///     let mut zip = zip::ZipWriter::new(w);
 ///
-///     try!(zip.start_file("hello_world.txt", zip::CompressionMethod::Stored));
+///     let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+///     try!(zip.start_file("hello_world.txt", options));
 ///     try!(zip.write(b"Hello, World!"));
 ///
 ///     // Optionally finish the zip. (this is also done on drop)
@@ -67,6 +68,50 @@ struct ZipWriterStats
     crc32: u32,
     start: u64,
     bytes_written: u64,
+}
+
+/// Metadata for a file to be written
+pub struct FileOptions {
+    compression_method: CompressionMethod,
+    last_modified_time: time::Tm,
+    permissions: Option<u32>,
+}
+
+impl FileOptions {
+    /// Construct a new FileOptions object
+    pub fn default() -> FileOptions {
+        FileOptions {
+            compression_method: CompressionMethod::Deflated,
+            last_modified_time: time::now(),
+            permissions: None,
+        }
+    }
+
+    /// Set the compression method for the new file
+    ///
+    /// The default is `CompressionMethod::Deflated`
+    pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
+        self.compression_method = method;
+        self
+    }
+
+    /// Set the last modified time
+    ///
+    /// The default is the current timestamp
+    pub fn last_modified_time(mut self, mod_time: time::Tm) -> FileOptions {
+        self.last_modified_time = mod_time;
+        self
+    }
+
+    /// Set the permissions for the new file.
+    ///
+    /// The format is represented with unix-style permissions.
+    /// The default is `0o644`, which represents `rw-r--r--` for files,
+    /// and `0o755`, which represents `rwxr-xr-x` for directories
+    pub fn unix_permissions(mut self, mode: u32) -> FileOptions {
+        self.permissions = Some(mode & 0o777);
+        self
+    }
 }
 
 impl<W: Write+io::Seek> Write for ZipWriter<W>
@@ -122,8 +167,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
         }
     }
 
-    /// Start a new file for with the requested compression method.
-    pub fn start_file<S>(&mut self, name: S, compression: CompressionMethod) -> ZipResult<()>
+    /// Start a new file for with the requested options.
+    fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
         where S: Into<String>
     {
         try!(self.finish_file());
@@ -132,13 +177,14 @@ impl<W: Write+io::Seek> ZipWriter<W>
             let writer = self.inner.get_plain();
             let header_start = try!(writer.seek(io::SeekFrom::Current(0)));
 
+            let permissions = options.permissions.unwrap_or(0o100644);
             let mut file = ZipFileData
             {
-                system: System::Dos,
+                system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
                 encrypted: false,
-                compression_method: compression,
-                last_modified_time: time::now(),
+                compression_method: options.compression_method,
+                last_modified_time: options.last_modified_time,
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
@@ -146,7 +192,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 file_comment: String::new(),
                 header_start: header_start,
                 data_start: 0,
-                external_attributes: 0,
+                external_attributes: permissions << 16,
             };
             try!(write_local_file_header(writer, &file));
 
@@ -160,7 +206,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             self.files.push(file);
         }
 
-        try!(self.inner.switch_to(compression));
+        try!(self.inner.switch_to(options.compression_method));
 
         Ok(())
     }
@@ -184,9 +230,36 @@ impl<W: Write+io::Seek> ZipWriter<W>
         Ok(())
     }
 
+    /// Starts a file.
+    pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
+        where S: Into<String>
+    {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o644);
+        }
+        *options.permissions.as_mut().unwrap() |= 0o100000;
+        try!(self.start_entry(name, options));
+        Ok(())
+    }
+
+    /// Add a directory entry.
+    ///
+    /// You should not write data to the file afterwards.
+    pub fn add_directory<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
+        where S: Into<String>
+    {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o755);
+        }
+        *options.permissions.as_mut().unwrap() |= 0o40000;
+        options.compression_method = CompressionMethod::Stored;
+        try!(self.start_entry(name, options));
+        Ok(())
+    }
+
     /// Finish the last file and write all other zip-structures
     ///
-    /// This will return the writer, but one should normally not append any data to the end of the file.  
+    /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
     pub fn finish(&mut self) -> ZipResult<W>
     {
@@ -369,7 +442,8 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // central file header signature
     try!(writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE));
     // version made by
-    try!(writer.write_u16::<LittleEndian>(0x14FF));
+    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
+    try!(writer.write_u16::<LittleEndian>(version_made_by));
     // version needed to extract
     try!(writer.write_u16::<LittleEndian>(20));
     // general puprose bit flag
@@ -399,7 +473,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // internal file attribytes
     try!(writer.write_u16::<LittleEndian>(0));
     // external file attributes
-    try!(writer.write_u32::<LittleEndian>(0));
+    try!(writer.write_u32::<LittleEndian>(file.external_attributes));
     // relative offset of local header
     try!(writer.write_u32::<LittleEndian>(file.header_start as u32));
     // file name
