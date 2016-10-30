@@ -31,12 +31,12 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "0.1"
+zip = "0.2"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "0.1", default-features = false }
+zip = { version = "0.2", default-features = false }
 ```
