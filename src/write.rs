@@ -178,6 +178,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
             let header_start = try!(writer.seek(io::SeekFrom::Current(0)));
 
             let permissions = options.permissions.unwrap_or(0o100644);
+            let file_name = name.into();
+            let file_name_raw = file_name.clone().into_bytes();
             let mut file = ZipFileData
             {
                 system: System::Unix,
@@ -188,7 +190,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: name.into(),
+                file_name: file_name,
+                file_name_raw: file_name_raw,
                 file_comment: String::new(),
                 header_start: header_start,
                 data_start: 0,

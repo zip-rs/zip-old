@@ -49,6 +49,8 @@ pub struct ZipFileData
     pub uncompressed_size: u64,
     /// Name of the file
     pub file_name: String,
+    /// Raw file name. To be used when file_name was incorrectly decoded.
+    pub file_name_raw: Vec<u8>,
     /// File comment
     pub file_comment: String,
     /// Specifies where the local header of the file starts

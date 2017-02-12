@@ -212,7 +212,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let file_name = match is_utf8
     {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
-        false => file_name_raw.from_cp437(),
+        false => file_name_raw.clone().from_cp437(),
     };
     let file_comment = match is_utf8
     {
@@ -249,6 +249,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
         file_name: file_name,
+        file_name_raw: file_name_raw,
         file_comment: file_comment,
         header_start: offset,
         data_start: data_start,
@@ -296,6 +297,10 @@ impl<'a> ZipFile<'a> {
     /// Get the name of the file
     pub fn name(&self) -> &str {
         &*self.data.file_name
+    }
+    /// Get the name of the file, in the raw (internal) byte representation.
+    pub fn name_raw(&self) -> &[u8] {
+        &*self.data.file_name_raw
     }
     /// Get the comment of the file
     pub fn comment(&self) -> &str {

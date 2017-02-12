@@ -39,7 +39,7 @@ fn real_main() -> i32
 
         if (&*file.name()).ends_with("/") {
             create_directory(&outpath, perms);
-            
+
         }
         else {
             write_file(&mut file, &outpath, perms);
