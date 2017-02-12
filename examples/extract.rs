@@ -89,7 +89,10 @@ fn sanitize_filename(filename: &str) -> std::path::PathBuf
 
     std::path::Path::new(no_null_filename)
         .components()
-        .filter(|component| *component != std::path::Component::ParentDir)
+        .filter(|component| match *component {
+            std::path::Component::Normal(..) => true,
+            _ => false
+        })
         .fold(std::path::PathBuf::new(), |mut path, ref cur| {
             path.push(cur.as_os_str());
             path
