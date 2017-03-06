@@ -53,7 +53,7 @@ enum GenericZipWriter<W: Write + io::Seek>
 ///     Ok(())
 /// }
 ///
-/// println!("Result: {:?}", doit());
+/// println!("Result: {:?}", doit().unwrap());
 /// ```
 pub struct ZipWriter<W: Write + io::Seek>
 {
@@ -226,10 +226,12 @@ impl<W: Write+io::Seek> ZipWriter<W>
         };
         file.crc32 = self.stats.crc32;
         file.uncompressed_size = self.stats.bytes_written;
-        file.compressed_size = try!(writer.seek(io::SeekFrom::Current(0))) - self.stats.start;
+
+        let file_end = try!(writer.seek(io::SeekFrom::Current(0)));
+        file.compressed_size = file_end - self.stats.start;
 
         try!(update_local_file_header(writer, file));
-        try!(writer.seek(io::SeekFrom::End(0)));
+        try!(writer.seek(io::SeekFrom::Start(file_end)));
         Ok(())
     }
 
