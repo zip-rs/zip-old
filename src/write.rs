@@ -12,10 +12,12 @@ use std::mem;
 use std::ascii::AsciiExt;
 use time;
 use flate2;
+use flate2::Crc;
 use flate2::FlateWriteExt;
 use flate2::write::DeflateEncoder;
 use podio::{WritePodExt, LittleEndian};
 use msdos_time::TmMsDosExt;
+use rayon::prelude::*;
 
 #[cfg(feature = "bzip2")]
 use bzip2;
@@ -169,7 +171,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
+    fn start_entry<S>(&mut self, name: S, options: &FileOptions) -> ZipResult<()>
         where S: Into<String>
     {
         try!(self.finish_file());
@@ -210,8 +212,6 @@ impl<W: Write+io::Seek> ZipWriter<W>
             self.files.push(file);
         }
 
-        try!(self.inner.switch_to(options.compression_method));
-
         Ok(())
     }
 
@@ -240,11 +240,9 @@ impl<W: Write+io::Seek> ZipWriter<W>
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
         where S: Into<String>
     {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
-        *options.permissions.as_mut().unwrap() |= 0o100000;
-        try!(self.start_entry(name, options));
+        set_file_permissions(&mut options.permissions);
+        try!(self.start_entry(name, &options));
+        try!(self.inner.switch_to(options.compression_method));
         Ok(())
     }
 
@@ -259,7 +257,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
         }
         *options.permissions.as_mut().unwrap() |= 0o40000;
         options.compression_method = CompressionMethod::Stored;
-        try!(self.start_entry(name, options));
+        try!(self.start_entry(name, &options));
+        try!(self.inner.switch_to(options.compression_method));
         Ok(())
     }
 
@@ -304,6 +303,71 @@ impl<W: Write+io::Seek> ZipWriter<W>
 
         Ok(())
     }
+
+    /// Add a file that is broken up into consecutive streams.
+    /// The streams will be read in parallel.
+    /// The position at which each of the deflated parts start is returned.
+    /// These can be used to inflate the file in parallel.
+    pub fn add_stream<S, I, R>(&mut self, name: S, mut options: FileOptions, content: I) -> ZipResult<Vec<u64>>
+        where S: Into<String>,
+              I: ParallelIterator<Item=R>,
+              R: io::Read + Send
+    {
+        // only support deflated for now
+        assert_eq!(options.compression_method, CompressionMethod::Deflated);
+        let mut compressed = Vec::new();
+        let r: Vec<_> = content.map(|mut substream| {
+            compress_substream(&mut substream)
+        }).collect();
+        for c in r.into_iter().enumerate() {
+            let r = try!(c.1);
+            compressed.push((c.0, r.0, r.1));
+        }
+        let mut crc32 = Crc::new();
+        for c in &compressed {
+            crc32.combine(&c.1);
+        }
+
+        // write the compressed buffers as one file entry into the zip
+        set_file_permissions(&mut options.permissions);
+        try!(self.start_entry(name, &options));
+
+        let mut uncompressed_size = 0;
+        let mut offsets = Vec::new();
+        for c in &compressed {
+            offsets.push(uncompressed_size);
+            try!(self.inner.ref_mut().unwrap().write(&c.2));
+            uncompressed_size += c.1.amount() as u64;
+        }
+        try!(self.inner.ref_mut().unwrap().write(&[3, 0]));
+        self.stats.bytes_written = uncompressed_size;
+        self.stats.crc32 = crc32.sum();
+        try!(self.finish_file());
+        Ok(offsets)
+    }
+}
+
+fn set_file_permissions(permissions: &mut Option<u32>) {
+    if permissions.is_none() {
+        *permissions = Some(0o644);
+    }
+    *permissions.as_mut().unwrap() |= 0o100000;
+}
+
+// return triple: (crc32, uncompressed_size, deflated_data)
+fn compress_substream<R>(stream: &mut R) -> ZipResult<(Crc, Vec<u8>)> where R: io::Read {
+    let mut crc32 = Crc::new();
+    let mut buf = vec![0; 65528];
+    let mut writer = DeflateEncoder::new(Vec::new(), flate2::Compression::Default);
+    loop {
+        let n_read = try!(stream.read(&mut buf));
+        if n_read == 0 {
+            break;
+        }
+        try!(writer.write_all(&buf[..n_read]));
+        crc32.update(&buf[..n_read]);
+    }
+    Ok((crc32, try!(writer.flush_finish())))
 }
 
 impl<W: Write+io::Seek> Drop for ZipWriter<W>
@@ -504,8 +568,8 @@ mod test {
     use std::io;
     use std::io::Write;
     use time;
-    use super::{FileOptions, ZipWriter};
-    use compression::CompressionMethod;
+    use super::{FileOptions, CompressionMethod, ZipWriter};
+    use rayon::prelude::*;
 
     #[test]
     fn write_empty_zip() {
@@ -535,4 +599,53 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         assert_eq!(result.get_ref(), &v);
     }
+
+    #[test]
+    fn write_streams() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut mtime = time::empty_tm();
+        mtime.tm_year = 80;
+        mtime.tm_mday = 1;
+        let options = FileOptions {
+            compression_method: CompressionMethod::Deflated,
+            last_modified_time: mtime,
+            permissions: Some(33188),
+        };
+        let mut v: Vec<R> = Vec::new();
+        v.push(R::new(b"hello".to_vec()));
+        v.push(R::new(b" ".to_vec()));
+        v.push(R::new(b"world".to_vec()));
+        writer.add_stream("hello.txt", options, v.into_par_iter()).unwrap();
+        let result = writer.finish().unwrap();
+        assert_eq!(result.get_ref().len(), 165);
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/streams.zip"));
+        assert_eq!(result.get_ref(), &v);
+    }
+
+    struct R {
+        data: Vec<u8>,
+        pos: usize
+    }
+    impl R {
+        fn new(data: Vec<u8>) -> R {
+            R {
+                data: data,
+                pos: 0
+            }
+        }
+    }
+    impl io::Read for R {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if buf.len() == 0 || self.pos == self.data.len() {
+                return Ok(0);
+            }
+            let avail = ::std::cmp::min(buf.len(), self.data.len() - self.pos);
+            let end = self.pos + avail;
+            buf[..avail].copy_from_slice(&self.data[self.pos..end]);
+            self.pos += avail;
+            Ok(avail)
+        }
+    }
 }
+

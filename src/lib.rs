@@ -8,6 +8,7 @@ extern crate flate2;
 extern crate msdos_time;
 extern crate podio;
 extern crate time;
+extern crate rayon;
 
 pub use read::ZipArchive;
 pub use write::ZipWriter;
