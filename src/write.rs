@@ -497,3 +497,40 @@ fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>>
     // Future work
     Ok(writer)
 }
+
+#[cfg(test)]
+mod test {
+    use std::io;
+    use std::io::Write;
+    use time;
+    use write::{FileOptions, CompressionMethod, ZipWriter};
+
+    #[test]
+    fn write_empty_zip() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let result = writer.finish().unwrap();
+        assert_eq!(result.get_ref().len(), 28);
+        let v: Vec<u8> = vec![80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115];
+        assert_eq!(result.get_ref(), &v);
+    }
+
+    #[test]
+    fn write_mimetype_zip() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut mtime = time::empty_tm();
+        mtime.tm_year = 80;
+        mtime.tm_mday = 1;
+        let options = FileOptions {
+            compression_method: CompressionMethod::Stored,
+            last_modified_time: mtime,
+            permissions: Some(33188),
+        };
+        writer.start_file("mimetype", options).unwrap();
+        writer.write(b"application/vnd.oasis.opendocument.text").unwrap();
+        let result = writer.finish().unwrap();
+        assert_eq!(result.get_ref().len(), 159);
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        assert_eq!(result.get_ref(), &v);
+    }
+}
