@@ -503,7 +503,8 @@ mod test {
     use std::io;
     use std::io::Write;
     use time;
-    use write::{FileOptions, CompressionMethod, ZipWriter};
+    use super::{FileOptions, ZipWriter};
+    use compression::CompressionMethod;
 
     #[test]
     fn write_empty_zip() {
