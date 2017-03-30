@@ -256,7 +256,10 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
         external_attributes: external_file_attributes,
     };
 
-    try!(parse_extra_field(&mut result, &*extra_field));
+    match parse_extra_field(&mut result, &*extra_field) {
+        Ok(..) | Err(ZipError::Io(..)) => {},
+        Err(e) => try!(Err(e)),
+    }
 
     // Go back after the central header
     try!(reader.seek(io::SeekFrom::Start(return_position)));
