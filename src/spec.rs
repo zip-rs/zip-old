@@ -48,7 +48,7 @@ impl CentralDirectoryEnd
            })
     }
 
-    pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
+    pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u32)>
     {
         let header_size = 22;
         let bytes_between_magic_and_comment_size = header_size - 6;
@@ -66,8 +66,8 @@ impl CentralDirectoryEnd
                 let comment_length = try!(reader.read_u16::<LittleEndian>()) as i64;
                 if file_length - pos - header_size == comment_length
                 {
-                    try!(reader.seek(io::SeekFrom::Start(pos as u64)));
-                    return CentralDirectoryEnd::parse(reader);
+                    let cde_start_pos = try!(reader.seek(io::SeekFrom::Start(pos as u64))) as u32;
+                    return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
                 }
             }
             pos -= 1;
