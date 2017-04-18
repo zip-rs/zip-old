@@ -111,6 +111,12 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     pub fn into_inner(self) -> R {
         self.reader
     }
+
+    /// Try to build an index for this ZipArchive by reading all the
+    /// entries in the directory.
+    pub fn index(&mut self) -> ZipResult<ZipIndex> {
+        ZipIndex::new(self)
+    }
 }
 
 impl<'a, R: Read + io::Seek> IntoIterator for &'a mut ZipArchive<R> {
@@ -171,7 +177,7 @@ impl<'a, R: Read + io::Seek> Iterator for ZipArchiveIter<'a, R> {
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
 ///     let mut archive = try!(zip::ZipArchive::new(reader));
-///     let zip = try!(zip::ZipIndex::new(&mut archive));
+///     let zip = try!(archive.index());
 ///
 ///     for i in 0..zip.len()
 ///     {
@@ -232,7 +238,7 @@ impl ZipIndex {
     /// ```
     /// fn iter() {
     ///     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
-    ///     let zip = zip::ZipIndex::new(&mut archive).unwrap();
+    ///     let zip = archive.index().unwrap();
     ///
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i).unwrap();

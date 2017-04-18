@@ -16,7 +16,7 @@ fn real_main() -> i32 {
     let zipfile = std::fs::File::open(&fname).unwrap();
 
     let mut archive = zip::ZipArchive::new(zipfile).expect("Couldn't open zip file");
-    let index = zip::ZipIndex::new(&mut archive).unwrap();
+    let index = archive.index().unwrap();
 
     let file_data = match index.by_name("test/lorem_ipsum.txt") {
         Ok(file_data) => file_data,
