@@ -4,8 +4,7 @@ use std::fmt;
 
 /// Compression methods for the contents of a ZIP file.
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum CompressionMethod
-{
+pub enum CompressionMethod {
     /// The file is stored (no compression)
     Stored,
     /// The file is Deflated
@@ -54,8 +53,7 @@ mod test {
 
     #[test]
     fn from_eq_to() {
-        for v in 0..(::std::u16::MAX as u32 + 1)
-        {
+        for v in 0..(::std::u16::MAX as u32 + 1) {
             let from = CompressionMethod::from_u16(v as u16);
             let to = from.to_u16() as u32;
             assert_eq!(v, to);
