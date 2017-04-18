@@ -38,7 +38,7 @@ mod ffi {
 ///     let buf: &[u8] = &[0u8; 128];
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
-///     let mut zip_archive = try!(zip::read::ZipArchive::new(reader));
+///     let mut zip_archive = try!(zip::ZipArchive::new(reader));
 ///     for maybe_file_data in &mut zip_archive {
 ///         let file_data = try!(maybe_file_data);
 ///         println!("Filename: {}", file_data.file_name);
@@ -170,7 +170,7 @@ impl<'a, R: Read + io::Seek> Iterator for ZipArchiveIter<'a, R> {
 ///     let buf: &[u8] = &[0u8; 128];
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
-///     let mut archive = try!(zip::read::ZipArchive::new(reader));
+///     let mut archive = try!(zip::ZipArchive::new(reader));
 ///     let zip = try!(zip::ZipIndex::new(&mut archive));
 ///
 ///     for i in 0..zip.len()
@@ -231,7 +231,7 @@ impl ZipIndex {
     ///
     /// ```
     /// fn iter() {
-    ///     let mut archive = zip::read::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
+    ///     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
     ///     let zip = zip::ZipIndex::new(&mut archive).unwrap();
     ///
     ///     for i in 0..zip.len() {

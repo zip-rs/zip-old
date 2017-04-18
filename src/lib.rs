@@ -9,6 +9,7 @@ extern crate msdos_time;
 extern crate podio;
 extern crate time;
 
+pub use read::ZipArchive;
 pub use read::ZipIndex;
 pub use write::ZipWriter;
 pub use compression::CompressionMethod;
