@@ -171,7 +171,7 @@ impl<'a, R: Read + io::Seek> Iterator for ZipArchiveIter<'a, R> {
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
 ///     let mut archive = try!(zip::read::ZipArchive::new(reader));
-///     let mut zip = try!(zip::ZipIndex::new(&mut archive));
+///     let zip = try!(zip::ZipIndex::new(&mut archive));
 ///
 ///     for i in 0..zip.len()
 ///     {
@@ -232,7 +232,7 @@ impl ZipIndex {
     /// ```
     /// fn iter() {
     ///     let mut archive = zip::read::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
-    ///     let mut zip = zip::ZipIndex::new(&mut archive).unwrap();
+    ///     let zip = zip::ZipIndex::new(&mut archive).unwrap();
     ///
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i).unwrap();
@@ -245,7 +245,7 @@ impl ZipIndex {
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<&'a ZipFileData> {
+    pub fn by_name<'a>(&'a self, name: &str) -> ZipResult<&'a ZipFileData> {
         let index = match self.names_map.get(name) {
             Some(index) => *index,
             None => {
@@ -256,7 +256,7 @@ impl ZipIndex {
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<&'a ZipFileData> {
+    pub fn by_index<'a>(&'a self, file_number: usize) -> ZipResult<&'a ZipFileData> {
         if file_number >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }

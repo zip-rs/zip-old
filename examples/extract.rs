@@ -20,7 +20,7 @@ fn real_main() -> i32 {
     let file = fs::File::open(&fname).unwrap();
 
     let mut archive = zip::read::ZipArchive::new(file).expect("Couldn't open archive");
-    let mut index = zip::ZipIndex::new(&mut archive).unwrap();
+    let index = zip::ZipIndex::new(&mut archive).unwrap();
 
     for i in 0..index.len() {
         let file_data = index.by_index(i).unwrap();
