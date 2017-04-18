@@ -34,7 +34,7 @@ mod ffi {
 ///     let buf: &[u8] = &[0u8; 128];
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
-///     let mut zip = try!(zip::ZipArchive::new(reader));
+///     let mut zip = try!(zip::ZipIndex::new(reader));
 ///
 ///     for i in 0..zip.len()
 ///     {
@@ -49,7 +49,7 @@ mod ffi {
 /// println!("Result: {:?}", doit());
 /// ```
 #[derive(Debug)]
-pub struct ZipArchive<R: Read + io::Seek> {
+pub struct ZipIndex<R: Read + io::Seek> {
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
@@ -72,9 +72,9 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
 
-impl<R: Read + io::Seek> ZipArchive<R> {
+impl<R: Read + io::Seek> ZipIndex<R> {
     /// Opens a Zip archive and parses the central directory
-    pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
+    pub fn new(mut reader: R) -> ZipResult<ZipIndex<R>> {
         let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
 
         if footer.disk_number != footer.disk_with_central_directory {
@@ -94,7 +94,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             files.push(file);
         }
 
-        Ok(ZipArchive {
+        Ok(ZipIndex {
             reader: reader,
             files: files,
             names_map: names_map,
@@ -105,7 +105,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     ///
     /// ```
     /// fn iter() {
-    ///     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
+    ///     let mut zip = zip::ZipIndex::new(std::io::Cursor::new(vec![])).unwrap();
     ///
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i).unwrap();
