@@ -72,6 +72,45 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             directory_start: directory_start,
         })
     }
+
+    /// Open a contained file for reading
+    pub fn open<'a>(&'a mut self, data: &'a ZipFileData) -> ZipResult<ZipFile<'a>> {
+        let pos = data.data_start;
+
+        if data.encrypted {
+            return unsupported_zip_error("Encrypted files are not supported");
+        }
+
+        try!(self.reader.seek(io::SeekFrom::Start(pos)));
+        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
+
+        let reader = match data.compression_method {
+            CompressionMethod::Stored => {
+                ZipFileReader::Stored(Crc32Reader::new(limit_reader, data.crc32))
+            }
+            CompressionMethod::Deflated => {
+                let deflate_reader = limit_reader.deflate_decode();
+                ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, data.crc32))
+            }
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2 => {
+                let bzip2_reader = BzDecoder::new(limit_reader);
+                ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, data.crc32))
+            }
+            _ => return unsupported_zip_error("Compression method not supported"),
+        };
+        Ok(ZipFile {
+            reader: reader,
+            data: data,
+        })
+    }
+
+    /// Unwrap and return the inner reader object
+    ///
+    /// The position of the reader is undefined.
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
 }
 
 impl<'a, R: Read + io::Seek> IntoIterator for &'a mut ZipArchive<R> {
@@ -222,41 +261,7 @@ impl<R: Read + io::Seek> ZipIndex<R> {
             return Err(ZipError::FileNotFound);
         }
         let ref data = self.files[file_number];
-        let pos = data.data_start;
-
-        if data.encrypted {
-            return unsupported_zip_error("Encrypted files are not supported");
-        }
-
-        try!(self.archive.reader.seek(io::SeekFrom::Start(pos)));
-        let limit_reader = (self.archive.reader.by_ref() as &mut Read).take(data.compressed_size);
-
-        let reader = match data.compression_method {
-            CompressionMethod::Stored => {
-                ZipFileReader::Stored(Crc32Reader::new(limit_reader, data.crc32))
-            }
-            CompressionMethod::Deflated => {
-                let deflate_reader = limit_reader.deflate_decode();
-                ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, data.crc32))
-            }
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => {
-                let bzip2_reader = BzDecoder::new(limit_reader);
-                ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, data.crc32))
-            }
-            _ => return unsupported_zip_error("Compression method not supported"),
-        };
-        Ok(ZipFile {
-            reader: reader,
-            data: data,
-        })
-    }
-
-    /// Unwrap and return the inner reader object
-    ///
-    /// The position of the reader is undefined.
-    pub fn into_inner(self) -> R {
-        self.archive.reader
+        self.archive.open(data)
     }
 }
 
