@@ -19,11 +19,12 @@ fn real_main() -> i32 {
     let fname = std::path::Path::new(&*args[1]);
     let file = fs::File::open(&fname).unwrap();
 
-    let archive = zip::read::ZipArchive::new(file).expect("Couldn't open archive");
-    let mut index = zip::ZipIndex::new(archive).unwrap();
+    let mut archive = zip::read::ZipArchive::new(file).expect("Couldn't open archive");
+    let mut index = zip::ZipIndex::new(&mut archive).unwrap();
 
     for i in 0..index.len() {
-        let mut file = index.by_index(i).unwrap();
+        let file_data = index.by_index(i).unwrap();
+        let mut file = archive.open(&file_data).expect("Couldn't open file in archive");
         let outpath = sanitize_filename(file.name());
         println!("{}", outpath.display());
 

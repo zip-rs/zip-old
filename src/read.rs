@@ -171,11 +171,12 @@ impl<'a, R: Read + io::Seek> Iterator for ZipArchiveIter<'a, R> {
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
 ///     let mut archive = try!(zip::read::ZipArchive::new(reader));
-///     let mut zip = try!(zip::ZipIndex::new(archive));
+///     let mut zip = try!(zip::ZipIndex::new(&mut archive));
 ///
 ///     for i in 0..zip.len()
 ///     {
-///         let mut file = zip.by_index(i).unwrap();
+///         let file_data = zip.by_index(i).unwrap();
+///         let mut file = archive.open(&file_data).unwrap();
 ///         println!("Filename: {}", file.name());
 ///         let first_byte = try!(file.bytes().next().unwrap());
 ///         println!("{}", first_byte);
@@ -186,8 +187,7 @@ impl<'a, R: Read + io::Seek> Iterator for ZipArchiveIter<'a, R> {
 /// println!("Result: {:?}", doit());
 /// ```
 #[derive(Debug)]
-pub struct ZipIndex<R: Read + io::Seek> {
-    archive: ZipArchive<R>,
+pub struct ZipIndex {
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
 }
@@ -209,20 +209,19 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
 
-impl<R: Read + io::Seek> ZipIndex<R> {
+impl ZipIndex {
     /// Opens a Zip archive and parses the central directory
-    pub fn new(mut archive: ZipArchive<R>) -> ZipResult<ZipIndex<R>> {
+    pub fn new<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> ZipResult<ZipIndex> {
         let mut files = Vec::with_capacity(archive.number_of_files);
         let mut names_map = HashMap::new();
 
-        for maybe_file in &mut archive {
+        for maybe_file in archive {
             let file = try!(maybe_file);
             names_map.insert(file.file_name.clone(), files.len());
             files.push(file);
         }
 
         Ok(ZipIndex {
-            archive: archive,
             files: files,
             names_map: names_map,
         })
@@ -233,7 +232,7 @@ impl<R: Read + io::Seek> ZipIndex<R> {
     /// ```
     /// fn iter() {
     ///     let mut archive = zip::read::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
-    ///     let mut zip = zip::ZipIndex::new(archive).unwrap();
+    ///     let mut zip = zip::ZipIndex::new(&mut archive).unwrap();
     ///
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i).unwrap();
@@ -246,7 +245,7 @@ impl<R: Read + io::Seek> ZipIndex<R> {
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
+    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<&'a ZipFileData> {
         let index = match self.names_map.get(name) {
             Some(index) => *index,
             None => {
@@ -257,12 +256,11 @@ impl<R: Read + io::Seek> ZipIndex<R> {
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<&'a ZipFileData> {
         if file_number >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
-        let ref data = self.files[file_number];
-        self.archive.open(data)
+        Ok(&self.files[file_number])
     }
 }
 

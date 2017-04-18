@@ -15,16 +15,17 @@ fn real_main() -> i32 {
     let fname = std::path::Path::new(&*args[1]);
     let zipfile = std::fs::File::open(&fname).unwrap();
 
-    let archive = zip::read::ZipArchive::new(zipfile).expect("Couldn't open zip file");
-    let mut index = zip::ZipIndex::new(archive).unwrap();
+    let mut archive = zip::read::ZipArchive::new(zipfile).expect("Couldn't open zip file");
+    let mut index = zip::ZipIndex::new(&mut archive).unwrap();
 
-    let mut file = match index.by_name("test/lorem_ipsum.txt") {
-        Ok(file) => file,
+    let file_data = match index.by_name("test/lorem_ipsum.txt") {
+        Ok(file_data) => file_data,
         Err(..) => {
             println!("File test/lorem_ipsum.txt not found");
             return 2;
         }
     };
+    let mut file = archive.open(&file_data).expect("Couldn't open test/lorem_ipsum.txt");
 
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
