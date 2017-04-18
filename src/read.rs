@@ -251,22 +251,16 @@ impl ZipIndex {
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a self, name: &str) -> ZipResult<&'a ZipFileData> {
-        let index = match self.names_map.get(name) {
-            Some(index) => *index,
-            None => {
-                return Err(ZipError::FileNotFound);
-            }
-        };
-        self.by_index(index)
+    pub fn by_name<'a>(&'a self, name: &str) -> Option<&'a ZipFileData> {
+        self.names_map.get(name).and_then(|index| self.by_index(*index))
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a self, file_number: usize) -> ZipResult<&'a ZipFileData> {
+    pub fn by_index<'a>(&'a self, file_number: usize) -> Option<&'a ZipFileData> {
         if file_number >= self.files.len() {
-            return Err(ZipError::FileNotFound);
+            return None;
         }
-        Ok(&self.files[file_number])
+        Some(&self.files[file_number])
     }
 }
 

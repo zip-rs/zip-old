@@ -19,8 +19,8 @@ fn real_main() -> i32 {
     let index = archive.index().unwrap();
 
     let file_data = match index.by_name("test/lorem_ipsum.txt") {
-        Ok(file_data) => file_data,
-        Err(..) => {
+        Some(file_data) => file_data,
+        None => {
             println!("File test/lorem_ipsum.txt not found");
             return 2;
         }

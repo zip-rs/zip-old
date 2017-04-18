@@ -19,9 +19,6 @@ pub enum ZipError {
 
     /// This archive is not supported
     UnsupportedArchive(&'static str),
-
-    /// The requested file could not be found in the archive
-    FileNotFound,
 }
 
 impl ZipError {
@@ -36,7 +33,6 @@ impl ZipError {
             ZipError::UnsupportedArchive(msg) => {
                 (self.description().to_string() + ": " + msg).into()
             }
-            ZipError::FileNotFound => self.description().into(),
         }
     }
 }
@@ -65,7 +61,6 @@ impl error::Error for ZipError {
             ZipError::Io(ref io_err) => (io_err as &error::Error).description(),
             ZipError::InvalidArchive(..) => "Invalid Zip archive",
             ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
-            ZipError::FileNotFound => "Specified file not found in archive",
         }
     }
 
