@@ -22,6 +22,103 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
+/// Wrapper for reading the contents of a zip file.
+///
+/// You can iterate a ZipArchive, and its elements are
+/// ZipResult<ZipFileData>. After the first ZipError, the value of any
+/// subsequent elements is undefined.
+///
+/// ```
+/// fn doit() -> zip::result::ZipResult<()> {
+///     use std::io::prelude::*;
+///     use zip::result::ZipError;
+///
+///     // For demonstration purposes we read from an empty buffer.
+///     // Normally a File object would be used.
+///     let buf: &[u8] = &[0u8; 128];
+///     let mut reader = std::io::Cursor::new(buf);
+///
+///     let mut zip_archive = try!(zip::read::ZipArchive::new(reader));
+///     for maybe_file_data in &mut zip_archive {
+///         let file_data = try!(maybe_file_data);
+///         println!("Filename: {}", file_data.file_name);
+///     }
+///
+///     Ok(())
+/// }
+/// ```
+#[derive(Debug)]
+pub struct ZipArchive<R: Read + io::Seek> {
+    reader: R,
+    number_of_files: usize,
+    directory_start: u64,
+}
+
+impl<R: Read + io::Seek> ZipArchive<R> {
+    /// Try to wrap a ZipArchive around a given Reader.
+    pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
+        let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
+
+        if footer.disk_number != footer.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
+        }
+
+        let directory_start = footer.central_directory_offset as u64;
+        let number_of_files = footer.number_of_files_on_this_disk as usize;
+
+        Ok(ZipArchive {
+            reader: reader,
+            number_of_files: number_of_files,
+            directory_start: directory_start,
+        })
+    }
+}
+
+impl<'a, R: Read + io::Seek> IntoIterator for &'a mut ZipArchive<R> {
+    type Item = ZipResult<ZipFileData>;
+    type IntoIter = ZipArchiveIter<'a, R>;
+    fn into_iter(self) -> Self::IntoIter {
+        let start_position = self.directory_start;
+        ZipArchiveIter {
+            zip_directory_seeker: self,
+            files_read: 0,
+            position: start_position,
+        }
+    }
+}
+
+/// An iterator for a ZipArchive that yields elements from the
+/// directory in order.
+pub struct ZipArchiveIter<'a, R: 'a + Read + io::Seek> {
+    zip_directory_seeker: &'a mut ZipArchive<R>,
+    files_read: usize,
+    position: u64,
+}
+
+impl<'a, R: Read + io::Seek> Iterator for ZipArchiveIter<'a, R> {
+    type Item = ZipResult<ZipFileData>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.files_read > self.zip_directory_seeker.number_of_files {
+            return None;
+        }
+
+        // All this seeking probably isn't strictly necessary since we
+        // have a mutable borrow on the ZipArchive and thus its
+        // reader, so nobody else can touch it, but it feels more
+        // future-proof to do it this way.
+        if let Err(io) = self.zip_directory_seeker.reader.seek(io::SeekFrom::Start(self.position)) {
+            return Some(Err(From::from(io)));
+        }
+        let ret = central_header_to_zip_file(&mut self.zip_directory_seeker.reader);
+        match self.zip_directory_seeker.reader.seek(io::SeekFrom::Current(0)) {
+            Ok(new_position) => self.position = new_position,
+            Err(io) => return Some(Err(From::from(io))),
+        }
+        self.files_read += 1;
+        Some(ret)
+    }
+}
+
 /// Wrapper for reading the contents of a ZIP file.
 ///
 /// ```
@@ -50,7 +147,7 @@ mod ffi {
 /// ```
 #[derive(Debug)]
 pub struct ZipIndex<R: Read + io::Seek> {
-    reader: R,
+    archive: ZipArchive<R>,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
 }
@@ -74,28 +171,19 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 
 impl<R: Read + io::Seek> ZipIndex<R> {
     /// Opens a Zip archive and parses the central directory
-    pub fn new(mut reader: R) -> ZipResult<ZipIndex<R>> {
-        let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
-
-        if footer.disk_number != footer.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
-        }
-
-        let directory_start = footer.central_directory_offset as u64;
-        let number_of_files = footer.number_of_files_on_this_disk as usize;
-
-        let mut files = Vec::with_capacity(number_of_files);
+    pub fn new(reader: R) -> ZipResult<ZipIndex<R>> {
+        let mut archive = try!(ZipArchive::new(reader));
+        let mut files = Vec::with_capacity(archive.number_of_files);
         let mut names_map = HashMap::new();
 
-        try!(reader.seek(io::SeekFrom::Start(directory_start)));
-        for _ in 0..number_of_files {
-            let file = try!(central_header_to_zip_file(&mut reader));
+        for maybe_file in &mut archive {
+            let file = try!(maybe_file);
             names_map.insert(file.file_name.clone(), files.len());
             files.push(file);
         }
 
         Ok(ZipIndex {
-            reader: reader,
+            archive: archive,
             files: files,
             names_map: names_map,
         })
@@ -140,8 +228,8 @@ impl<R: Read + io::Seek> ZipIndex<R> {
             return unsupported_zip_error("Encrypted files are not supported");
         }
 
-        try!(self.reader.seek(io::SeekFrom::Start(pos)));
-        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
+        try!(self.archive.reader.seek(io::SeekFrom::Start(pos)));
+        let limit_reader = (self.archive.reader.by_ref() as &mut Read).take(data.compressed_size);
 
         let reader = match data.compression_method {
             CompressionMethod::Stored => {
@@ -168,7 +256,7 @@ impl<R: Read + io::Seek> ZipIndex<R> {
     ///
     /// The position of the reader is undefined.
     pub fn into_inner(self) -> R {
-        self.reader
+        self.archive.reader
     }
 }
 
