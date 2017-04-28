@@ -372,6 +372,11 @@ impl<'a> ZipFile<'a> {
     pub fn crc32(&self) -> u32 {
         self.data.crc32
     }
+
+    /// Get the starting offset of the data of the compressed file
+    pub fn data_start(&self) -> u64 {
+        self.data.data_start
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
