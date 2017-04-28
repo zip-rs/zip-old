@@ -54,6 +54,7 @@ pub struct ZipArchive<R: Read + io::Seek>
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
+    offset: u32,
 }
 
 enum ZipFileReader<'a> {
@@ -78,11 +79,15 @@ impl<R: Read+io::Seek> ZipArchive<R>
 {
     /// Opens a Zip archive and parses the central directory
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
+        let (footer, cde_start_pos) = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
 
         if footer.disk_number != footer.disk_with_central_directory { return unsupported_zip_error("Support for multi-disk files is not implemented") }
 
-        let directory_start = footer.central_directory_offset as u64;
+        // Some zip files have data prepended to them, resulting in the offsets all being too small. Get the amount of
+        // error by comparing the actual file position we found the CDE at with the offset recorded in the CDE.
+        let archive_offset = cde_start_pos - footer.central_directory_size - footer.central_directory_offset;
+
+        let directory_start = (footer.central_directory_offset + archive_offset) as u64;
         let number_of_files = footer.number_of_files_on_this_disk as usize;
 
         let mut files = Vec::with_capacity(number_of_files);
@@ -91,12 +96,17 @@ impl<R: Read+io::Seek> ZipArchive<R>
         try!(reader.seek(io::SeekFrom::Start(directory_start)));
         for _ in 0 .. number_of_files
         {
-            let file = try!(central_header_to_zip_file(&mut reader));
+            let file = try!(central_header_to_zip_file(&mut reader, archive_offset));
             names_map.insert(file.file_name.clone(), files.len());
             files.push(file);
         }
 
-        Ok(ZipArchive { reader: reader, files: files, names_map: names_map })
+        Ok(ZipArchive {
+            reader: reader,
+            files: files,
+            names_map: names_map,
+            offset: archive_offset,
+        })
     }
 
     /// Number of files contained in this zip.
@@ -114,6 +124,14 @@ impl<R: Read+io::Seek> ZipArchive<R>
     pub fn len(&self) -> usize
     {
         self.files.len()
+    }
+
+    /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.
+    ///
+    /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
+    /// of that prepended data.
+    pub fn offset(&self) -> u32 {
+        self.offset
     }
 
     /// Search for a file entry by name
@@ -178,7 +196,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 }
 
-fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<ZipFileData>
+fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u32) -> ZipResult<ZipFileData>
 {
     // Parse central header
     let signature = try!(reader.read_u32::<LittleEndian>());
@@ -204,10 +222,13 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R) -> ZipResult<Zip
     let _disk_number = try!(reader.read_u16::<LittleEndian>());
     let _internal_file_attributes = try!(reader.read_u16::<LittleEndian>());
     let external_file_attributes = try!(reader.read_u32::<LittleEndian>());
-    let offset = try!(reader.read_u32::<LittleEndian>()) as u64;
+    let mut offset = try!(reader.read_u32::<LittleEndian>()) as u64;
     let file_name_raw = try!(ReadPodExt::read_exact(reader, file_name_length));
     let extra_field = try!(ReadPodExt::read_exact(reader, extra_field_length));
     let file_comment_raw  = try!(ReadPodExt::read_exact(reader, file_comment_length));
+
+    // Account for shifted zip offsets.
+    offset += archive_offset as u64;
 
     let file_name = match is_utf8
     {
