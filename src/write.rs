@@ -71,6 +71,7 @@ struct ZipWriterStats
 }
 
 /// Metadata for a file to be written
+#[derive(Copy, Clone)]
 pub struct FileOptions {
     compression_method: CompressionMethod,
     last_modified_time: time::Tm,
