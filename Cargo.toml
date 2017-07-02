@@ -18,5 +18,8 @@ podio = "0.1"
 msdos_time = "0.1"
 bzip2 = { version = "0.3", optional = true }
 
+[dev-dependencies]
+walkdir = "1.0"
+
 [features]
 default = ["bzip2"]
