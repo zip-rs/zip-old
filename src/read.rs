@@ -386,3 +386,17 @@ impl<'a> Read for ZipFile<'a> {
          self.get_reader().read(buf)
      }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn invalid_offset() {
+        use std::io;
+        use super::ZipArchive;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/invalid_offset.zip"));
+        let reader = ZipArchive::new(io::Cursor::new(v));
+        assert!(reader.is_err());
+    }
+}
