@@ -54,7 +54,7 @@ pub struct ZipArchive<R: Read + io::Seek>
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
-    offset: u32,
+    offset: u64,
 }
 
 enum ZipFileReader<'a> {
@@ -85,11 +85,11 @@ impl<R: Read+io::Seek> ZipArchive<R>
 
         // Some zip files have data prepended to them, resulting in the offsets all being too small. Get the amount of
         // error by comparing the actual file position we found the CDE at with the offset recorded in the CDE.
-        let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size)
-            .and_then(|x| x.checked_sub(footer.central_directory_offset))
+        let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size as u64)
+            .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
             .ok_or(ZipError::InvalidArchive("Invalid central directory size or offset"))?;
 
-        let directory_start = (footer.central_directory_offset + archive_offset) as u64;
+        let directory_start = footer.central_directory_offset as u64 + archive_offset;
         let number_of_files = footer.number_of_files_on_this_disk as usize;
 
         let mut files = Vec::with_capacity(number_of_files);
@@ -132,7 +132,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     ///
     /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
     /// of that prepended data.
-    pub fn offset(&self) -> u32 {
+    pub fn offset(&self) -> u64 {
         self.offset
     }
 
@@ -198,7 +198,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 }
 
-fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u32) -> ZipResult<ZipFileData>
+fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64) -> ZipResult<ZipFileData>
 {
     // Parse central header
     let signature = try!(reader.read_u32::<LittleEndian>());
@@ -230,7 +230,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     let file_comment_raw  = try!(ReadPodExt::read_exact(reader, file_comment_length));
 
     // Account for shifted zip offsets.
-    offset += archive_offset as u64;
+    offset += archive_offset;
 
     let file_name = match is_utf8
     {

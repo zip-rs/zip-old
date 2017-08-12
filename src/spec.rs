@@ -48,29 +48,32 @@ impl CentralDirectoryEnd
            })
     }
 
-    pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u32)>
+    pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u64)>
     {
-        let header_size = 22;
-        let bytes_between_magic_and_comment_size = header_size - 6;
-        let file_length = try!(reader.seek(io::SeekFrom::End(0))) as i64;
+        const HEADER_SIZE: u64 = 22;
+        const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
+        let file_length = try!(reader.seek(io::SeekFrom::End(0)));
 
-        let search_upper_bound = ::std::cmp::max(0, file_length - header_size - ::std::u16::MAX as i64);
+        let search_upper_bound = file_length.checked_sub(HEADER_SIZE + ::std::u16::MAX as u64).unwrap_or(0);
 
-        let mut pos = file_length - header_size;
+        let mut pos = file_length - HEADER_SIZE;
         while pos >= search_upper_bound
         {
             try!(reader.seek(io::SeekFrom::Start(pos as u64)));
             if try!(reader.read_u32::<LittleEndian>()) == CENTRAL_DIRECTORY_END_SIGNATURE
             {
-                try!(reader.seek(io::SeekFrom::Current(bytes_between_magic_and_comment_size)));
-                let comment_length = try!(reader.read_u16::<LittleEndian>()) as i64;
-                if file_length - pos - header_size == comment_length
+                try!(reader.seek(io::SeekFrom::Current(BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64)));
+                let comment_length = try!(reader.read_u16::<LittleEndian>()) as u64;
+                if file_length - pos - HEADER_SIZE == comment_length
                 {
-                    let cde_start_pos = try!(reader.seek(io::SeekFrom::Start(pos as u64))) as u32;
+                    let cde_start_pos = try!(reader.seek(io::SeekFrom::Start(pos as u64)));
                     return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
                 }
             }
-            pos -= 1;
+            pos = match pos.checked_sub(1) {
+                Some(p) => p,
+                None => break,
+            };
         }
         Err(ZipError::InvalidArchive("Could not find central directory end"))
     }
