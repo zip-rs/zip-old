@@ -465,4 +465,15 @@ mod test {
         let reader = ZipArchive::new(io::Cursor::new(v));
         assert!(reader.is_err());
     }
+
+    #[test]
+    fn zip64_with_leading_junk() {
+        use std::io;
+        use super::ZipArchive;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
+        let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        assert!(reader.len() == 1);
+    }
 }
