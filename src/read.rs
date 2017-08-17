@@ -54,7 +54,7 @@ pub struct ZipArchive<R: Read + io::Seek>
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
-    offset: u32,
+    offset: u64,
 }
 
 enum ZipFileReader<'a> {
@@ -77,20 +77,86 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 
 impl<R: Read+io::Seek> ZipArchive<R>
 {
+    /// Get the directory start offset and number of files. This is done in a
+    /// separate function to ease the control flow design.
+    fn get_directory_counts(mut reader: &mut R,
+                            footer: &spec::CentralDirectoryEnd,
+                            cde_start_pos: u64) -> ZipResult<(u64, u64, usize)> {
+        // Some zip files have data prepended to them, resulting in the
+        // offsets all being too small. Get the amount of error by comparing
+        // the actual file position we found the CDE at with the offset
+        // recorded in the CDE.
+        let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size as u64)
+            .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
+            .ok_or(ZipError::InvalidArchive("Invalid central directory size or offset"))?;
+
+        let directory_start = footer.central_directory_offset as u64 + archive_offset;
+        let number_of_files = footer.number_of_files_on_this_disk as usize;
+
+        // See if there's a ZIP64 footer. The ZIP64 locator if present will
+        // have its signature 20 bytes in front of the standard footer. The
+        // standard footer, in turn, is 22+N bytes large, where N is the
+        // comment length. Therefore:
+
+        if let Err(_) = reader.seek(io::SeekFrom::Current(-(20 + 22 + footer.zip_file_comment.len() as i64))) {
+            // Empty Zip files will have nothing else so this error might be fine. If
+            // not, we'll find out soon.
+            return Ok((archive_offset, directory_start, number_of_files));
+        }
+
+        let locator64 = match spec::Zip64CentralDirectoryEndLocator::parse(&mut reader) {
+            Ok(loc) => loc,
+            Err(ZipError::InvalidArchive(_)) => {
+                // No ZIP64 header; that's actually fine. We're done here.
+                return Ok((archive_offset, directory_start, number_of_files));
+            },
+            Err(e) => {
+                // Yikes, a real problem
+                return Err(e);
+            },
+        };
+
+        // If we got here, this is indeed a ZIP64 file.
+
+        if footer.disk_number as u32 != locator64.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented")
+        }
+
+        // We need to reassess `archive_offset`. We know where the ZIP64
+        // central-directory-end structure *should* be, but unfortunately we
+        // don't know how to precisely relate that location to our current
+        // actual offset in the file, since there may be junk at its
+        // beginning. Therefore we need to perform another search, as in
+        // read::CentralDirectoryEnd::find_and_parse, except now we search
+        // forward.
+
+        let search_upper_bound = reader.seek(io::SeekFrom::Current(0))?
+            .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
+            .ok_or(ZipError::InvalidArchive("File cannot contain ZIP64 central directory end"))?;
+        let (footer, archive_offset) = spec::Zip64CentralDirectoryEnd::find_and_parse(
+            &mut reader,
+            locator64.end_of_central_directory_offset,
+            search_upper_bound)?;
+
+        if footer.disk_number != footer.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented")
+        }
+
+        let directory_start = footer.central_directory_offset + archive_offset;
+        Ok((archive_offset, directory_start, footer.number_of_files as usize))
+    }
+
     /// Opens a Zip archive and parses the central directory
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
 
-        if footer.disk_number != footer.disk_with_central_directory { return unsupported_zip_error("Support for multi-disk files is not implemented") }
+        if footer.disk_number != footer.disk_with_central_directory
+        {
+            return unsupported_zip_error("Support for multi-disk files is not implemented")
+        }
 
-        // Some zip files have data prepended to them, resulting in the offsets all being too small. Get the amount of
-        // error by comparing the actual file position we found the CDE at with the offset recorded in the CDE.
-        let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size)
-            .and_then(|x| x.checked_sub(footer.central_directory_offset))
-            .ok_or(ZipError::InvalidArchive("Invalid central directory size or offset"))?;
-
-        let directory_start = (footer.central_directory_offset + archive_offset) as u64;
-        let number_of_files = footer.number_of_files_on_this_disk as usize;
+        let (archive_offset, directory_start, number_of_files) =
+            try!(Self::get_directory_counts(&mut reader, &footer, cde_start_pos));
 
         let mut files = Vec::with_capacity(number_of_files);
         let mut names_map = HashMap::new();
@@ -132,7 +198,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     ///
     /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
     /// of that prepended data.
-    pub fn offset(&self) -> u32 {
+    pub fn offset(&self) -> u64 {
         self.offset
     }
 
@@ -198,7 +264,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 }
 
-fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u32) -> ZipResult<ZipFileData>
+fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64) -> ZipResult<ZipFileData>
 {
     // Parse central header
     let signature = try!(reader.read_u32::<LittleEndian>());
@@ -230,7 +296,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     let file_comment_raw  = try!(ReadPodExt::read_exact(reader, file_comment_length));
 
     // Account for shifted zip offsets.
-    offset += archive_offset as u64;
+    offset += archive_offset;
 
     let file_name = match is_utf8
     {
@@ -398,5 +464,16 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v));
         assert!(reader.is_err());
+    }
+
+    #[test]
+    fn zip64_with_leading_junk() {
+        use std::io;
+        use super::ZipArchive;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
+        let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        assert!(reader.len() == 1);
     }
 }
