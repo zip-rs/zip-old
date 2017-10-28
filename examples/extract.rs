@@ -25,15 +25,15 @@ fn real_main() -> i32 {
         {
             let comment = file.comment();
             if !comment.is_empty() {
-                println!("${} comment: {}", i, comment);
+                println!("File {} comment: {}", i, comment);
             }
         }
 
         if (&*file.name()).ends_with('/') {
-            println!("${}-> {}", i, outpath.as_path().display());
+            println!("Dir {} extracted to \"{}\"", i, outpath.as_path().display());
             fs::create_dir_all(&outpath).unwrap();
         } else {
-            println!("${}-> {}: {}", i, outpath.as_path().display(), file.size());
+            println!("File {} extracted to \"{}\" ({} bytes)", i, outpath.as_path().display(), file.size());
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
                     fs::create_dir_all(&p).unwrap();
