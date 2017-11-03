@@ -3,8 +3,7 @@
 use time;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum System
-{
+pub enum System {
     Dos = 0,
     Unix = 3,
     Unknown,
@@ -13,8 +12,7 @@ pub enum System
 }
 
 impl System {
-    pub fn from_u8(system: u8) -> System
-    {
+    pub fn from_u8(system: u8) -> System {
         use self::System::*;
 
         match system {
@@ -29,8 +27,7 @@ pub const DEFAULT_VERSION: u8 = 20;
 
 /// Structure representing a ZIP file.
 #[derive(Debug)]
-pub struct ZipFileData
-{
+pub struct ZipFileData {
     /// Compatibility of the file attribute information
     pub system: System,
     /// Specification version

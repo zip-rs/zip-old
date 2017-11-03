@@ -1,0 +1,104 @@
+https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.4.TXT
+
+
+[magic "PK"] :                            (0x4b50)
+
+[local file header 1]                     (0x04034b50){...}
+[encryption header 1]
+[file data 1]
+[data descriptor 1]
+      . 
+      .
+      .
+[local file header n]
+[encryption header n]
+[file data n]
+[data descriptor n]
+[archive decryption header] 
+[archive extra data record] 
+
+[central directory header 1]
+      .
+      .
+      .
+[central directory header n]
+
+[zip64 end of central directory record]   (0x06064b50){...}
+[zip64 end of central directory locator]  (0x07064b50){...}
+[end of central directory record]         (0x06054b50){...}
+
+
+====================================================================================================================
+4.3.7  Local file header:
+
+      local file header signature     4 bytes  (0x04034b50)
+      version needed to extract       2 bytes
+      general purpose bit flag        2 bytes
+      compression method              2 bytes
+      last mod file time              2 bytes
+      last mod file date              2 bytes
+      crc-32                          4 bytes
+      compressed size                 4 bytes
+      uncompressed size               4 bytes
+      file name length                2 bytes
+      extra field length              2 bytes
+      file name (variable size)
+      extra field (variable size)
+
+====================================================================================================================
+ 4.3.9  Data descriptor:
+        data descriptor signature       4 bytes  [0x08074b50 ] - pay attention - optional signature
+        crc-32                          4 bytes
+        compressed size                 4 bytes       8 bytes for ZIP64(tm) format
+        uncompressed size               4 bytes       8 bytes for ZIP64(tm) format
+
+====================================================================================================================
+   4.3.14  Zip64 end of central directory record
+
+        zip64 end of central dir 
+        signature                       4 bytes  (0x06064b50)
+        size of zip64 end of central
+        directory record                8 bytes
+        version made by                 2 bytes
+        version needed to extract       2 bytes
+        number of this disk             4 bytes
+        number of the disk with the 
+        start of the central directory  4 bytes
+        total number of entries in the
+        central directory on this disk  8 bytes
+        total number of entries in the
+        central directory               8 bytes
+        size of the central directory   8 bytes
+        offset of start of central
+        directory with respect to
+        the starting disk number        8 bytes
+        zip64 extensible data sector    (variable size)
+====================================================================================================================
+ 4.3.15 Zip64 end of central directory locator
+
+      zip64 end of central dir locator 
+      signature                       4 bytes  (0x07064b50)
+      number of the disk with the
+      start of the zip64 end of 
+      central directory               4 bytes
+      relative offset of the zip64
+      end of central directory record 8 bytes
+      total number of disks           4 bytes
+====================================================================================================================
+   4.3.16  End of central directory record:
+
+      end of central dir signature    4 bytes  (0x06054b50)
+      number of this disk             2 bytes
+      number of the disk with the
+      start of the central directory  2 bytes
+      total number of entries in the
+      central directory on this disk  2 bytes
+      total number of entries in
+      the central directory           2 bytes
+      size of the central directory   4 bytes
+      offset of start of central
+      directory with respect to
+      the starting disk number        4 bytes
+      .ZIP file comment length        2 bytes
+      .ZIP file comment       (variable size)
+====================================================================================================================
