@@ -287,7 +287,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             }
             let central_size = try!(writer.seek(io::SeekFrom::Current(0))) - central_start;
 
-            let footer = spec::CentralDirectoryEnd
+            let footer = spec::END_OF_CENTRAL_DIRECTORY_RECORD
             {
                 disk_number: 0,
                 disk_with_central_directory: 0,

@@ -62,6 +62,28 @@ enum ZipFileReader<'a> {
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
 
+struct CentralDirectory {
+    pub disk_number: u32,
+    pub disk_with_central_directory: u32,
+    pub number_of_files_on_this_disk: u64,
+    pub number_of_files: u64,
+    pub central_directory_size: u64,
+    pub central_directory_offset: u64,
+}
+impl CentralDirectory {
+    pub fn new() -> Self {
+        CentralDirectory{
+            disk_number: 0,
+            disk_with_central_directory: 0,
+            number_of_files_on_this_disk: 0,
+            number_of_files: 0,
+            central_directory_size: 0,
+            central_directory_offset: 0,
+        }
+    }
+}
+
+
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
     data: &'a ZipFileData,
@@ -75,25 +97,38 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 impl<R: Read + io::Seek> ZipArchive<R> {
     /// Opens a Zip archive and parses the central directory
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let footer = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
+        let (zip32, pos) = spec::END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader)?;
 
-        if footer.disk_number != footer.disk_with_central_directory {
+        let mut directory = CentralDirectory::new();
+        if let Some(locator) = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(&mut reader, &pos).ok() {
+            let pos = locator.central_directory_offset;
+            let zip64 = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader, &pos)?;
+            directory.disk_number = zip64.disk_number;
+            directory.disk_with_central_directory = zip64.disk_with_central_directory;
+            directory.number_of_files_on_this_disk = zip64.number_of_files_on_this_disk;
+            directory.number_of_files = zip64.number_of_files;
+            directory.central_directory_size = zip64.central_directory_size;
+            directory.central_directory_offset = zip64.central_directory_offset;
+        } else {
+            directory.disk_number = zip32.disk_number as u32;
+            directory.disk_with_central_directory = zip32.disk_with_central_directory as u32;
+            directory.number_of_files_on_this_disk = zip32.number_of_files_on_this_disk as u64;
+            directory.number_of_files = zip32.number_of_files as u64;
+            directory.central_directory_size = zip32.central_directory_size as u64;
+            directory.central_directory_offset = zip32.central_directory_offset as u64;
+        }
+
+        if directory.disk_number != directory.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
-        let directory_start = footer.central_directory_offset as u64;
-        println!("directory_start {}", directory_start);
-        let number_of_files = footer.number_of_files_on_this_disk as usize;
-        println!("number_of_files {}", number_of_files);
-
-        let mut files = Vec::with_capacity(number_of_files);
+        let mut files = Vec::with_capacity(directory.number_of_files_on_this_disk as usize);
         let mut names_map = HashMap::new();
 
-        try!(reader.seek(io::SeekFrom::Start(directory_start)));
-        for i in 0..number_of_files {
-            let file = try!(central_header_to_zip_file(&mut reader));
+        reader.seek(io::SeekFrom::Start(directory.central_directory_offset))?;
+        for _ in 0..directory.number_of_files_on_this_disk as usize {
+            let file = central_header_to_zip_file(&mut reader)?;
             names_map.insert(file.file_name.clone(), files.len());
-            println!("{:5} {}", i, &file.file_name);
             files.push(file);
         }
 
@@ -251,8 +286,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
     };
 
     match parse_extra_field(&mut result, &*extra_field) {
-        Ok(..) |
-        Err(ZipError::Io(..)) => {}
+        Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => try!(Err(e)),
     }
 
