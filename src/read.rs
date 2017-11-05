@@ -3,16 +3,16 @@
 use crc32::Crc32Reader;
 use compression::CompressionMethod;
 use spec;
-use result::{ZipResult, ZipError};
+use result::{ZipError, ZipResult};
 use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use flate2;
 use flate2::FlateReadExt;
-use podio::{ReadPodExt, LittleEndian};
-use types::{ZipFileData, System};
+use podio::{LittleEndian, ReadPodExt};
+use types::{System, ZipFileData};
 use cp437::FromCp437;
-use msdos_time::{TmMsDosExt, MsDosDateTime};
+use msdos_time::{MsDosDateTime, TmMsDosExt};
 
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
@@ -58,8 +58,7 @@ pub struct ZipArchive<R: Read + io::Seek> {
 enum ZipFileReader<'a> {
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
-    #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+    #[cfg(feature = "bzip2")] Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
 
 struct CentralDirectory {
@@ -72,7 +71,7 @@ struct CentralDirectory {
 }
 impl CentralDirectory {
     pub fn new() -> Self {
-        CentralDirectory{
+        CentralDirectory {
             disk_number: 0,
             disk_with_central_directory: 0,
             number_of_files_on_this_disk: 0,
@@ -100,7 +99,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let (zip32, pos) = spec::END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader)?;
 
         let mut directory = CentralDirectory::new();
-        if let Some(locator) = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(&mut reader, &pos).ok() {
+        if let Some(locator) =
+            spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(&mut reader, &pos).ok()
+        {
             let pos = locator.central_directory_offset;
             let zip64 = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader, &pos)?;
             directory.disk_number = zip64.disk_number;
@@ -126,6 +127,12 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let mut names_map = HashMap::new();
 
         reader.seek(io::SeekFrom::Start(directory.central_directory_offset))?;
+        let num = directory.number_of_files_on_this_disk as usize;
+        println!("num: {}", num);
+        println!(
+            "directory.number_of_files_on_this_disk: {}",
+            directory.number_of_files_on_this_disk
+        );
         for _ in 0..directory.number_of_files_on_this_disk as usize {
             let file = central_header_to_zip_file(&mut reader)?;
             names_map.insert(file.file_name.clone(), files.len());
@@ -216,7 +223,6 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
     }
-
     let version_made_by = try!(reader.read_u16::<LittleEndian>());
     let _version_to_extract = try!(reader.read_u16::<LittleEndian>());
     let flags = try!(reader.read_u16::<LittleEndian>());
@@ -247,7 +253,14 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
         true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
         false => file_comment_raw.from_cp437(),
     };
-
+    println!(
+        "{:08x} {}/{} - {}, {}",
+        offset,
+        compressed_size,
+        uncompressed_size,
+        file_name,
+        extra_field_length
+    );
     // Remember end of central header
     let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
 
