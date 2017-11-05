@@ -213,7 +213,6 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<ZipFileData> {
     // Parse central header
     let signature = try!(reader.read_u32::<LittleEndian>());
-    println!("CENTRAL_DIRECTORY_HEADER_SIGNATURE: {:x}", signature);
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
     }
