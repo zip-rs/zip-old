@@ -78,27 +78,18 @@ impl END_OF_CENTRAL_DIRECTORY_RECORD {
         if Self::signature() != reader.read_u32::<LittleEndian>()? {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"));
         }
-        let disk_number = reader.read_u16::<LittleEndian>()?;
-        let disk_with_central_directory = reader.read_u16::<LittleEndian>()?;
-        let number_of_files_on_this_disk = reader.read_u16::<LittleEndian>()?;
-        let number_of_files = reader.read_u16::<LittleEndian>()?;
-        let central_directory_size = reader.read_u32::<LittleEndian>()?;
-        let central_directory_offset = reader.read_u32::<LittleEndian>()?;
-        let zip_file_comment_length = reader.read_u16::<LittleEndian>()?;
-        let zip_file_comment = ReadPodExt::read_exact(reader, zip_file_comment_length as usize)?;
-
-        Ok((
-            END_OF_CENTRAL_DIRECTORY_RECORD {
-                disk_number: disk_number,
-                disk_with_central_directory: disk_with_central_directory,
-                number_of_files_on_this_disk: number_of_files_on_this_disk,
-                number_of_files: number_of_files,
-                central_directory_size: central_directory_size,
-                central_directory_offset: central_directory_offset,
-                zip_file_comment: zip_file_comment,
-            },
-            pos,
-        ))
+        let mut record = END_OF_CENTRAL_DIRECTORY_RECORD {
+            disk_number: reader.read_u16::<LittleEndian>()?,
+            disk_with_central_directory: reader.read_u16::<LittleEndian>()?,
+            number_of_files_on_this_disk: reader.read_u16::<LittleEndian>()?,
+            number_of_files: reader.read_u16::<LittleEndian>()?,
+            central_directory_size: reader.read_u32::<LittleEndian>()?,
+            central_directory_offset: reader.read_u32::<LittleEndian>()?,
+            zip_file_comment: Vec::new(),
+        };
+        let length = reader.read_u16::<LittleEndian>()?;
+        record.zip_file_comment = ReadPodExt::read_exact(reader, length as usize)?;
+        return Ok((record, pos));
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {

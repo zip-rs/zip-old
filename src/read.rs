@@ -218,49 +218,23 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 }
 
 fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<ZipFileData> {
-    // Parse central header
-    let signature = try!(reader.read_u32::<LittleEndian>());
-    if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
-    }
-    let version_made_by = try!(reader.read_u16::<LittleEndian>());
-    let _version_to_extract = try!(reader.read_u16::<LittleEndian>());
-    let flags = try!(reader.read_u16::<LittleEndian>());
-    let encrypted = flags & 1 == 1;
-    let is_utf8 = flags & (1 << 11) != 0;
-    let compression_method = try!(reader.read_u16::<LittleEndian>());
-    let last_mod_time = try!(reader.read_u16::<LittleEndian>());
-    let last_mod_date = try!(reader.read_u16::<LittleEndian>());
-    let crc32 = try!(reader.read_u32::<LittleEndian>());
-    let compressed_size = try!(reader.read_u32::<LittleEndian>());
-    let uncompressed_size = try!(reader.read_u32::<LittleEndian>());
-    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let file_comment_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let _disk_number = try!(reader.read_u16::<LittleEndian>());
-    let _internal_file_attributes = try!(reader.read_u16::<LittleEndian>());
-    let external_file_attributes = try!(reader.read_u32::<LittleEndian>());
-    let offset = try!(reader.read_u32::<LittleEndian>()) as u64;
-    let file_name_raw = try!(ReadPodExt::read_exact(reader, file_name_length));
-    let extra_field = try!(ReadPodExt::read_exact(reader, extra_field_length));
-    let file_comment_raw = try!(ReadPodExt::read_exact(reader, file_comment_length));
+    let header = spec::CENTRAL_DIRECTORY_HEADER::load(reader)?;
 
+    let is_utf8 = header.general_purpose_flag & (1 << 11) != 0;
     let file_name = match is_utf8 {
-        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
-        false => file_name_raw.clone().from_cp437(),
+        true => String::from_utf8_lossy(&*header.file_name).into_owned(),
+        false => header.file_name.clone().from_cp437(),
     };
     let file_comment = match is_utf8 {
-        true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
-        false => file_comment_raw.from_cp437(),
+        true => String::from_utf8_lossy(&*header.file_comment).into_owned(),
+        false => header.file_comment.clone().from_cp437(),
     };
-    println!(
-        "{:08x} {}/{} - {}, {}",
-        offset,
-        compressed_size,
-        uncompressed_size,
-        file_name,
-        extra_field_length
-    );
+
+    let offset = header.local_header_offset as u64;
+    if 0xFFFFFFFF == offset {
+        println!("{:?}", &header);
+    }
+
     // Remember end of central header
     let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
 
@@ -279,25 +253,25 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
 
     // Construct the result
     let mut result = ZipFileData {
-        system: System::from_u8((version_made_by >> 8) as u8),
-        version_made_by: version_made_by as u8,
-        encrypted: encrypted,
-        compression_method: CompressionMethod::from_u16(compression_method),
+        system: System::from_u8((header.version_made_by >> 8) as u8),
+        version_made_by: header.version_made_by as u8,
+        encrypted: header.general_purpose_flag & 1 == 1,
+        compression_method: CompressionMethod::from_u16(header.compression_method),
         last_modified_time: try!(::time::Tm::from_msdos(
-            MsDosDateTime::new(last_mod_time, last_mod_date),
+            MsDosDateTime::new(header.last_mod_time, header.last_mod_date),
         )),
-        crc32: crc32,
-        compressed_size: compressed_size as u64,
-        uncompressed_size: uncompressed_size as u64,
+        crc32: header.crc32,
+        compressed_size: header.compressed_size as u64,
+        uncompressed_size: header.uncompressed_size as u64,
         file_name: file_name,
-        file_name_raw: file_name_raw,
+        file_name_raw: header.file_name,
         file_comment: file_comment,
         header_start: offset,
         data_start: data_start,
-        external_attributes: external_file_attributes,
+        external_attributes: header.external_file_attrs,
     };
 
-    match parse_extra_field(&mut result, &*extra_field) {
+    match parse_extra_field(&mut result, &*header.extra_field) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => try!(Err(e)),
     }
