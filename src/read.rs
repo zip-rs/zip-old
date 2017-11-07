@@ -58,7 +58,8 @@ pub struct ZipArchive<R: Read + io::Seek> {
 enum ZipFileReader<'a> {
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
-    #[cfg(feature = "bzip2")] Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+    #[cfg(feature = "bzip2")]
+    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
 
 struct CentralDirectory {
@@ -99,8 +100,10 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let (zip32, pos) = spec::END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader)?;
 
         let mut directory = CentralDirectory::new();
-        if let Some(locator) =
-            spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(&mut reader, &pos).ok()
+        if let Some(locator) = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(
+            &mut reader,
+            &pos,
+        ).ok()
         {
             let pos = locator.central_directory_offset;
             let zip64 = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader, &pos)?;
@@ -126,7 +129,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(directory.number_of_files_on_this_disk as usize);
         let mut names_map = HashMap::new();
 
-        reader.seek(io::SeekFrom::Start(directory.central_directory_offset))?;
+        reader.seek(io::SeekFrom::Start(
+            directory.central_directory_offset,
+        ))?;
         let num = directory.number_of_files_on_this_disk as usize;
         println!("num: {}", num);
         println!(
@@ -230,10 +235,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
         false => header.file_comment.clone().from_cp437(),
     };
 
-    let offset = header.local_header_offset as u64;
-    if 0xFFFFFFFF == offset {
-        println!("{:?}", &header);
-    }
+    let offset = header.local_header_offset;
 
     // Remember end of central header
     let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
@@ -245,21 +247,22 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
 
-    try!(reader.seek(io::SeekFrom::Current(22)));
-    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as u64;
-    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as u64;
+    reader.seek(io::SeekFrom::Current(22))?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
     let data_start = offset + magic_and_header + file_name_length + extra_field_length;
 
     // Construct the result
-    let mut result = ZipFileData {
+    let result = ZipFileData {
         system: System::from_u8((header.version_made_by >> 8) as u8),
         version_made_by: header.version_made_by as u8,
         encrypted: header.general_purpose_flag & 1 == 1,
         compression_method: CompressionMethod::from_u16(header.compression_method),
-        last_modified_time: try!(::time::Tm::from_msdos(
-            MsDosDateTime::new(header.last_mod_time, header.last_mod_date),
-        )),
+        last_modified_time: try!(::time::Tm::from_msdos(MsDosDateTime::new(
+            header.last_mod_time,
+            header.last_mod_date,
+        ))),
         crc32: header.crc32,
         compressed_size: header.compressed_size as u64,
         uncompressed_size: header.uncompressed_size as u64,
@@ -271,28 +274,10 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
         external_attributes: header.external_file_attrs,
     };
 
-    match parse_extra_field(&mut result, &*header.extra_field) {
-        Ok(..) | Err(ZipError::Io(..)) => {}
-        Err(e) => try!(Err(e)),
-    }
-
     // Go back after the central header
     try!(reader.seek(io::SeekFrom::Start(return_position)));
 
     Ok(result)
-}
-
-fn parse_extra_field(_file: &mut ZipFileData, data: &[u8]) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(data);
-
-    while (reader.position() as usize) < data.len() {
-        let kind = try!(reader.read_u16::<LittleEndian>());
-        let len = try!(reader.read_u16::<LittleEndian>());
-        match kind {
-            _ => try!(reader.seek(io::SeekFrom::Current(len as i64))),
-        };
-    }
-    Ok(())
 }
 
 /// Methods for retreiving information on zip files
