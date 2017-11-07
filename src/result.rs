@@ -20,7 +20,7 @@ pub enum ZipError {
     /// This archive is not supported
     UnsupportedArchive(&'static str),
 
-    /// This archive is not supported
+    /// This section was not found in archive
     SectionNotFound(&'static str),
 
     /// The requested file could not be found in the archive
