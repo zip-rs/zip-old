@@ -4,7 +4,7 @@ use crc32::Crc32Reader;
 use compression::CompressionMethod;
 use spec;
 use result::{ZipError, ZipResult};
-use std::io;
+use std::io::{Take, SeekFrom, Result};
 use std::io::prelude::*;
 use std::collections::HashMap;
 use flate2;
@@ -49,40 +49,18 @@ mod ffi {
 /// println!("Result: {:?}", doit());
 /// ```
 #[derive(Debug)]
-pub struct ZipArchive<R: Read + io::Seek> {
+pub struct ZipArchive<R: Read + Seek> {
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
 }
 
 enum ZipFileReader<'a> {
-    Stored(Crc32Reader<io::Take<&'a mut Read>>),
-    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
+    Stored(Crc32Reader<Take<&'a mut Read>>),
+    Deflated(Crc32Reader<flate2::read::DeflateDecoder<Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+    Bzip2(Crc32Reader<BzDecoder<Take<&'a mut Read>>>),
 }
-
-struct CentralDirectory {
-    pub disk_number: u32,
-    pub disk_with_central_directory: u32,
-    pub number_of_files_on_this_disk: u64,
-    pub number_of_files: u64,
-    pub central_directory_size: u64,
-    pub central_directory_offset: u64,
-}
-impl CentralDirectory {
-    pub fn new() -> Self {
-        CentralDirectory {
-            disk_number: 0,
-            disk_with_central_directory: 0,
-            number_of_files_on_this_disk: 0,
-            number_of_files: 0,
-            central_directory_size: 0,
-            central_directory_offset: 0,
-        }
-    }
-}
-
 
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
@@ -93,35 +71,31 @@ pub struct ZipFile<'a> {
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
+struct CentralDirectory {
+    pub disk_number: u32,
+    pub disk_with_central_directory: u32,
+    pub number_of_files_on_this_disk: u64,
+    pub number_of_files: u64,
+    pub size: u64,
+    pub offset: u64,
+}
+impl CentralDirectory {
+    pub fn new() -> Self {
+        CentralDirectory {
+            disk_number: 0,
+            disk_with_central_directory: 0,
+            number_of_files_on_this_disk: 0,
+            number_of_files: 0,
+            size: 0,
+            offset: 0,
+        }
+    }
+}
 
-impl<R: Read + io::Seek> ZipArchive<R> {
+impl<R: Read + Seek> ZipArchive<R> {
     /// Opens a Zip archive and parses the central directory
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let (zip32, pos) = spec::END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader)?;
-
-        let mut directory = CentralDirectory::new();
-        if let Some(locator) = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(
-            &mut reader,
-            &pos,
-        ).ok()
-        {
-            let pos = locator.central_directory_offset;
-            let zip64 = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD::load(&mut reader, &pos)?;
-            directory.disk_number = zip64.disk_number;
-            directory.disk_with_central_directory = zip64.disk_with_central_directory;
-            directory.number_of_files_on_this_disk = zip64.number_of_files_on_this_disk;
-            directory.number_of_files = zip64.number_of_files;
-            directory.central_directory_size = zip64.central_directory_size;
-            directory.central_directory_offset = zip64.central_directory_offset;
-        } else {
-            directory.disk_number = zip32.disk_number as u32;
-            directory.disk_with_central_directory = zip32.disk_with_central_directory as u32;
-            directory.number_of_files_on_this_disk = zip32.number_of_files_on_this_disk as u64;
-            directory.number_of_files = zip32.number_of_files as u64;
-            directory.central_directory_size = zip32.central_directory_size as u64;
-            directory.central_directory_offset = zip32.central_directory_offset as u64;
-        }
-
+        let directory = Self::get_central_directory(&mut reader)?;
         if directory.disk_number != directory.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
@@ -129,18 +103,10 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let mut files = Vec::with_capacity(directory.number_of_files_on_this_disk as usize);
         let mut names_map = HashMap::new();
 
-        reader.seek(io::SeekFrom::Start(
-            directory.central_directory_offset,
-        ))?;
-        let num = directory.number_of_files_on_this_disk as usize;
-        println!("num: {}", num);
-        println!(
-            "directory.number_of_files_on_this_disk: {}",
-            directory.number_of_files_on_this_disk
-        );
-        for _ in 0..directory.number_of_files_on_this_disk as usize {
+        reader.seek(SeekFrom::Start(directory.offset))?;
+        for idx in 0..directory.number_of_files_on_this_disk as usize {
             let file = central_header_to_zip_file(&mut reader)?;
-            names_map.insert(file.file_name.clone(), files.len());
+            names_map.insert(file.file_name.clone(), idx);
             files.push(file);
         }
 
@@ -149,6 +115,29 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             files: files,
             names_map: names_map,
         })
+    }
+
+    fn get_central_directory<T: Read + Seek>(reader: &mut T) -> ZipResult<CentralDirectory> {
+        let mut directory = CentralDirectory::new();
+        let (zip32, pos) = spec::END_OF_CENTRAL_DIRECTORY_RECORD::load(reader)?;
+        if let Some(loc) = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR::load(reader, &pos).ok() {
+            let pos = loc.central_directory_offset;
+            let zip64 = spec::ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD::load(reader, &pos)?;
+            directory.disk_number = zip64.disk_number;
+            directory.disk_with_central_directory = zip64.disk_with_central_directory;
+            directory.number_of_files_on_this_disk = zip64.number_of_files_on_this_disk;
+            directory.number_of_files = zip64.number_of_files;
+            directory.size = zip64.central_directory_size;
+            directory.offset = zip64.central_directory_offset;
+        } else {
+            directory.disk_number = zip32.disk_number as u32;
+            directory.disk_with_central_directory = zip32.disk_with_central_directory as u32;
+            directory.number_of_files_on_this_disk = zip32.number_of_files_on_this_disk as u64;
+            directory.number_of_files = zip32.number_of_files as u64;
+            directory.size = zip32.central_directory_size as u64;
+            directory.offset = zip32.central_directory_offset as u64;
+        }
+        Ok(directory)
     }
 
     /// Number of files contained in this zip.
@@ -190,7 +179,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             return unsupported_zip_error("Encrypted files are not supported");
         }
 
-        try!(self.reader.seek(io::SeekFrom::Start(pos)));
+        try!(self.reader.seek(SeekFrom::Start(pos)));
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
         let reader = match data.compression_method {
@@ -222,7 +211,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 }
 
-fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<ZipFileData> {
+fn central_header_to_zip_file<R: Read + Seek>(reader: &mut R) -> ZipResult<ZipFileData> {
     let header = spec::CENTRAL_DIRECTORY_HEADER::load(reader)?;
 
     let is_utf8 = header.general_purpose_flag & (1 << 11) != 0;
@@ -238,16 +227,16 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
     let offset = header.local_header_offset;
 
     // Remember end of central header
-    let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
+    let return_position = reader.seek(SeekFrom::Current(0))?;
 
     // Parse local header
-    try!(reader.seek(io::SeekFrom::Start(offset)));
+    reader.seek(SeekFrom::Start(offset))?;
     let signature = try!(reader.read_u32::<LittleEndian>());
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
 
-    reader.seek(io::SeekFrom::Current(22))?;
+    reader.seek(SeekFrom::Current(22))?;
     let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
     let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
@@ -275,7 +264,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(reader: &mut R) -> ZipResult<Z
     };
 
     // Go back after the central header
-    try!(reader.seek(io::SeekFrom::Start(return_position)));
+    reader.seek(SeekFrom::Start(return_position))?;
 
     Ok(result)
 }
@@ -356,7 +345,7 @@ impl<'a> ZipFile<'a> {
 }
 
 impl<'a> Read for ZipFile<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.get_reader().read(buf)
     }
 }
