@@ -9,7 +9,6 @@ use std::io::prelude::*;
 use std::collections::HashMap;
 use flate2;
 use flate2::FlateReadExt;
-use podio::{LittleEndian, ReadPodExt};
 use types::{System, ZipFileData};
 use cp437::FromCp437;
 use msdos_time::{MsDosDateTime, TmMsDosExt};
@@ -158,28 +157,25 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
-        let index = match self.names_map.get(name) {
-            Some(index) => *index,
-            None => {
-                return Err(ZipError::FileNotFound);
-            }
-        };
-        self.by_index(index)
+        match self.names_map.get(name) {
+            Some(&index) => self.by_index(index),
+            None => Err(ZipError::FileNotFound),
+        }
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
-        if file_number >= self.files.len() {
+    pub fn by_index<'a>(&'a mut self, file_index: usize) -> ZipResult<ZipFile<'a>> {
+        if file_index >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
-        let ref data = self.files[file_number];
-        let pos = data.data_start;
 
+        let ref data = self.files[file_index];
         if data.encrypted {
             return unsupported_zip_error("Encrypted files are not supported");
         }
 
-        try!(self.reader.seek(SeekFrom::Start(pos)));
+        self.reader.seek(SeekFrom::Start(data.header_start))?;
+        spec::LOCAL_FILE_HEADER::load(&mut self.reader)?;
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
         let reader = match data.compression_method {
@@ -224,47 +220,26 @@ fn central_header_to_zip_file<R: Read + Seek>(reader: &mut R) -> ZipResult<ZipFi
         false => header.file_comment.clone().from_cp437(),
     };
 
-    let offset = header.local_header_offset;
-
-    // Remember end of central header
-    let return_position = reader.seek(SeekFrom::Current(0))?;
-
-    // Parse local header
-    reader.seek(SeekFrom::Start(offset))?;
-    let signature = try!(reader.read_u32::<LittleEndian>());
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid local file header"));
-    }
-
-    reader.seek(SeekFrom::Current(22))?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
-    let magic_and_header = 4 + 22 + 2 + 2;
-    let data_start = offset + magic_and_header + file_name_length + extra_field_length;
-
+    let time = ::time::Tm::from_msdos(MsDosDateTime::new(
+        header.last_mod_time,
+        header.last_mod_date,
+    ))?;
     // Construct the result
     let result = ZipFileData {
         system: System::from_u8((header.version_made_by >> 8) as u8),
         version_made_by: header.version_made_by as u8,
         encrypted: header.general_purpose_flag & 1 == 1,
         compression_method: CompressionMethod::from_u16(header.compression_method),
-        last_modified_time: try!(::time::Tm::from_msdos(MsDosDateTime::new(
-            header.last_mod_time,
-            header.last_mod_date,
-        ))),
+        last_modified_time: time,
         crc32: header.crc32,
         compressed_size: header.compressed_size as u64,
         uncompressed_size: header.uncompressed_size as u64,
         file_name: file_name,
         file_name_raw: header.file_name,
         file_comment: file_comment,
-        header_start: offset,
-        data_start: data_start,
+        header_start: header.local_header_offset,
         external_attributes: header.external_file_attrs,
     };
-
-    // Go back after the central header
-    reader.seek(SeekFrom::Start(return_position))?;
 
     Ok(result)
 }
@@ -340,7 +315,7 @@ impl<'a> ZipFile<'a> {
     }
     /// Get the offset of the payload of the original file
     pub fn offset(&self) -> u64 {
-        self.data.data_start
+        self.data.header_start
     }
 }
 

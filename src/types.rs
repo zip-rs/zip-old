@@ -52,8 +52,6 @@ pub struct ZipFileData {
     pub file_comment: String,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
-    /// Specifies where the compressed data of the file starts
-    pub data_start: u64,
     /// External file attributes
     pub external_attributes: u32,
 }
