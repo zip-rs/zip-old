@@ -219,11 +219,11 @@ fn central_header_to_zip_file<R: Read + Seek>(reader: &mut R) -> ZipResult<ZipFi
         true => String::from_utf8_lossy(&*header.file_comment).into_owned(),
         false => header.file_comment.clone().from_cp437(),
     };
-
     let time = ::time::Tm::from_msdos(MsDosDateTime::new(
         header.last_mod_time,
         header.last_mod_date,
     ))?;
+
     // Construct the result
     let result = ZipFileData {
         system: System::from_u8((header.version_made_by >> 8) as u8),
@@ -232,8 +232,8 @@ fn central_header_to_zip_file<R: Read + Seek>(reader: &mut R) -> ZipResult<ZipFi
         compression_method: CompressionMethod::from_u16(header.compression_method),
         last_modified_time: time,
         crc32: header.crc32,
-        compressed_size: header.compressed_size as u64,
-        uncompressed_size: header.uncompressed_size as u64,
+        compressed_size: header.compressed_size,
+        uncompressed_size: header.uncompressed_size,
         file_name: file_name,
         file_name_raw: header.file_name,
         file_comment: file_comment,
