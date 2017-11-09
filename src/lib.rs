@@ -9,14 +9,22 @@ extern crate msdos_time;
 extern crate podio;
 extern crate time;
 
-pub use read::ZipArchive;
+pub use zip_file::ZipFile;
+pub use zip_archive::ZipArchive;
 pub use write::ZipWriter;
 pub use compression::CompressionMethod;
 
 mod spec;
 mod crc32;
-mod types;
-pub mod read;
+mod system;
+mod zip_file_reader;
+mod zip_file_data;
+mod zip_archive;
+mod zip_file;
+mod central_directory;
+
+
+
 mod compression;
 pub mod write;
 mod cp437;

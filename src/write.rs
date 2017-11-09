@@ -1,7 +1,8 @@
 //! Structs for creating a new zip archive
 
 use compression::CompressionMethod;
-use types::{ZipFileData, System, DEFAULT_VERSION};
+use system::System;
+use zip_file_data::ZipFileData;
 use spec;
 use crc32;
 use result::{ZipResult, ZipError};
@@ -21,6 +22,8 @@ use msdos_time::TmMsDosExt;
 use bzip2;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
+
+const DEFAULT_VERSION: u8 = 20;
 
 enum GenericZipWriter<W: Write + io::Seek> {
     Closed,
