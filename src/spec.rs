@@ -58,6 +58,10 @@ impl CentralDirectoryEnd
 
         let search_upper_bound = file_length.checked_sub(HEADER_SIZE + ::std::u16::MAX as u64).unwrap_or(0);
 
+        if file_length < HEADER_SIZE {
+            return Err(ZipError::InvalidArchive("Invalid zip header"));
+        }
+
         let mut pos = file_length - HEADER_SIZE;
         while pos >= search_upper_bound
         {
