@@ -8,7 +8,7 @@ use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use flate2;
-use flate2::FlateReadExt;
+use flate2::read::DeflateDecoder;
 use podio::{ReadPodExt, LittleEndian};
 use types::{ZipFileData, System};
 use cp437::FromCp437;
@@ -237,7 +237,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
             },
             CompressionMethod::Deflated =>
             {
-                let deflate_reader = limit_reader.deflate_decode();
+                let deflate_reader = DeflateDecoder::new(limit_reader);
                 ZipFileReader::Deflated(Crc32Reader::new(
                     deflate_reader,
                     data.crc32))
