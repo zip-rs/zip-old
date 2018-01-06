@@ -24,7 +24,7 @@ install:
   - rustup-init -yv --default-toolchain %channel% --default-host %target%
   - set PATH=%PATH%;%USERPROFILE%\.cargo\bin
   - ps: |
-      if ($env:target -like "*-gnu" -And $env:PLATFORM -eq "x64") {
+      if ($env:target -like "*-gnu" -And $env:target -like "x86_x64-*") {
           Start-FileDownload "http://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/5.1.0/threads-win32/seh/x86_64-5.1.0-release-win32-seh-rt_v4-rev0.7z/download" -FileName mingw64.7z
           7z x -oC:\ mingw64.7z > $null
           $env:path = "C:\mingw64\bin;" + $env:path
