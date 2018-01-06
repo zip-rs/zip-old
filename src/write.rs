@@ -9,7 +9,6 @@ use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
-use std::ascii::AsciiExt;
 use time;
 use flate2;
 use flate2::write::DeflateEncoder;
