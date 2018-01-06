@@ -12,7 +12,6 @@ use std::mem;
 use std::ascii::AsciiExt;
 use time;
 use flate2;
-use flate2::FlateWriteExt;
 use flate2::write::DeflateEncoder;
 use podio::{WritePodExt, LittleEndian};
 use msdos_time::TmMsDosExt;
@@ -341,7 +340,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         *self = match compression
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(bare.deflate_encode(flate2::Compression::Default)),
+            CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(bare, flate2::Compression::default())),
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default)),
             CompressionMethod::Unsupported(..) => return Err(ZipError::UnsupportedArchive("Unsupported compression")),
