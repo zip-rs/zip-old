@@ -13,9 +13,9 @@ use types::{ZipFileData, System};
 use cp437::FromCp437;
 use msdos_time::{TmMsDosExt, MsDosDateTime};
 
-#[cfg(feature = "flate2")]
+#[cfg(feature = "deflate")]
 use flate2;
-#[cfg(feature = "flate2")]
+#[cfg(feature = "deflate")]
 use flate2::read::DeflateDecoder;
 
 #[cfg(feature = "bzip2")]
@@ -63,7 +63,7 @@ pub struct ZipArchive<R: Read + io::Seek>
 
 enum ZipFileReader<'a> {
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
-    #[cfg(feature = "flate2")]
+    #[cfg(feature = "deflate")]
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
@@ -240,7 +240,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
                     limit_reader,
                     data.crc32))
             },
-            #[cfg(feature = "flate2")]
+            #[cfg(feature = "deflate")]
             CompressionMethod::Deflated =>
             {
                 let deflate_reader = DeflateDecoder::new(limit_reader);
@@ -383,7 +383,7 @@ impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> &mut Read {
         match self.reader {
            ZipFileReader::Stored(ref mut r) => r as &mut Read,
-           #[cfg(feature = "flate2")]
+           #[cfg(feature = "deflate")]
            ZipFileReader::Deflated(ref mut r) => r as &mut Read,
            #[cfg(feature = "bzip2")]
            ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
