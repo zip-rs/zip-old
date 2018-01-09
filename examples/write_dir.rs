@@ -12,6 +12,18 @@ fn main() {
     std::process::exit(real_main());
 }
 
+const METHOD_STORED : Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
+
+#[cfg(feature = "flate2")]
+const METHOD_DEFLATED : Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
+#[cfg(not(feature = "flate2"))]
+const METHOD_DEFLATED : Option<zip::CompressionMethod> = None;
+
+#[cfg(feature = "bzip2")]
+const METHOD_BZIP2 : Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
+#[cfg(not(feature = "bzip2"))]
+const METHOD_BZIP2 : Option<zip::CompressionMethod> = None;
+
 fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
@@ -22,15 +34,18 @@ fn real_main() -> i32 {
 
     let src_dir = &*args[1];
     let dst_file = &*args[2];
-    match doit(src_dir, dst_file) {
-        Ok(_) => println!("done: {} written to {}", src_dir, dst_file),
-        Err(e) => println!("Error: {:?}", e),
+    for &method in [METHOD_STORED, METHOD_DEFLATED, METHOD_BZIP2].iter() {
+        if method.is_none() { continue }
+        match doit(src_dir, dst_file, method.unwrap()) {
+            Ok(_) => println!("done: {} written to {}", src_dir, dst_file),
+            Err(e) => println!("Error: {:?}", e),
+        }
     }
 
     return 0;
 }
 
-fn doit(src_dir: &str, dst_file: &str) -> zip::result::ZipResult<()> {
+fn doit(src_dir: &str, dst_file: &str, method: zip::CompressionMethod) -> zip::result::ZipResult<()> {
     if !Path::new(src_dir).is_dir() {
         return Ok(());
     }
@@ -41,7 +56,7 @@ fn doit(src_dir: &str, dst_file: &str) -> zip::result::ZipResult<()> {
     let mut zip = zip::ZipWriter::new(file);
 
     let options = FileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
+        .compression_method(method)
         .unix_permissions(0o755);
 
     let walkdir = WalkDir::new(src_dir.to_string());
