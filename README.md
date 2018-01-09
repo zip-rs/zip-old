@@ -24,6 +24,8 @@ Currently unsupported zip extensions:
 * Encryption
 * Multi-disk
 
+We aim to support rust versions 1.20+.
+
 Usage
 -----
 
