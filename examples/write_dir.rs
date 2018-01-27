@@ -1,12 +1,15 @@
-use std::io::prelude::*;
-use zip::write::FileOptions;
-
-use walkdir::WalkDir;
-use std::path::Path;
-use std::fs::File;
-
 extern crate zip;
 extern crate walkdir;
+
+use std::io::prelude::*;
+use std::io::{Write, Seek};
+use std::iter::Iterator;
+use zip::write::FileOptions;
+use zip::result::ZipError;
+
+use walkdir::{WalkDir, DirEntry};
+use std::path::Path;
+use std::fs::File;
 
 fn main() {
     std::process::exit(real_main());
@@ -45,43 +48,49 @@ fn real_main() -> i32 {
     return 0;
 }
 
+fn zip_dir<T>(it: &mut Iterator<Item=DirEntry>, prefix: &str, writer: T, method: zip::CompressionMethod)
+              -> zip::result::ZipResult<()>
+    where T: Write+Seek
+{
+    let mut zip = zip::ZipWriter::new(writer);
+    let options = FileOptions::default()
+        .compression_method(method)
+        .unix_permissions(0o755);
+
+    let mut buffer = Vec::new();
+    for entry in it {
+        let path = entry.path();
+        let name = path.strip_prefix(Path::new(prefix))
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        if path.is_file() {
+            println!("adding {:?} as {:?} ...", path, name);
+            zip.start_file(name, options)?;
+            let mut f = File::open(path)?;
+
+            f.read_to_end(&mut buffer)?;
+            zip.write_all(&*buffer)?;
+            buffer.clear();
+        }
+    }
+    zip.finish()?;
+    Result::Ok(())
+}
+
 fn doit(src_dir: &str, dst_file: &str, method: zip::CompressionMethod) -> zip::result::ZipResult<()> {
     if !Path::new(src_dir).is_dir() {
-        return Ok(());
+        return Err(ZipError::FileNotFound);
     }
 
     let path = Path::new(dst_file);
     let file = File::create(&path).unwrap();
 
-    let mut zip = zip::ZipWriter::new(file);
-
-    let options = FileOptions::default()
-        .compression_method(method)
-        .unix_permissions(0o755);
-
     let walkdir = WalkDir::new(src_dir.to_string());
-
     let it = walkdir.into_iter();
 
-    for dent in it.filter_map(|e| e.ok()) {
-        let path = dent.path();
-        let name = path.strip_prefix(Path::new(src_dir))
-            .unwrap()
-            .to_str()
-            .unwrap();
-
-
-        if path.is_file() {
-            println!("adding {:?} as {:?} ...", path, name);
-            try!(zip.start_file(name, options));
-            let mut f = File::open(path)?;
-            let mut buffer = Vec::new();
-            f.read_to_end(&mut buffer)?;
-            try!(zip.write_all(&*buffer));
-        }
-    }
-
-    try!(zip.finish());
+    zip_dir(&mut it.filter_map(|e| e.ok()), src_dir, file, method)?;
 
     Ok(())
 }
