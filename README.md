@@ -42,3 +42,12 @@ Without the default features:
 [dependencies]
 zip = { version = "0.2", default-features = false }
 ```
+
+Examples
+--------
+
+See the [examples directory](examples) for:
+   * How to write a file to a zip.
+   * how to write a directory of files to a zip (using [walkdir](/BurntSushi/walkdir)).
+   * How to extract a zip file.
+   * How to extract a single file from a zip.
