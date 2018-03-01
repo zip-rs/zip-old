@@ -1,4 +1,5 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::cell::Cell;
+use std::io::{Read, Seek, SeekFrom, Take};
 use std::collections::HashMap;
 use compression::CompressionMethod;
 use zip_file_reader::{ZipFileReader, Crc32Reader, BzDecoder};
@@ -44,9 +45,9 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 ///
 /// println!("Result: {:?}", doit());
 /// ```
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct ZipArchive<R: Read + Seek> {
-    reader: R,
+    reader: Cell<R>,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
 }
@@ -69,7 +70,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
 
         Ok(ZipArchive {
-            reader: reader,
+            reader: Cell::new(reader),
             files: files,
             names_map: names_map,
         })
@@ -92,7 +93,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
+    pub fn by_name<'a>(&'a self, name: &str) -> ZipResult<ZipFile<'a>> {
         match self.names_map.get(name) {
             Some(&index) => self.by_index(index),
             None => Err(ZipError::FileNotFound),
@@ -100,21 +101,25 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_index: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index<'a>(&'a self, file_index: usize) -> ZipResult<ZipFile<'a>> {
         if file_index >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
 
-        let ref data = self.files[file_index];
+        let ref data = self.files[file_index];        
         if data.encrypted {
             return unsupported_zip_error("Encrypted files are not supported");
         }
 
-        self.reader.seek(SeekFrom::Start(data.header_start))?;
-        LOCAL_FILE_HEADER::load(&mut self.reader)?;
-        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
+        let reader = unsafe {
+            let reader_ptr = self.reader.as_ptr();
+            (*reader_ptr).seek(SeekFrom::Start(data.header_start))?;
+            LOCAL_FILE_HEADER::load(&mut *reader_ptr)?;
+            &mut *reader_ptr as &mut Read
+        };
 
-        let reader = match data.compression_method {
+        let limit_reader: Take<&mut Read> = reader.take(data.compressed_size);         
+        let data_reader = match data.compression_method {
             CompressionMethod::Stored => {
                 ZipFileReader::Stored(Crc32Reader::new(limit_reader, data.crc32))
             }
@@ -128,15 +133,15 @@ impl<R: Read + Seek> ZipArchive<R> {
                 ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, data.crc32))
             }
             _ => return unsupported_zip_error("Compression method not supported"),
-        };
-        Ok(ZipFile::new(data, reader))
+        };        
+        Ok(ZipFile::new(data, data_reader))
     }
 
     /// Unwrap and return the inner reader object
     ///
     /// The position of the reader is undefined.
     pub fn into_inner(self) -> R {
-        self.reader
+        self.reader. into_inner()
     }
 }
 

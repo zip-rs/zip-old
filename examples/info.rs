@@ -15,7 +15,7 @@ fn real_main() -> i32 {
     let zipfile = std::fs::File::open(&Path::new(&*args[1])).unwrap();
     let file_name = &*args[2];
 
-    let mut archive = match zip::ZipArchive::new(zipfile) {
+    let archive = match zip::ZipArchive::new(zipfile) {
         Ok(zip) => zip,
         Err(e) => {
             println!("File {} not found", &e);

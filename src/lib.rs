@@ -11,7 +11,6 @@ extern crate time;
 
 pub use zip_file::ZipFile;
 pub use zip_archive::ZipArchive;
-pub use write::ZipWriter;
 pub use compression::CompressionMethod;
 
 mod spec;
@@ -23,9 +22,6 @@ mod zip_archive;
 mod zip_file;
 mod central_directory;
 
-
-
 mod compression;
-pub mod write;
 mod cp437;
 pub mod result;

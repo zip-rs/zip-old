@@ -1,14 +1,14 @@
 [package]
 
 name = "zip"
-version = "0.2.7"
-authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>"]
+version = "0.2.0"
+authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "seb"]
 license = "MIT"
-repository = "https://github.com/mvdnes/zip-rs.git"
-documentation = "http://mvdnes.github.io/rust-docs/zip-rs/zip/index.html"
+repository = "https://github.com/seb-odessa/zip-rs"
 keywords = ["zip", "archive"]
 description = """
-Library to support the reading and writing of zip files.
+Library allows reading only of zip files (Files more than 4G also supported).
+It is rework of the original zip-rs project @see https://github.com/mvdnes/zip-rs.git
 """
 
 [dependencies]

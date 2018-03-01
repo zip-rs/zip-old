@@ -17,7 +17,7 @@ fn real_main() -> i32
     let fname = std::path::Path::new(&*args[1]);
     let zipfile = std::fs::File::open(&fname).unwrap();
 
-    let mut archive = zip::ZipArchive::new(zipfile).unwrap();
+    let archive = zip::ZipArchive::new(zipfile).unwrap();
     
     let mut file = match archive.by_name(&args[2])
     {

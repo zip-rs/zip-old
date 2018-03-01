@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 use result::{ZipError, ZipResult};
-use podio::{LittleEndian, ReadPodExt, WritePodExt};
+use podio::{LittleEndian, ReadPodExt};
 
 /*
 End of central directory record:
@@ -90,18 +90,5 @@ impl END_OF_CENTRAL_DIRECTORY_RECORD {
         let length = reader.read_u16::<LittleEndian>()?;
         record.zip_file_comment = ReadPodExt::read_exact(reader, length as usize)?;
         return Ok((record, pos));
-    }
-
-    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32::<LittleEndian>(Self::signature())?;
-        writer.write_u16::<LittleEndian>(self.disk_number)?;
-        writer.write_u16::<LittleEndian>(self.disk_with_central_directory)?;
-        writer.write_u16::<LittleEndian>(self.number_of_files_on_this_disk)?;
-        writer.write_u16::<LittleEndian>(self.number_of_files)?;
-        writer.write_u32::<LittleEndian>(self.central_directory_size)?;
-        writer.write_u32::<LittleEndian>(self.central_directory_offset)?;
-        writer.write_u16::<LittleEndian>(self.zip_file_comment.len() as u16)?;
-        writer.write_all(&self.zip_file_comment)?;
-        Ok(())
     }
 }

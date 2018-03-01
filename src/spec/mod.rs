@@ -126,6 +126,3 @@ mod central_directory_header;
 pub use spec::central_directory_header::*;
 mod local_file_header;
 pub use spec::local_file_header::*;
-
-pub static LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
-//pub static CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
