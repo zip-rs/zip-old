@@ -112,6 +112,6 @@ mod test {
             data_start: 0,
             external_attributes: 0,
         };
-        assert_eq!(data.file_name_sanitized().to_str().unwrap(), "path/etc/passwd");
+        assert_eq!(data.file_name_sanitized(), ::std::path::PathBuf::from("path/etc/passwd"));
     }
 }
