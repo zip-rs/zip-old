@@ -43,6 +43,18 @@ Without the default features:
 zip = { version = "0.3", default-features = false }
 ```
 
+You can further control the backend of `deflate` compression method with these features:
+* `deflate` (enabled by default) uses [miniz_oxide](https://github.com/Frommi/miniz_oxide)
+* `deflate-miniz` uses [miniz](https://github.com/richgel999/miniz)
+* `deflate-zlib` uses zlib
+
+For example:
+
+```toml
+[dependencies]
+zip = { version = "0.3", features = ["deflate-zlib"], default-features = false }
+```
+
 Examples
 --------
 
