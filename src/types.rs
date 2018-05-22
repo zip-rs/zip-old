@@ -25,7 +25,7 @@ impl System {
     }
 }
 
-pub const DEFAULT_VERSION: u8 = 20;
+pub const DEFAULT_VERSION: u8 = 46;
 
 /// Structure representing a ZIP file.
 #[derive(Debug)]
