@@ -178,10 +178,13 @@ impl<R: Read+io::Seek> ZipArchive<R>
         let (archive_offset, directory_start, number_of_files) =
             try!(Self::get_directory_counts(&mut reader, &footer, cde_start_pos));
 
-        let mut files = Vec::with_capacity(number_of_files);
+        let mut files = Vec::new();
         let mut names_map = HashMap::new();
 
-        try!(reader.seek(io::SeekFrom::Start(directory_start)));
+        if let Err(_) = reader.seek(io::SeekFrom::Start(directory_start)) {
+            return Err(ZipError::InvalidArchive("Could not seek to start of central directory"));
+        }
+
         for _ in 0 .. number_of_files
         {
             let file = try!(central_header_to_zip_file(&mut reader, archive_offset));
