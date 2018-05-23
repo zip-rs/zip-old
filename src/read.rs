@@ -73,6 +73,7 @@ pub struct ZipArchive<R: Read + io::Seek>
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
     offset: u64,
+    comment: Vec<u8>,
 }
 
 enum ZipFileReader<'a> {
@@ -193,6 +194,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
             files: files,
             names_map: names_map,
             offset: archive_offset,
+            comment: footer.zip_file_comment,
         })
     }
 
@@ -501,5 +503,16 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
         assert!(reader.len() == 1);
+    }
+
+    #[test]
+    fn zip_comment() {
+        use std::io;
+        use super::ZipArchive;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        assert!(reader.comment == b"zip-rs");
     }
 }
