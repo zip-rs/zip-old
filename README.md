@@ -33,14 +33,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "0.3"
+zip = "0.4"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "0.3", default-features = false }
+zip = { version = "0.4", default-features = false }
 ```
 
 You can further control the backend of `deflate` compression method with these features:
@@ -52,7 +52,7 @@ For example:
 
 ```toml
 [dependencies]
-zip = { version = "0.3", features = ["deflate-zlib"], default-features = false }
+zip = { version = "0.4", features = ["deflate-zlib"], default-features = false }
 ```
 
 Examples
