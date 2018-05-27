@@ -12,7 +12,7 @@ Library to support the reading and writing of zip files.
 """
 
 [dependencies]
-flate2 = { version = "1.0", default-features = false, features = ["rust_backend"], optional = true}
+flate2 = { version = "1.0", default-features = false, optional = true }
 time = "0.1"
 podio = "0.1"
 msdos_time = "0.1"
@@ -22,5 +22,7 @@ bzip2 = { version = "0.3", optional = true }
 walkdir = "1.0"
 
 [features]
-deflate = ["flate2"]
+deflate = ["flate2", "flate2/rust_backend"]
+deflate-miniz = ["flate2", "flate2/miniz-sys"]
+deflate-zlib = ["flate2", "flate2/zlib"]
 default = ["bzip2", "deflate"]
