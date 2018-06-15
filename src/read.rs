@@ -95,6 +95,40 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
     Err(ZipError::UnsupportedArchive(detail))
 }
 
+
+fn make_reader<'a>(
+    compression_method: ::compression::CompressionMethod,
+    crc32: u32,
+    reader: io::Take<&'a mut io::Read>)
+        -> ZipResult<ZipFileReader<'a>> {
+
+    match compression_method {
+        CompressionMethod::Stored =>
+        {
+            Ok(ZipFileReader::Stored(Crc32Reader::new(
+                reader,
+                crc32)))
+        },
+        #[cfg(feature = "flate2")]
+        CompressionMethod::Deflated =>
+        {
+            let deflate_reader = DeflateDecoder::new(reader);
+            Ok(ZipFileReader::Deflated(Crc32Reader::new(
+                deflate_reader,
+                crc32)))
+        },
+        #[cfg(feature = "bzip2")]
+        CompressionMethod::Bzip2 =>
+        {
+            let bzip2_reader = BzDecoder::new(reader);
+            Ok(ZipFileReader::Bzip2(Crc32Reader::new(
+                bzip2_reader,
+                crc32)))
+        },
+        _ => unsupported_zip_error("Compression method not supported"),
+    }
+}
+
 impl<R: Read+io::Seek> ZipArchive<R>
 {
     /// Get the directory start offset and number of files. This is done in a
@@ -251,33 +285,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         try!(self.reader.seek(io::SeekFrom::Start(pos)));
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
-        let reader = match data.compression_method
-        {
-            CompressionMethod::Stored =>
-            {
-                ZipFileReader::Stored(Crc32Reader::new(
-                    limit_reader,
-                    data.crc32))
-            },
-            #[cfg(feature = "flate2")]
-            CompressionMethod::Deflated =>
-            {
-                let deflate_reader = DeflateDecoder::new(limit_reader);
-                ZipFileReader::Deflated(Crc32Reader::new(
-                    deflate_reader,
-                    data.crc32))
-            },
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 =>
-            {
-                let bzip2_reader = BzDecoder::new(limit_reader);
-                ZipFileReader::Bzip2(Crc32Reader::new(
-                    bzip2_reader,
-                    data.crc32))
-            },
-            _ => return unsupported_zip_error("Compression method not supported"),
-        };
-        Ok(ZipFile { reader: reader, data: data })
+        Ok(ZipFile { reader: try!(make_reader(data.compression_method, data.crc32, limit_reader)), data: data })
     }
 
     /// Unwrap and return the inner reader object
@@ -397,16 +405,20 @@ fn parse_extra_field(_file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
     Ok(())
 }
 
+fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
+    match *reader {
+        ZipFileReader::Stored(ref mut r) => r as &mut Read,
+        #[cfg(feature = "flate2")]
+        ZipFileReader::Deflated(ref mut r) => r as &mut Read,
+        #[cfg(feature = "bzip2")]
+        ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
+    }
+}
+
 /// Methods for retreiving information on zip files
 impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> &mut Read {
-        match self.reader {
-           ZipFileReader::Stored(ref mut r) => r as &mut Read,
-           #[cfg(feature = "flate2")]
-           ZipFileReader::Deflated(ref mut r) => r as &mut Read,
-           #[cfg(feature = "bzip2")]
-           ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
-        }
+        get_reader(&mut self.reader)
     }
     /// Get the version of the file
     pub fn version_made_by(&self) -> (u8, u8) {
@@ -482,6 +494,59 @@ impl<'a> Read for ZipFile<'a> {
      fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
          self.get_reader().read(buf)
      }
+}
+
+pub struct ZipEntry<'a> {
+    pub name: String,
+    pub modified: ::time::Tm,
+    reader: ZipFileReader<'a>,
+}
+
+impl<'a> ZipEntry<'a> {
+    pub fn get_reader(&mut self) -> &mut Read {
+        get_reader(&mut self.reader)
+    }
+}
+
+pub fn read_single<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipEntry>> {
+    let signature = try!(reader.read_u32::<LittleEndian>());
+    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
+    {
+        return if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+            Err(ZipError::InvalidArchive("Invalid local file header"))
+        } else {
+            Ok(None)
+        };
+    }
+
+    let version_made_by = try!(reader.read_u16::<LittleEndian>());
+    let flags = try!(reader.read_u16::<LittleEndian>());
+    let encrypted = flags & 1 == 1;
+    let is_utf8 = flags & (1 << 11) != 0;
+    let compression_method = CompressionMethod::from_u16(try!(reader.read_u16::<LittleEndian>()));
+    let last_mod_time = try!(reader.read_u16::<LittleEndian>());
+    let last_mod_date = try!(reader.read_u16::<LittleEndian>());
+    let crc32 = try!(reader.read_u32::<LittleEndian>());
+    let compressed_size = try!(reader.read_u32::<LittleEndian>());
+    let uncompressed_size = try!(reader.read_u32::<LittleEndian>());
+    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as usize;
+    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as usize;
+
+    let file_name_raw = try!(ReadPodExt::read_exact(reader, file_name_length));
+    let extra_field = try!(ReadPodExt::read_exact(reader, extra_field_length));
+
+    let file_name = match is_utf8
+    {
+        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
+        false => file_name_raw.clone().from_cp437(),
+    };
+
+    let limit_reader = (reader as &'a mut io::Read).take(compressed_size as u64);
+
+    Ok(Some(ZipEntry { name: file_name,
+        modified: try!(::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date))),
+        reader: try!(make_reader(compression_method, crc32, limit_reader))
+    }))
 }
 
 #[cfg(test)]
