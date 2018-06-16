@@ -7,6 +7,7 @@ use result::{ZipResult, ZipError};
 use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
+use std::borrow::Cow;
 
 use podio::{ReadPodExt, LittleEndian};
 use types::{ZipFileData, System};
@@ -86,7 +87,7 @@ enum ZipFileReader<'a> {
 
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
-    data: &'a ZipFileData,
+    data: Cow<'a, ZipFileData>,
     reader: ZipFileReader<'a>,
 }
 
@@ -285,7 +286,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         try!(self.reader.seek(io::SeekFrom::Start(pos)));
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
-        Ok(ZipFile { reader: try!(make_reader(data.compression_method, data.crc32, limit_reader)), data: data })
+        Ok(ZipFile { reader: try!(make_reader(data.compression_method, data.crc32, limit_reader)), data: Cow::Borrowed(data) })
     }
 
     /// Unwrap and return the inner reader object
@@ -389,7 +390,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     Ok(result)
 }
 
-fn parse_extra_field(_file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
+fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
 {
     let mut reader = io::Cursor::new(data);
 
@@ -399,7 +400,14 @@ fn parse_extra_field(_file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
         let len = try!(reader.read_u16::<LittleEndian>());
         match kind
         {
-            _ => try!(reader.seek(io::SeekFrom::Current(len as i64))),
+            // Zip64 extended information extra field
+            0x0001 => {
+                file.uncompressed_size = try!(reader.read_u64::<LittleEndian>());
+                file.compressed_size = try!(reader.read_u64::<LittleEndian>());
+                try!(reader.read_u64::<LittleEndian>());  // relative header offset
+                try!(reader.read_u32::<LittleEndian>());  // disk start number
+            },
+            _ => { try!(reader.seek(io::SeekFrom::Current(len as i64))); },
         };
     }
     Ok(())
@@ -459,6 +467,10 @@ impl<'a> ZipFile<'a> {
     }
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
+        if self.data.external_attributes == 0 {
+            return None;
+        }
+
         match self.data.system {
             System::Unix => {
                 Some(self.data.external_attributes >> 16)
@@ -496,33 +508,54 @@ impl<'a> Read for ZipFile<'a> {
      }
 }
 
-pub struct ZipEntry<'a> {
-    pub name: String,
-    pub modified: ::time::Tm,
-    reader: ZipFileReader<'a>,
-}
-
-impl<'a> ZipEntry<'a> {
-    pub fn get_reader(&mut self) -> &mut Read {
-        get_reader(&mut self.reader)
+impl<'a> Drop for ZipFile<'a> {
+    fn drop(&mut self) {
+        // self.data is Owned, this reader is constructed by a streaming reader.
+        // In this case, we want to exhaust the reader so that the next file is accessible.
+        if let Cow::Owned(_) = self.data {
+            let mut buffer = [0; 1<<16];
+            let reader = get_reader(&mut self.reader);
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(_) => (),
+                    Err(e) => panic!("Could not consume all of the output of the current ZipFile: {:?}", e),
+                }
+            }
+        }
     }
 }
 
-pub fn read_single<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipEntry>> {
+/// Read ZipFile structures from a non-seekable reader.
+///
+/// This is an alternative method to read a zip file. If possible, use the ZipArchive functions
+/// as some information will be missing when reading this manner.
+///
+/// Reads a file header from the start of the stream. Will return `Ok(Some(..))` if a file is
+/// present at the start of the stream. Returns `Ok(None)` if the start of the central directory
+/// is encountered. No more files should be read after this.
+///
+/// The Drop implementation of ZipFile ensures that the reader will be correctly positioned after
+/// the structure is done.
+///
+/// Missing fields are:
+/// * `comment`: set to an empty string
+/// * `data_start`: set to 0
+/// * `external_attributes`: `unix_mode()`: will return None
+pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile>> {
     let signature = try!(reader.read_u32::<LittleEndian>());
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
-    {
-        return if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-            Err(ZipError::InvalidArchive("Invalid local file header"))
-        } else {
-            Ok(None)
-        };
+
+    match signature {
+        spec::LOCAL_FILE_HEADER_SIGNATURE => (),
+        spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
     let version_made_by = try!(reader.read_u16::<LittleEndian>());
     let flags = try!(reader.read_u16::<LittleEndian>());
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
+    let using_data_descriptor = flags & (1 << 3) != 0;
     let compression_method = CompressionMethod::from_u16(try!(reader.read_u16::<LittleEndian>()));
     let last_mod_time = try!(reader.read_u16::<LittleEndian>());
     let last_mod_date = try!(reader.read_u16::<LittleEndian>());
@@ -541,11 +574,48 @@ pub fn read_single<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipEn
         false => file_name_raw.clone().from_cp437(),
     };
 
-    let limit_reader = (reader as &'a mut io::Read).take(compressed_size as u64);
+    let mut result = ZipFileData
+    {
+        system: System::from_u8((version_made_by >> 8) as u8),
+        version_made_by: version_made_by as u8,
+        encrypted: encrypted,
+        compression_method: compression_method,
+        last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
+        crc32: crc32,
+        compressed_size: compressed_size as u64,
+        uncompressed_size: uncompressed_size as u64,
+        file_name: file_name,
+        file_name_raw: file_name_raw,
+        file_comment: String::new(),  // file comment is only available in the central directory
+        // header_start and data start are not available, but also don't matter, since seeking is
+        // not available.
+        header_start: 0,
+        data_start: 0,
+        // The external_attributes field is only available in the central directory.
+        // We set this to zero, which should be valid as the docs state 'If input came
+        // from standard input, this field is set to zero.'
+        external_attributes: 0,
+    };
 
-    Ok(Some(ZipEntry { name: file_name,
-        modified: try!(::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date))),
-        reader: try!(make_reader(compression_method, crc32, limit_reader))
+    match parse_extra_field(&mut result, &extra_field) {
+        Ok(..) | Err(ZipError::Io(..)) => {},
+        Err(e) => try!(Err(e)),
+    }
+
+    if encrypted {
+        return unsupported_zip_error("Encrypted files are not supported")
+    }
+    if using_data_descriptor {
+        return unsupported_zip_error("The file length is not available in the local header");
+    }
+
+    let limit_reader = (reader as &'a mut io::Read).take(result.compressed_size as u64);
+
+    let result_crc32 = result.crc32;
+    let result_compression_method = result.compression_method;
+    Ok(Some(ZipFile {
+        data: Cow::Owned(result),
+        reader: try!(make_reader(result_compression_method, result_crc32, limit_reader))
     }))
 }
 
@@ -582,5 +652,21 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
         assert!(reader.comment == b"zip-rs");
+    }
+
+    #[test]
+    fn zip_read_streaming() {
+        use std::io;
+        use super::read_zipfile_from_stream;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let mut reader = io::Cursor::new(v);
+        loop {
+            match read_zipfile_from_stream(&mut reader).unwrap() {
+                None => break,
+                _ => (),
+            }
+        }
     }
 }

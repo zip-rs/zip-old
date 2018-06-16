@@ -28,7 +28,7 @@ impl System {
 pub const DEFAULT_VERSION: u8 = 46;
 
 /// Structure representing a ZIP file.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ZipFileData
 {
     /// Compatibility of the file attribute information
