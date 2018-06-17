@@ -344,23 +344,6 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         false => file_comment_raw.from_cp437(),
     };
 
-    // Remember end of central header
-    let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
-
-    // Parse local header
-    try!(reader.seek(io::SeekFrom::Start(offset)));
-    let signature = try!(reader.read_u32::<LittleEndian>());
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
-    {
-        return Err(ZipError::InvalidArchive("Invalid local file header"))
-    }
-
-    try!(reader.seek(io::SeekFrom::Current(22)));
-    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as u64;
-    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as u64;
-    let magic_and_header = 4 + 22 + 2 + 2;
-    let data_start = offset + magic_and_header + file_name_length + extra_field_length;
-
     // Construct the result
     let mut result = ZipFileData
     {
@@ -376,7 +359,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         file_name_raw: file_name_raw,
         file_comment: file_comment,
         header_start: offset,
-        data_start: data_start,
+        data_start: 0,
         external_attributes: external_file_attributes,
     };
 
@@ -384,6 +367,23 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         Ok(..) | Err(ZipError::Io(..)) => {},
         Err(e) => try!(Err(e)),
     }
+
+    // Remember end of central header
+    let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
+
+    // Parse local header
+    try!(reader.seek(io::SeekFrom::Start(result.header_start)));
+    let signature = try!(reader.read_u32::<LittleEndian>());
+    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
+    {
+        return Err(ZipError::InvalidArchive("Invalid local file header"))
+    }
+
+    try!(reader.seek(io::SeekFrom::Current(22)));
+    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as u64;
+    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as u64;
+    let magic_and_header = 4 + 22 + 2 + 2;
+    result.data_start = result.header_start + magic_and_header + file_name_length + extra_field_length;
 
     // Go back after the central header
     try!(reader.seek(io::SeekFrom::Start(return_position)));
