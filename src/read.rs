@@ -78,6 +78,7 @@ pub struct ZipArchive<R: Read + io::Seek>
 }
 
 enum ZipFileReader<'a> {
+    NoReader,
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
     #[cfg(feature = "flate2")]
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
@@ -415,6 +416,7 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
 
 fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
     match *reader {
+        ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
         ZipFileReader::Stored(ref mut r) => r as &mut Read,
         #[cfg(feature = "flate2")]
         ZipFileReader::Deflated(ref mut r) => r as &mut Read,
@@ -514,7 +516,18 @@ impl<'a> Drop for ZipFile<'a> {
         // In this case, we want to exhaust the reader so that the next file is accessible.
         if let Cow::Owned(_) = self.data {
             let mut buffer = [0; 1<<16];
-            let reader = get_reader(&mut self.reader);
+
+            // Get the inner `Take` reader so all decompression and CRC calculation is skipped.
+            let innerreader = ::std::mem::replace(&mut self.reader, ZipFileReader::NoReader);
+            let mut reader = match innerreader {
+                ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+                ZipFileReader::Stored(crcreader) => crcreader.into_inner(),
+                #[cfg(feature = "flate2")]
+                ZipFileReader::Deflated(crcreader) => crcreader.into_inner().into_inner(),
+                #[cfg(feature = "bzip2")]
+                ZipFileReader::Bzip2(crcreader) => crcreader.into_inner().into_inner(),
+            };
+
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
