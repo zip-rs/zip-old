@@ -63,7 +63,7 @@ pub struct ZipFileData
 
 impl ZipFileData {
     pub fn file_name_sanitized(&self) -> ::std::path::PathBuf {
-        let no_null_filename: String = match self.file_name.find('\0') {
+        let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],
             None => &self.file_name,
         }.to_string();
