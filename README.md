@@ -63,3 +63,4 @@ See the [examples directory](examples) for:
    * how to write a directory of files to a zip (using [walkdir](https://github.com/BurntSushi/walkdir)).
    * How to extract a zip file.
    * How to extract a single file from a zip.
+   * How to read a zip from the standard input.
