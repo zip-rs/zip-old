@@ -20,7 +20,6 @@ Supported compression formats:
 
 Currently unsupported zip extensions:
 
-* Most of ZIP64, although there is some support for archives with more than 65535 files
 * Encryption
 * Multi-disk
 
