@@ -67,7 +67,7 @@ const TM_1980_01_01 : ::time::Tm = ::time::Tm {
 ///
 /// println!("Result: {:?}", doit());
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ZipArchive<R: Read + io::Seek>
 {
     reader: R,
@@ -687,5 +687,33 @@ mod test {
                 _ => (),
             }
         }
+    }
+
+    #[test]
+    fn zip_clone() {
+        use std::io::{self, Read};
+        use super::ZipArchive;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let mut reader1 = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let mut reader2 = reader1.clone();
+
+        let mut file1 = reader1.by_index(0).unwrap();
+        let mut file2 = reader2.by_index(0).unwrap();
+
+        let mut buf1 = [0; 5];
+        let mut buf2 = [0; 5];
+        let mut buf3 = [0; 5];
+        let mut buf4 = [0; 5];
+
+        file1.read(&mut buf1).unwrap();
+        file2.read(&mut buf2).unwrap();
+        file1.read(&mut buf3).unwrap();
+        file2.read(&mut buf4).unwrap();
+
+        assert_eq!(buf1, buf2);
+        assert_eq!(buf3, buf4);
+        assert!(buf1 != buf3);
     }
 }
