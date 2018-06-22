@@ -135,71 +135,77 @@ impl<R: Read+io::Seek> ZipArchive<R>
 {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    fn get_directory_counts(mut reader: &mut R,
+    fn get_directory_counts(reader: &mut R,
                             footer: &spec::CentralDirectoryEnd,
                             cde_start_pos: u64) -> ZipResult<(u64, u64, usize)> {
-        // Some zip files have data prepended to them, resulting in the
-        // offsets all being too small. Get the amount of error by comparing
-        // the actual file position we found the CDE at with the offset
-        // recorded in the CDE.
-        let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size as u64)
-            .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
-            .ok_or(ZipError::InvalidArchive("Invalid central directory size or offset"))?;
-
-        let directory_start = footer.central_directory_offset as u64 + archive_offset;
-        let number_of_files = footer.number_of_files_on_this_disk as usize;
-
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
-
-        if let Err(_) = reader.seek(io::SeekFrom::Current(-(20 + 22 + footer.zip_file_comment.len() as i64))) {
+        let zip64locator = if reader.seek(io::SeekFrom::End(-(20 + 22 + footer.zip_file_comment.len() as i64))).is_ok() {
+            match spec::Zip64CentralDirectoryEndLocator::parse(reader) {
+                Ok(loc) => Some(loc),
+                Err(ZipError::InvalidArchive(_)) => {
+                    // No ZIP64 header; that's actually fine. We're done here.
+                    None
+                },
+                Err(e) => {
+                    // Yikes, a real problem
+                    return Err(e);
+                }
+            }
+        }
+        else {
             // Empty Zip files will have nothing else so this error might be fine. If
             // not, we'll find out soon.
-            return Ok((archive_offset, directory_start, number_of_files));
-        }
-
-        let locator64 = match spec::Zip64CentralDirectoryEndLocator::parse(&mut reader) {
-            Ok(loc) => loc,
-            Err(ZipError::InvalidArchive(_)) => {
-                // No ZIP64 header; that's actually fine. We're done here.
-                return Ok((archive_offset, directory_start, number_of_files));
-            },
-            Err(e) => {
-                // Yikes, a real problem
-                return Err(e);
-            },
+            None
         };
 
-        // If we got here, this is indeed a ZIP64 file.
+        match zip64locator {
+            None => {
+                // Some zip files have data prepended to them, resulting in the
+                // offsets all being too small. Get the amount of error by comparing
+                // the actual file position we found the CDE at with the offset
+                // recorded in the CDE.
+                let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size as u64)
+                    .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
+                    .ok_or(ZipError::InvalidArchive("Invalid central directory size or offset"))?;
 
-        if footer.disk_number as u32 != locator64.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented")
+                let directory_start = footer.central_directory_offset as u64 + archive_offset;
+                let number_of_files = footer.number_of_files_on_this_disk as usize;
+                return Ok((archive_offset, directory_start, number_of_files));
+            },
+            Some(locator64) => {
+                // If we got here, this is indeed a ZIP64 file.
+
+                if footer.disk_number as u32 != locator64.disk_with_central_directory {
+                    return unsupported_zip_error("Support for multi-disk files is not implemented")
+                }
+
+                // We need to reassess `archive_offset`. We know where the ZIP64
+                // central-directory-end structure *should* be, but unfortunately we
+                // don't know how to precisely relate that location to our current
+                // actual offset in the file, since there may be junk at its
+                // beginning. Therefore we need to perform another search, as in
+                // read::CentralDirectoryEnd::find_and_parse, except now we search
+                // forward.
+
+                let search_upper_bound = cde_start_pos
+                    .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
+                    .ok_or(ZipError::InvalidArchive("File cannot contain ZIP64 central directory end"))?;
+                let (footer, archive_offset) = spec::Zip64CentralDirectoryEnd::find_and_parse(
+                    reader,
+                    locator64.end_of_central_directory_offset,
+                    search_upper_bound)?;
+
+                if footer.disk_number != footer.disk_with_central_directory {
+                    return unsupported_zip_error("Support for multi-disk files is not implemented")
+                }
+
+                let directory_start = footer.central_directory_offset + archive_offset;
+                Ok((archive_offset, directory_start, footer.number_of_files as usize))
+            },
         }
-
-        // We need to reassess `archive_offset`. We know where the ZIP64
-        // central-directory-end structure *should* be, but unfortunately we
-        // don't know how to precisely relate that location to our current
-        // actual offset in the file, since there may be junk at its
-        // beginning. Therefore we need to perform another search, as in
-        // read::CentralDirectoryEnd::find_and_parse, except now we search
-        // forward.
-
-        let search_upper_bound = reader.seek(io::SeekFrom::Current(0))?
-            .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
-            .ok_or(ZipError::InvalidArchive("File cannot contain ZIP64 central directory end"))?;
-        let (footer, archive_offset) = spec::Zip64CentralDirectoryEnd::find_and_parse(
-            &mut reader,
-            locator64.end_of_central_directory_offset,
-            search_upper_bound)?;
-
-        if footer.disk_number != footer.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented")
-        }
-
-        let directory_start = footer.central_directory_offset + archive_offset;
-        Ok((archive_offset, directory_start, footer.number_of_files as usize))
     }
 
     /// Opens a Zip archive and parses the central directory
