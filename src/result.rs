@@ -27,6 +27,7 @@ pub enum ZipError
 
 impl ZipError
 {
+    /// returns a description of the error
     pub fn detail(&self) -> ::std::borrow::Cow<str>
     {
         use std::error::Error;
