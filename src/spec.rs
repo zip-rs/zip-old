@@ -1,14 +1,25 @@
+//! ZIP File Format Specs
+
 use std::io;
 use std::io::prelude::*;
 use result::{ZipResult, ZipError};
 use podio::{ReadPodExt, WritePodExt, LittleEndian};
 
+/// Signature for the Local File Header
 pub const LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;
+/// Signature for the Central Directory Header
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE : u32 = 0x02014b50;
 const CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06054b50;
+/// Signature for the Zip64 Central Directory Header
 pub const ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE : u32 = 0x06064b50;
 const ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE : u32 = 0x07064b50;
 
+/// Size of the Zip Header
+pub const HEADER_SIZE: u64 = 22;
+
+/// struct representing a CentralDirectoryEnd
+#[derive(Debug)]
+#[allow(missing_docs)]
 pub struct CentralDirectoryEnd
 {
     pub disk_number: u16,
@@ -22,6 +33,7 @@ pub struct CentralDirectoryEnd
 
 impl CentralDirectoryEnd
 {
+    /// parse a Central Directory End, given a Read
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd>
     {
         let magic = try!(reader.read_u32::<LittleEndian>());
@@ -50,9 +62,9 @@ impl CentralDirectoryEnd
            })
     }
 
+    /// find and parse a Central Directory End, given a Read
     pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u64)>
     {
-        const HEADER_SIZE: u64 = 22;
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = try!(reader.seek(io::SeekFrom::End(0)));
 
@@ -84,6 +96,7 @@ impl CentralDirectoryEnd
         Err(ZipError::InvalidArchive("Could not find central directory end"))
     }
 
+    /// write a Central Directory End
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()>
     {
         try!(writer.write_u32::<LittleEndian>(CENTRAL_DIRECTORY_END_SIGNATURE));
@@ -99,6 +112,8 @@ impl CentralDirectoryEnd
     }
 }
 
+/// Utility class to locate a Zip64 Central Directory End
+#[allow(missing_docs)]
 pub struct Zip64CentralDirectoryEndLocator
 {
     pub disk_with_central_directory: u32,
@@ -108,6 +123,7 @@ pub struct Zip64CentralDirectoryEndLocator
 
 impl Zip64CentralDirectoryEndLocator
 {
+    /// parse a Zip64 CentralDirectoryEnd given a Read
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<Zip64CentralDirectoryEndLocator>
     {
         let magic = try!(reader.read_u32::<LittleEndian>());
@@ -128,6 +144,8 @@ impl Zip64CentralDirectoryEndLocator
     }
 }
 
+/// struct representing a Zip64 Central Directory End
+#[allow(missing_docs)]
 pub struct Zip64CentralDirectoryEnd
 {
     pub version_made_by: u16,
@@ -143,6 +161,7 @@ pub struct Zip64CentralDirectoryEnd
 
 impl Zip64CentralDirectoryEnd
 {
+    /// Find and Parse a Zip64 Central Directory End
     pub fn find_and_parse<T: Read+io::Seek>(reader: &mut T,
                                             nominal_offset: u64,
                                             search_upper_bound: u64) -> ZipResult<(Zip64CentralDirectoryEnd, u64)>

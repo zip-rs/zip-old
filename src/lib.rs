@@ -14,7 +14,7 @@ pub use read::ZipArchive;
 pub use write::ZipWriter;
 pub use compression::CompressionMethod;
 
-mod spec;
+pub mod spec;
 mod crc32;
 mod types;
 pub mod read;
