@@ -276,7 +276,16 @@ impl<W: Write+io::Seek> ZipWriter<W>
         }
         *options.permissions.as_mut().unwrap() |= 0o40000;
         options.compression_method = CompressionMethod::Stored;
-        try!(self.start_entry(name, options));
+
+        // TODO: change the method signature to take an &str for 'name'
+        let name_as_string = name.into();
+        // Append a slash to the filename if it does not end with it.
+        let name_with_slash = match name_as_string.chars().last() {
+            Some('/') | Some('\\') => name_as_string,
+            _ => name_as_string + "/",
+        };
+
+        try!(self.start_entry(name_with_slash, options));
         Ok(())
     }
 
@@ -532,8 +541,24 @@ mod test {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 28);
-        let v: Vec<u8> = vec![80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115];
-        assert_eq!(result.get_ref(), &v);
+        assert_eq!(*result.get_ref(), [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115]);
+    }
+
+    #[test]
+    fn write_zip_dir() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.add_directory("test", FileOptions::default().last_modified_time(time::Tm {
+            tm_year: 2018 - 1900, tm_mon: 8 - 1, tm_mday: 15, tm_hour: 20, tm_min: 45, tm_sec: 6,
+            tm_isdst: -1, tm_yday: 0, tm_wday: 0, tm_utcoff: 0, tm_nsec: 0,
+        })).unwrap();
+        let result = writer.finish().unwrap();
+        assert_eq!(result.get_ref().len(), 114);
+        assert_eq!(*result.get_ref(), &[
+            80u8, 75, 3, 4, 20, 0, 0, 0, 0, 0, 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 116,
+            101, 115, 116, 47, 80, 75, 1, 2, 46, 3, 20, 0, 0, 0, 0, 0, 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 237, 65, 0, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 5, 6,
+            0, 0, 0, 0, 1, 0, 1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115
+        ] as &[u8]);
     }
 
     #[test]
