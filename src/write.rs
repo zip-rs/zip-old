@@ -1,5 +1,7 @@
 //! Structs for creating a new zip archive
 
+#[cfg(feature = "chrono")]
+use chrono::{self, NaiveDateTime};
 use compression::CompressionMethod;
 use types::{ZipFileData, System, DEFAULT_VERSION};
 use spec;
@@ -9,8 +11,10 @@ use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
+#[cfg(not(feature = "chrono"))]
 use time;
 use podio::{WritePodExt, LittleEndian};
+#[cfg(not(feature = "chrono"))]
 use msdos_time::TmMsDosExt;
 
 #[cfg(feature = "flate2")]
@@ -78,26 +82,24 @@ struct ZipWriterStats
 #[derive(Copy, Clone)]
 pub struct FileOptions {
     compression_method: CompressionMethod,
+    #[cfg(feature = "chrono")]
+    last_modified_time: NaiveDateTime,
+    #[cfg(not(feature = "chrono"))]
     last_modified_time: time::Tm,
     permissions: Option<u32>,
 }
 
 impl FileOptions {
-    #[cfg(feature = "flate2")]
     /// Construct a new FileOptions object
     pub fn default() -> FileOptions {
         FileOptions {
+            #[cfg(feature = "flate2")]
             compression_method: CompressionMethod::Deflated,
-            last_modified_time: time::now(),
-            permissions: None,
-        }
-    }
-
-    #[cfg(not(feature = "flate2"))]
-    /// Construct a new FileOptions object
-    pub fn default() -> FileOptions {
-        FileOptions {
+            #[cfg(not(feature = "flate2"))]
             compression_method: CompressionMethod::Stored,
+            #[cfg(feature = "chrono")]
+            last_modified_time: chrono::Local::now().naive_local(),
+            #[cfg(not(feature = "chrono"))]
             last_modified_time: time::now(),
             permissions: None,
         }
@@ -113,6 +115,16 @@ impl FileOptions {
         self
     }
 
+    #[cfg(feature = "chrono")]
+    /// Set the last modified time
+    ///
+    /// The default is the current timestamp
+    pub fn last_modified_time(mut self, mod_time: NaiveDateTime) -> FileOptions {
+        self.last_modified_time = mod_time;
+        self
+    }
+
+    #[cfg(not(feature = "chrono"))]
     /// Set the last modified time
     ///
     /// The default is the current timestamp
@@ -440,9 +452,18 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     // Compression method
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
     // last mod file time and last mod file date
-    let msdos_datetime = try!(file.last_modified_time.to_msdos());
-    try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
-    try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
+    #[cfg(feature = "chrono")]
+    {
+        let msdos_datetime = try!(naive_date_time_to_msdos(file.last_modified_time));
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.0));
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.1));
+    }
+    #[cfg(not(feature = "chrono"))]
+    {
+        let msdos_datetime = try!(file.last_modified_time.to_msdos());
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
+    }
     // crc-32
     try!(writer.write_u32::<LittleEndian>(file.crc32));
     // compressed size
@@ -487,9 +508,18 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // compression method
     try!(writer.write_u16::<LittleEndian>(file.compression_method.to_u16()));
     // last mod file time + date
-    let msdos_datetime = try!(file.last_modified_time.to_msdos());
-    try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
-    try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
+    #[cfg(feature = "chrono")]
+    {
+        let msdos_datetime = try!(naive_date_time_to_msdos(file.last_modified_time));
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.0));
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.1));
+    }
+    #[cfg(not(feature = "chrono"))]
+    {
+        let msdos_datetime = try!(file.last_modified_time.to_msdos());
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.timepart));
+        try!(writer.write_u16::<LittleEndian>(msdos_datetime.datepart));
+    }
     // crc-32
     try!(writer.write_u32::<LittleEndian>(file.crc32));
     // compressed size
@@ -528,10 +558,31 @@ fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>>
     Ok(writer)
 }
 
+#[cfg(feature = "chrono")]
+fn naive_date_time_to_msdos(dt: NaiveDateTime) -> Result<(u16, u16), io::Error>
+{
+    use chrono::{Datelike, Timelike};
+
+    // For MSDOS the year 1980 is the year zero.
+    let year = dt.year()
+        .checked_sub(1980)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "year too small"))?;
+    if year < 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "year must be >= 1980"));
+    }
+
+    let time = ((dt.second() >> 1) | (dt.minute() << 5) | (dt.hour() << 11)) as u16;
+    let date = (dt.day() | (dt.month() << 5) | ((year as u32) << 9)) as u16;
+    Ok((time, date))
+}
+
 #[cfg(test)]
 mod test {
     use std::io;
     use std::io::Write;
+    #[cfg(feature = "chrono")]
+    use chrono::NaiveDate;
+    #[cfg(not(feature = "chrono"))]
     use time;
     use super::{FileOptions, ZipWriter};
     use compression::CompressionMethod;
@@ -547,10 +598,18 @@ mod test {
     #[test]
     fn write_zip_dir() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer.add_directory("test", FileOptions::default().last_modified_time(time::Tm {
-            tm_year: 2018 - 1900, tm_mon: 8 - 1, tm_mday: 15, tm_hour: 20, tm_min: 45, tm_sec: 6,
-            tm_isdst: -1, tm_yday: 0, tm_wday: 0, tm_utcoff: 0, tm_nsec: 0,
-        })).unwrap();
+        #[cfg(feature = "chrono")]
+        {
+            writer.add_directory("test", FileOptions::default().last_modified_time(
+                NaiveDate::from_ymd(2018, 8, 15).and_hms(20, 45, 6))).unwrap();
+        }
+        #[cfg(not(feature = "chrono"))]
+        {
+            writer.add_directory("test", FileOptions::default().last_modified_time(time::Tm {
+                tm_year: 2018 - 1900, tm_mon: 8 - 1, tm_mday: 15, tm_hour: 20, tm_min: 45, tm_sec: 6,
+                tm_isdst: -1, tm_yday: 0, tm_wday: 0, tm_utcoff: 0, tm_nsec: 0,
+            })).unwrap();
+        }
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 114);
         assert_eq!(*result.get_ref(), &[
@@ -564,9 +623,19 @@ mod test {
     #[test]
     fn write_mimetype_zip() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        let mut mtime = time::empty_tm();
-        mtime.tm_year = 80;
-        mtime.tm_mday = 1;
+        let mtime = {
+            #[cfg(feature = "chrono")]
+            {
+                NaiveDate::from_ymd(1980, 1, 1).and_hms(0, 0, 0)
+            }
+            #[cfg(not(feature = "chrono"))]
+            {
+                let mut mtime = time::empty_tm();
+                mtime.tm_year = 80;
+                mtime.tm_mday = 1;
+                mtime
+            }
+        };
         let options = FileOptions {
             compression_method: CompressionMethod::Stored,
             last_modified_time: mtime,

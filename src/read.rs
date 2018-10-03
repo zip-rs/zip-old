@@ -1,5 +1,7 @@
 //! Structs for reading a ZIP archive
 
+#[cfg(feature = "chrono")]
+use chrono::{NaiveDate, NaiveDateTime};
 use crc32::Crc32Reader;
 use compression::CompressionMethod;
 use spec;
@@ -12,6 +14,7 @@ use std::borrow::Cow;
 use podio::{ReadPodExt, LittleEndian};
 use types::{ZipFileData, System};
 use cp437::FromCp437;
+#[cfg(not(feature = "chrono"))]
 use msdos_time::{TmMsDosExt, MsDosDateTime};
 
 #[cfg(feature = "flate2")]
@@ -27,18 +30,21 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
+#[cfg(feature = "chrono")]
+const TIMESTAMP_1980_01_01: i64 = 315_532_800;
+#[cfg(not(feature = "chrono"))]
 const TM_1980_01_01 : ::time::Tm = ::time::Tm {
-	tm_sec: 0,
-	tm_min: 0,
-	tm_hour: 0,
-	tm_mday: 1,
-	tm_mon: 0,
-	tm_year: 80,
-	tm_wday: 2,
-	tm_yday: 0,
-	tm_isdst: -1,
-	tm_utcoff: 0,
-	tm_nsec: 0
+    tm_sec: 0,
+    tm_min: 0,
+    tm_hour: 0,
+    tm_mday: 1,
+    tm_mon: 0,
+    tm_year: 80,
+    tm_wday: 2,
+    tm_yday: 0,
+    tm_isdst: -1,
+    tm_utcoff: 0,
+    tm_nsec: 0
 };
 
 /// Wrapper for reading the contents of a ZIP file.
@@ -357,6 +363,9 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
+        #[cfg(feature = "chrono")]
+        last_modified_time: msdos_to_naive_date_time(last_mod_time, last_mod_date),
+        #[cfg(not(feature = "chrono"))]
         last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
         crc32: crc32,
         compressed_size: compressed_size as u64,
@@ -469,6 +478,12 @@ impl<'a> ZipFile<'a> {
     pub fn size(&self) -> u64 {
         self.data.uncompressed_size
     }
+    #[cfg(feature = "chrono")]
+    /// Get the time the file was last modified
+    pub fn last_modified(&self) -> NaiveDateTime {
+        self.data.last_modified_time
+    }
+    #[cfg(not(feature = "chrono"))]
     /// Get the time the file was last modified
     pub fn last_modified(&self) -> ::time::Tm {
         self.data.last_modified_time
@@ -599,6 +614,9 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: compression_method,
+        #[cfg(feature = "chrono")]
+        last_modified_time: msdos_to_naive_date_time(last_mod_time, last_mod_date),
+        #[cfg(not(feature = "chrono"))]
         last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
         crc32: crc32,
         compressed_size: compressed_size as u64,
@@ -636,6 +654,21 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         data: Cow::Owned(result),
         reader: try!(make_reader(result_compression_method, result_crc32, limit_reader))
     }))
+}
+
+#[cfg(feature = "chrono")]
+fn msdos_to_naive_date_time(time: u16, date: u16) -> NaiveDateTime {
+    let second = ((time & 0b0000000000011111) >> 1) as u32;
+    let minute = ((time & 0b0000011111100000) >> 5) as u32;
+    let hour = ((time & 0b1111100000000000) >> 11) as u32;
+    let day = ((date & 0b0000000000011111) >> 0) as u32;
+    let month = ((date & 0b0000000111100000) >> 5) as u32;
+    let year = ((date & 0b1111111000000000) >> 9) as i32;
+
+    // For MSDOS the year 1980 is the year 0.
+    NaiveDate::from_ymd_opt(year + 1980, month, day)
+        .and_then(|date| date.and_hms_opt(hour, minute, second))
+        .unwrap_or_else(|| NaiveDateTime::from_timestamp(TIMESTAMP_1980_01_01, 0))
 }
 
 #[cfg(test)]
