@@ -53,13 +53,13 @@ const TM_1980_01_01 : ::time::Tm = ::time::Tm {
 ///     let buf: &[u8] = &[0u8; 128];
 ///     let mut reader = std::io::Cursor::new(buf);
 ///
-///     let mut zip = try!(zip::ZipArchive::new(reader));
+///     let mut zip = zip::ZipArchive::new(reader)?;
 ///
 ///     for i in 0..zip.len()
 ///     {
 ///         let mut file = zip.by_index(i).unwrap();
 ///         println!("Filename: {}", file.name());
-///         let first_byte = try!(file.bytes().next().unwrap());
+///         let first_byte = file.bytes().next().unwrap()?;
 ///         println!("{}", first_byte);
 ///     }
 ///     Ok(())
@@ -210,7 +210,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
 
     /// Opens a Zip archive and parses the central directory
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let (footer, cde_start_pos) = try!(spec::CentralDirectoryEnd::find_and_parse(&mut reader));
+        let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
         if footer.disk_number != footer.disk_with_central_directory
         {
@@ -218,7 +218,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         }
 
         let (archive_offset, directory_start, number_of_files) =
-            try!(Self::get_directory_counts(&mut reader, &footer, cde_start_pos));
+            Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
 
         let mut files = Vec::new();
         let mut names_map = HashMap::new();
@@ -229,7 +229,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
 
         for _ in 0 .. number_of_files
         {
-            let file = try!(central_header_to_zip_file(&mut reader, archive_offset));
+            let file = central_header_to_zip_file(&mut reader, archive_offset)?;
             names_map.insert(file.file_name.clone(), files.len());
             files.push(file);
         }
@@ -290,10 +290,10 @@ impl<R: Read+io::Seek> ZipArchive<R>
             return unsupported_zip_error("Encrypted files are not supported")
         }
 
-        try!(self.reader.seek(io::SeekFrom::Start(pos)));
+        self.reader.seek(io::SeekFrom::Start(pos))?;
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
-        Ok(ZipFile { reader: try!(make_reader(data.compression_method, data.crc32, limit_reader)), data: Cow::Borrowed(data) })
+        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
     }
 
     /// Unwrap and return the inner reader object
@@ -308,33 +308,33 @@ impl<R: Read+io::Seek> ZipArchive<R>
 fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64) -> ZipResult<ZipFileData>
 {
     // Parse central header
-    let signature = try!(reader.read_u32::<LittleEndian>());
+    let signature = reader.read_u32::<LittleEndian>()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE
     {
         return Err(ZipError::InvalidArchive("Invalid Central Directory header"))
     }
 
-    let version_made_by = try!(reader.read_u16::<LittleEndian>());
-    let _version_to_extract = try!(reader.read_u16::<LittleEndian>());
-    let flags = try!(reader.read_u16::<LittleEndian>());
+    let version_made_by = reader.read_u16::<LittleEndian>()?;
+    let _version_to_extract = reader.read_u16::<LittleEndian>()?;
+    let flags = reader.read_u16::<LittleEndian>()?;
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
-    let compression_method = try!(reader.read_u16::<LittleEndian>());
-    let last_mod_time = try!(reader.read_u16::<LittleEndian>());
-    let last_mod_date = try!(reader.read_u16::<LittleEndian>());
-    let crc32 = try!(reader.read_u32::<LittleEndian>());
-    let compressed_size = try!(reader.read_u32::<LittleEndian>());
-    let uncompressed_size = try!(reader.read_u32::<LittleEndian>());
-    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let file_comment_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let _disk_number = try!(reader.read_u16::<LittleEndian>());
-    let _internal_file_attributes = try!(reader.read_u16::<LittleEndian>());
-    let external_file_attributes = try!(reader.read_u32::<LittleEndian>());
-    let mut offset = try!(reader.read_u32::<LittleEndian>()) as u64;
-    let file_name_raw = try!(ReadPodExt::read_exact(reader, file_name_length));
-    let extra_field = try!(ReadPodExt::read_exact(reader, extra_field_length));
-    let file_comment_raw  = try!(ReadPodExt::read_exact(reader, file_comment_length));
+    let compression_method = reader.read_u16::<LittleEndian>()?;
+    let last_mod_time = reader.read_u16::<LittleEndian>()?;
+    let last_mod_date = reader.read_u16::<LittleEndian>()?;
+    let crc32 = reader.read_u32::<LittleEndian>()?;
+    let compressed_size = reader.read_u32::<LittleEndian>()?;
+    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
+    let file_comment_length = reader.read_u16::<LittleEndian>()? as usize;
+    let _disk_number = reader.read_u16::<LittleEndian>()?;
+    let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
+    let external_file_attributes = reader.read_u32::<LittleEndian>()?;
+    let mut offset = reader.read_u32::<LittleEndian>()? as u64;
+    let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
+    let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
+    let file_comment_raw  = ReadPodExt::read_exact(reader, file_comment_length)?;
 
     // Account for shifted zip offsets.
     offset += archive_offset;
@@ -371,28 +371,28 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
 
     match parse_extra_field(&mut result, &*extra_field) {
         Ok(..) | Err(ZipError::Io(..)) => {},
-        Err(e) => try!(Err(e)),
+        Err(e) => Err(e)?,
     }
 
     // Remember end of central header
-    let return_position = try!(reader.seek(io::SeekFrom::Current(0)));
+    let return_position = reader.seek(io::SeekFrom::Current(0))?;
 
     // Parse local header
-    try!(reader.seek(io::SeekFrom::Start(result.header_start)));
-    let signature = try!(reader.read_u32::<LittleEndian>());
+    reader.seek(io::SeekFrom::Start(result.header_start))?;
+    let signature = reader.read_u32::<LittleEndian>()?;
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
     {
         return Err(ZipError::InvalidArchive("Invalid local file header"))
     }
 
-    try!(reader.seek(io::SeekFrom::Current(22)));
-    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as u64;
-    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as u64;
+    reader.seek(io::SeekFrom::Current(22))?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
     result.data_start = result.header_start + magic_and_header + file_name_length + extra_field_length;
 
     // Go back after the central header
-    try!(reader.seek(io::SeekFrom::Start(return_position)));
+    reader.seek(io::SeekFrom::Start(return_position))?;
 
     Ok(result)
 }
@@ -403,18 +403,18 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
 
     while (reader.position() as usize) < data.len()
     {
-        let kind = try!(reader.read_u16::<LittleEndian>());
-        let len = try!(reader.read_u16::<LittleEndian>());
+        let kind = reader.read_u16::<LittleEndian>()?;
+        let len = reader.read_u16::<LittleEndian>()?;
         match kind
         {
             // Zip64 extended information extra field
             0x0001 => {
-                file.uncompressed_size = try!(reader.read_u64::<LittleEndian>());
-                file.compressed_size = try!(reader.read_u64::<LittleEndian>());
-                try!(reader.read_u64::<LittleEndian>());  // relative header offset
-                try!(reader.read_u32::<LittleEndian>());  // disk start number
+                file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
+                file.compressed_size = reader.read_u64::<LittleEndian>()?;
+                reader.read_u64::<LittleEndian>()?;  // relative header offset
+                reader.read_u32::<LittleEndian>()?;  // disk start number
             },
-            _ => { try!(reader.seek(io::SeekFrom::Current(len as i64))); },
+            _ => { reader.seek(io::SeekFrom::Current(len as i64))?; },
         };
     }
     Ok(())
@@ -562,7 +562,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile>> {
-    let signature = try!(reader.read_u32::<LittleEndian>());
+    let signature = reader.read_u32::<LittleEndian>()?;
 
     match signature {
         spec::LOCAL_FILE_HEADER_SIGNATURE => (),
@@ -570,22 +570,22 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
-    let version_made_by = try!(reader.read_u16::<LittleEndian>());
-    let flags = try!(reader.read_u16::<LittleEndian>());
+    let version_made_by = reader.read_u16::<LittleEndian>()?;
+    let flags = reader.read_u16::<LittleEndian>()?;
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
-    let compression_method = CompressionMethod::from_u16(try!(reader.read_u16::<LittleEndian>()));
-    let last_mod_time = try!(reader.read_u16::<LittleEndian>());
-    let last_mod_date = try!(reader.read_u16::<LittleEndian>());
-    let crc32 = try!(reader.read_u32::<LittleEndian>());
-    let compressed_size = try!(reader.read_u32::<LittleEndian>());
-    let uncompressed_size = try!(reader.read_u32::<LittleEndian>());
-    let file_name_length = try!(reader.read_u16::<LittleEndian>()) as usize;
-    let extra_field_length = try!(reader.read_u16::<LittleEndian>()) as usize;
+    let compression_method = CompressionMethod::from_u16(reader.read_u16::<LittleEndian>()?);
+    let last_mod_time = reader.read_u16::<LittleEndian>()?;
+    let last_mod_date = reader.read_u16::<LittleEndian>()?;
+    let crc32 = reader.read_u32::<LittleEndian>()?;
+    let compressed_size = reader.read_u32::<LittleEndian>()?;
+    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
 
-    let file_name_raw = try!(ReadPodExt::read_exact(reader, file_name_length));
-    let extra_field = try!(ReadPodExt::read_exact(reader, extra_field_length));
+    let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
+    let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
 
     let file_name = match is_utf8
     {
@@ -618,7 +618,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
 
     match parse_extra_field(&mut result, &extra_field) {
         Ok(..) | Err(ZipError::Io(..)) => {},
-        Err(e) => try!(Err(e)),
+        Err(e) => Err(e)?,
     }
 
     if encrypted {
@@ -634,7 +634,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
     let result_compression_method = result.compression_method;
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: try!(make_reader(result_compression_method, result_crc32, limit_reader))
+        reader: make_reader(result_compression_method, result_crc32, limit_reader)?
     }))
 }
 
