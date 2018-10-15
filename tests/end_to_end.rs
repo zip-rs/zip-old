@@ -8,18 +8,16 @@ use std::io::Cursor;
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn main() {
-    // TODO: The buffer length is tied to the LOREM_IPSUM length currently
-    let buf: &mut [u8] = &mut [0u8; 760];
-    let mut file = Cursor::new(buf);
+    let file = &mut Cursor::new(Vec::new());
 
-    write_to_zip_file(&mut file).expect("file written");
+    write_to_zip_file(file).expect("file written");
 
     let file_contents: String = read_zip_file(file).unwrap();
 
     assert!(file_contents.as_bytes() == LOREM_IPSUM);
 }
 
-fn write_to_zip_file(file: &mut Cursor<&mut [u8]>) -> zip::result::ZipResult<()> {
+fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     let mut zip = zip::ZipWriter::new(file);
 
     zip.add_directory("test/", FileOptions::default())?;
@@ -37,7 +35,7 @@ fn write_to_zip_file(file: &mut Cursor<&mut [u8]>) -> zip::result::ZipResult<()>
     Ok(())
 }
 
-fn read_zip_file(zip_file: Cursor<&mut [u8]>) -> zip::result::ZipResult<String> {
+fn read_zip_file(zip_file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<String> {
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
     let mut file = archive.by_name("test/lorem_ipsum.txt")?;
