@@ -405,17 +405,30 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
     {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
+        let mut len_left = len as i64;
         match kind
         {
             // Zip64 extended information extra field
             0x0001 => {
-                file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
-                file.compressed_size = reader.read_u64::<LittleEndian>()?;
-                reader.read_u64::<LittleEndian>()?;  // relative header offset
-                reader.read_u32::<LittleEndian>()?;  // disk start number
+                if file.uncompressed_size == 0xFFFFFFFF {
+                    file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
+                    len_left -= 8;
+                }
+                if file.compressed_size == 0xFFFFFFFF {
+                    file.compressed_size = reader.read_u64::<LittleEndian>()?;
+                    len_left -= 8;
+                }
+                // Unparsed fields:
+                // u64: relative header offset
+                // u32: disk start number
             },
-            _ => { reader.seek(io::SeekFrom::Current(len as i64))?; },
-        };
+            _ => {},
+        }
+
+        // We could also check for < 0 to check for errors
+        if len_left > 0 {
+            reader.seek(io::SeekFrom::Current(len_left))?;
+        }
     }
     Ok(())
 }
