@@ -331,13 +331,10 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     let _disk_number = reader.read_u16::<LittleEndian>()?;
     let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
     let external_file_attributes = reader.read_u32::<LittleEndian>()?;
-    let mut offset = reader.read_u32::<LittleEndian>()? as u64;
+    let offset = reader.read_u32::<LittleEndian>()? as u64;
     let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
     let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
     let file_comment_raw  = ReadPodExt::read_exact(reader, file_comment_length)?;
-
-    // Account for shifted zip offsets.
-    offset += archive_offset;
 
     let file_name = match is_utf8
     {
@@ -373,6 +370,9 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         Ok(..) | Err(ZipError::Io(..)) => {},
         Err(e) => Err(e)?,
     }
+
+    // Account for shifted zip offsets.
+    result.header_start += archive_offset;
 
     // Remember end of central header
     let return_position = reader.seek(io::SeekFrom::Current(0))?;
