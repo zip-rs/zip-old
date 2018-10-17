@@ -418,8 +418,11 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
                     file.compressed_size = reader.read_u64::<LittleEndian>()?;
                     len_left -= 8;
                 }
+                if file.header_start == 0xFFFFFFFF {
+                    file.header_start = reader.read_u64::<LittleEndian>()?;
+                    len_left -= 8;
+                }
                 // Unparsed fields:
-                // u64: relative header offset
                 // u32: disk start number
             },
             _ => {},
