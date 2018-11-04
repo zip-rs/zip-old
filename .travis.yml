@@ -16,9 +16,9 @@ script:
       [ "$TRAVIS_RUST_VERSION" = "1.20.0" ] || cargo test
     - cargo test --no-default-features
     - |
-      [ "$TRAVIS_RUST_VERSION" = "1.20.0" ] || cargo test --no-default-features --features "deflate-zlib"
-    - cargo test --no-default-features --features "deflate-miniz"
-    - cargo doc --no-deps --no-default-features --features "deflate-miniz,bzip2"
+      [ "$TRAVIS_RUST_VERSION" = "1.20.0" ] || cargo test --no-default-features --features "deflate"
+    - cargo test --no-default-features --features "deflate"
+    - cargo doc --no-deps
     - rustdoc --test README.md -L target/debug
 
 after_success:
