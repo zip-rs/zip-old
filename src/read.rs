@@ -282,15 +282,28 @@ impl<R: Read+io::Seek> ZipArchive<R>
     pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>>
     {
         if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
-        let ref data = self.files[file_number];
-        let pos = data.data_start;
+        let ref mut data = self.files[file_number];
 
         if data.encrypted
         {
             return unsupported_zip_error("Encrypted files are not supported")
         }
 
-        self.reader.seek(io::SeekFrom::Start(pos))?;
+        // Parse local header
+        self.reader.seek(io::SeekFrom::Start(data.header_start))?;
+        let signature = self.reader.read_u32::<LittleEndian>()?;
+        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
+        {
+            return Err(ZipError::InvalidArchive("Invalid local file header"))
+        }
+
+        self.reader.seek(io::SeekFrom::Current(22))?;
+        let file_name_length = self.reader.read_u16::<LittleEndian>()? as u64;
+        let extra_field_length = self.reader.read_u16::<LittleEndian>()? as u64;
+        let magic_and_header = 4 + 22 + 2 + 2;
+        data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+
+        self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
         Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
@@ -373,26 +386,6 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
 
     // Account for shifted zip offsets.
     result.header_start += archive_offset;
-
-    // Remember end of central header
-    let return_position = reader.seek(io::SeekFrom::Current(0))?;
-
-    // Parse local header
-    reader.seek(io::SeekFrom::Start(result.header_start))?;
-    let signature = reader.read_u32::<LittleEndian>()?;
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
-    {
-        return Err(ZipError::InvalidArchive("Invalid local file header"))
-    }
-
-    reader.seek(io::SeekFrom::Current(22))?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
-    let magic_and_header = 4 + 22 + 2 + 2;
-    result.data_start = result.header_start + magic_and_header + file_name_length + extra_field_length;
-
-    // Go back after the central header
-    reader.seek(io::SeekFrom::Start(return_position))?;
 
     Ok(result)
 }
