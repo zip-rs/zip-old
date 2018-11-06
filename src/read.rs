@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use std::borrow::Cow;
 
 use podio::{ReadPodExt, LittleEndian};
-use types::{ZipFileData, System};
+use types::{ZipFileData, System, DateTime};
 use cp437::FromCp437;
-use msdos_time::{TmMsDosExt, MsDosDateTime};
+use msdos_time::MsDosDateTime;
 
 #[cfg(feature = "flate2")]
 use flate2;
@@ -26,20 +26,6 @@ mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
 }
-
-const TM_1980_01_01 : ::time::Tm = ::time::Tm {
-	tm_sec: 0,
-	tm_min: 0,
-	tm_hour: 0,
-	tm_mday: 1,
-	tm_mon: 0,
-	tm_year: 80,
-	tm_wday: 2,
-	tm_yday: 0,
-	tm_isdst: -1,
-	tm_utcoff: 0,
-	tm_nsec: 0
-};
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -367,7 +353,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
-        last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
+        last_modified_time: DateTime::MsDos(MsDosDateTime::new(last_mod_time, last_mod_date)),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -480,7 +466,7 @@ impl<'a> ZipFile<'a> {
     }
     /// Get the time the file was last modified
     pub fn last_modified(&self) -> ::time::Tm {
-        self.data.last_modified_time
+        self.data.last_modified_time.to_tm()
     }
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
@@ -608,7 +594,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: compression_method,
-        last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
+        last_modified_time: DateTime::MsDos(MsDosDateTime::new(last_mod_time, last_mod_date)),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,

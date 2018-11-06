@@ -1,6 +1,7 @@
 //! Types that specify what is contained in a ZIP.
 
 use time;
+use msdos_time::{TmMsDosExt, MsDosDateTime};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System
@@ -25,6 +26,42 @@ impl System {
     }
 }
 
+const TM_1980_01_01 : time::Tm = time::Tm {
+	tm_sec: 0,
+	tm_min: 0,
+	tm_hour: 0,
+	tm_mday: 1,
+	tm_mon: 0,
+	tm_year: 80,
+	tm_wday: 2,
+	tm_yday: 0,
+	tm_isdst: -1,
+	tm_utcoff: 0,
+	tm_nsec: 0
+};
+
+#[derive(Debug, Clone)]
+pub enum DateTime {
+    Tm(time::Tm),
+    MsDos(MsDosDateTime)
+}
+
+impl DateTime {
+    pub fn to_tm(&self) -> time::Tm {
+        match self {
+            &DateTime::Tm(ref tm) => *tm,
+            &DateTime::MsDos(ref ms) => time::Tm::from_msdos(*ms).unwrap_or(TM_1980_01_01)
+        }
+    }
+
+    pub fn to_msdos(&self) -> Result<MsDosDateTime, ::std::io::Error> {
+        match self {
+            &DateTime::Tm(ref tm) => tm.to_msdos(),
+            &DateTime::MsDos(ref ms) => Ok(*ms)
+        }
+    }
+}
+
 pub const DEFAULT_VERSION: u8 = 46;
 
 /// Structure representing a ZIP file.
@@ -40,7 +77,7 @@ pub struct ZipFileData
     /// Compression method used to store the file
     pub compression_method: ::compression::CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
-    pub last_modified_time: time::Tm,
+    pub last_modified_time: DateTime,
     /// CRC32 checksum
     pub crc32: u32,
     /// Size of the file in the ZIP
@@ -120,7 +157,7 @@ mod test {
             version_made_by: 0,
             encrypted: false,
             compression_method: ::compression::CompressionMethod::Stored,
-            last_modified_time: time::empty_tm(),
+            last_modified_time: DateTime::Tm(time::empty_tm()),
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
