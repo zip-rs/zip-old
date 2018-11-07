@@ -3,7 +3,7 @@
 use compression::CompressionMethod;
 use types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
 use spec;
-use crc32;
+use crc32fast::Hasher;
 use result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
@@ -66,7 +66,7 @@ pub struct ZipWriter<W: Write + io::Seek>
 #[derive(Default)]
 struct ZipWriterStats
 {
-    crc32: u32,
+    hasher: Hasher,
     start: u64,
     bytes_written: u64,
 }
@@ -162,7 +162,7 @@ impl ZipWriterStats
 {
     fn update(&mut self, buf: &[u8])
     {
-        self.crc32 = crc32::update(self.crc32, buf);
+        self.hasher.update(buf);
         self.bytes_written += buf.len() as u64;
     }
 }
@@ -219,7 +219,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             file.data_start = header_end;
 
             self.stats.bytes_written = 0;
-            self.stats.crc32 = 0;
+            self.stats.hasher = Hasher::new();
 
             self.files.push(file);
         }
@@ -239,7 +239,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             None => return Ok(()),
             Some(f) => f,
         };
-        file.crc32 = self.stats.crc32;
+        file.crc32 = self.stats.hasher.clone().finalize();
         file.uncompressed_size = self.stats.bytes_written;
 
         let file_end = writer.seek(io::SeekFrom::Current(0))?;
