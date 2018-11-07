@@ -19,8 +19,14 @@ bzip2 = { version = "0.3", optional = true }
 libflate = { version = "0.1.16", optional = true }
 
 [dev-dependencies]
+bencher = "0.1"
+rand = "0.4"
 walkdir = "1.0"
 
 [features]
 deflate = ["libflate"]
 default = ["bzip2", "deflate"]
+
+[[bench]]
+name = "read_entry"
+harness = false
