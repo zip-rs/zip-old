@@ -15,7 +15,7 @@ use cp437::FromCp437;
 use msdos_time::{TmMsDosExt, MsDosDateTime};
 
 #[cfg(feature = "deflate")]
-use libflate::deflate::Decoder;
+use libflate;
 
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
@@ -79,7 +79,7 @@ enum ZipFileReader<'a> {
     NoReader,
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
     #[cfg(feature = "deflate")]
-    Deflated(Crc32Reader<Decoder<io::Take<&'a mut Read>>>),
+    Deflated(Crc32Reader<libflate::deflate::Decoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
@@ -112,7 +112,7 @@ fn make_reader<'a>(
         #[cfg(feature = "deflate")]
         CompressionMethod::Deflated =>
         {
-            let deflate_reader = Decoder::new(reader);
+            let deflate_reader = libflate::deflate::Decoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
                 deflate_reader,
                 crc32)))
