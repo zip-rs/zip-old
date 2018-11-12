@@ -1,7 +1,7 @@
 //! Structs for creating a new zip archive
 
 use compression::CompressionMethod;
-use types::{ZipFileData, System, DEFAULT_VERSION};
+use types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
 use spec;
 use crc32;
 use result::{ZipResult, ZipError};
@@ -11,7 +11,6 @@ use std::io::prelude::*;
 use std::mem;
 use time;
 use podio::{WritePodExt, LittleEndian};
-use msdos_time::TmMsDosExt;
 
 #[cfg(feature = "flate2")]
 use flate2;
@@ -204,7 +203,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 version_made_by: DEFAULT_VERSION,
                 encrypted: false,
                 compression_method: options.compression_method,
-                last_modified_time: options.last_modified_time,
+                last_modified_time: DateTime::Tm(options.last_modified_time),
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,

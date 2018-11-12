@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use std::borrow::Cow;
 
 use podio::{ReadPodExt, LittleEndian};
-use types::{ZipFileData, System};
+use types::{ZipFileData, System, DateTime};
 use cp437::FromCp437;
-use msdos_time::{TmMsDosExt, MsDosDateTime};
+use msdos_time::MsDosDateTime;
 
 #[cfg(feature = "flate2")]
 use flate2;
@@ -26,20 +26,6 @@ mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
 }
-
-const TM_1980_01_01 : ::time::Tm = ::time::Tm {
-	tm_sec: 0,
-	tm_min: 0,
-	tm_hour: 0,
-	tm_mday: 1,
-	tm_mon: 0,
-	tm_year: 80,
-	tm_wday: 2,
-	tm_yday: 0,
-	tm_isdst: -1,
-	tm_utcoff: 0,
-	tm_nsec: 0
-};
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
@@ -282,15 +268,28 @@ impl<R: Read+io::Seek> ZipArchive<R>
     pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>>
     {
         if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
-        let ref data = self.files[file_number];
-        let pos = data.data_start;
+        let ref mut data = self.files[file_number];
 
         if data.encrypted
         {
             return unsupported_zip_error("Encrypted files are not supported")
         }
 
-        self.reader.seek(io::SeekFrom::Start(pos))?;
+        // Parse local header
+        self.reader.seek(io::SeekFrom::Start(data.header_start))?;
+        let signature = self.reader.read_u32::<LittleEndian>()?;
+        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
+        {
+            return Err(ZipError::InvalidArchive("Invalid local file header"))
+        }
+
+        self.reader.seek(io::SeekFrom::Current(22))?;
+        let file_name_length = self.reader.read_u16::<LittleEndian>()? as u64;
+        let extra_field_length = self.reader.read_u16::<LittleEndian>()? as u64;
+        let magic_and_header = 4 + 22 + 2 + 2;
+        data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+
+        self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
         Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
@@ -354,7 +353,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
-        last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
+        last_modified_time: DateTime::MsDos(MsDosDateTime::new(last_mod_time, last_mod_date)),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -373,26 +372,6 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
 
     // Account for shifted zip offsets.
     result.header_start += archive_offset;
-
-    // Remember end of central header
-    let return_position = reader.seek(io::SeekFrom::Current(0))?;
-
-    // Parse local header
-    reader.seek(io::SeekFrom::Start(result.header_start))?;
-    let signature = reader.read_u32::<LittleEndian>()?;
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
-    {
-        return Err(ZipError::InvalidArchive("Invalid local file header"))
-    }
-
-    reader.seek(io::SeekFrom::Current(22))?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
-    let magic_and_header = 4 + 22 + 2 + 2;
-    result.data_start = result.header_start + magic_and_header + file_name_length + extra_field_length;
-
-    // Go back after the central header
-    reader.seek(io::SeekFrom::Start(return_position))?;
 
     Ok(result)
 }
@@ -487,7 +466,7 @@ impl<'a> ZipFile<'a> {
     }
     /// Get the time the file was last modified
     pub fn last_modified(&self) -> ::time::Tm {
-        self.data.last_modified_time
+        self.data.last_modified_time.to_tm()
     }
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
@@ -615,7 +594,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: compression_method,
-        last_modified_time: ::time::Tm::from_msdos(MsDosDateTime::new(last_mod_time, last_mod_date)).unwrap_or(TM_1980_01_01),
+        last_modified_time: DateTime::MsDos(MsDosDateTime::new(last_mod_time, last_mod_date)),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
