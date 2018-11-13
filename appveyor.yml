@@ -42,5 +42,3 @@ build: false
 test_script:
   - cargo test
   - cargo test --no-default-features
-  - cargo test --no-default-features --features "deflate"
-  - cargo test --no-default-features --features "bzip2"
