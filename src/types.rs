@@ -1,8 +1,5 @@
 //! Types that specify what is contained in a ZIP.
 
-use time;
-use msdos_time::{TmMsDosExt, MsDosDateTime};
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System
 {
@@ -26,39 +23,147 @@ impl System {
     }
 }
 
-const TM_1980_01_01 : time::Tm = time::Tm {
-	tm_sec: 0,
-	tm_min: 0,
-	tm_hour: 0,
-	tm_mday: 1,
-	tm_mon: 0,
-	tm_year: 80,
-	tm_wday: 2,
-	tm_yday: 0,
-	tm_isdst: -1,
-	tm_utcoff: 0,
-	tm_nsec: 0
-};
-
-#[derive(Debug, Clone)]
-pub enum DateTime {
-    Tm(time::Tm),
-    MsDos(MsDosDateTime)
+/// A DateTime field to be used for storing timestamps in a zip file
+///
+/// This structure does bounds checking to ensure the date is able to be stored in a zip file.
+#[derive(Debug, Clone, Copy)]
+pub struct DateTime {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
 }
 
 impl DateTime {
-    pub fn to_tm(&self) -> time::Tm {
-        match self {
-            &DateTime::Tm(ref tm) => *tm,
-            &DateTime::MsDos(ref ms) => time::Tm::from_msdos(*ms).unwrap_or(TM_1980_01_01)
+    /// Constructs an 'default' datetime of 1980-01-01 00:00:00
+    pub fn default() -> DateTime {
+        DateTime {
+            year: 1980,
+            month: 1,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0,
         }
     }
 
-    pub fn to_msdos(&self) -> Result<MsDosDateTime, ::std::io::Error> {
-        match self {
-            &DateTime::Tm(ref tm) => tm.to_msdos(),
-            &DateTime::MsDos(ref ms) => Ok(*ms)
+    /// Converts an msdos (u16, u16) pair to a DateTime object
+    pub fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
+        let seconds = (timepart & 0b0000000000011111) << 1;
+        let minutes = (timepart & 0b0000011111100000) >> 5;
+        let hours =   (timepart & 0b1111100000000000) >> 11;
+        let days =    (datepart & 0b0000000000011111) >> 0;
+        let months =  (datepart & 0b0000000111100000) >> 5;
+        let years =   (datepart & 0b1111111000000000) >> 9;
+
+        DateTime {
+            year: (years + 1980) as u16,
+            month: months as u8,
+            day: days as u8,
+            hour: hours as u8,
+            minute: minutes as u8,
+            second: seconds as u8,
         }
+    }
+
+    /// Constructs a DateTime from a specific date and time
+    ///
+    /// The bounds are:
+    /// * year: [1980, 2107]
+    /// * month: [1, 12]
+    /// * day: [1, 31]
+    /// * hour: [0, 23]
+    /// * minute: [0, 59]
+    /// * second: [0, 60]
+    pub fn from_date_and_time(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Result<DateTime, ()> {
+        (DateTime { year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 })
+            .with_date(year, month, day)?
+            .with_time(hour, minute, second)
+    }
+
+    /// Constructs a DateTime with a specific date set.
+    ///
+    /// The bounds are:
+    /// * year: [1980, 2107]
+    /// * month: [1, 12]
+    /// * day: [1, 31]
+    pub fn with_date(self, year: u16, month: u8, day: u8) -> Result<DateTime, ()> {
+        if year >= 1980 && year <= 2107
+            && month >= 1 && month <= 12
+            && day >= 1 && day <= 31
+        {
+            Ok(DateTime {
+                year: year,
+                month: month,
+                day: day,
+                hour: self.hour,
+                minute: self.minute,
+                second: self.second,
+            })
+        }
+        else {
+            Err(())
+        }
+    }
+
+    /// Constructs a DateTime with a specific time set.
+    ///
+    /// The bounds are:
+    /// * hour: [0, 23]
+    /// * minute: [0, 59]
+    /// * second: [0, 60]
+    pub fn with_time(self, hour: u8, minute: u8, second: u8) -> Result<DateTime, ()> {
+        if hour <= 23 && minute <= 59 && second <= 60 {
+            Ok(DateTime {
+                year: self.year,
+                month: self.month,
+                day: self.day,
+                hour: hour,
+                minute: minute,
+                second: second,
+            })
+        }
+        else {
+            Err(())
+        }
+    }
+
+    #[cfg(feature = "time")]
+    /// Converts a ::time::Tm object to a DateTime
+    ///
+    /// Returns `Err` when this object is out of bounds
+    pub fn from_time(tm: ::time::Tm) -> Result<DateTime, ()> {
+        if tm.tm_year >= 1980 && tm.tm_year <= 2107
+            && tm.tm_mon >= 1 && tm.tm_mon <= 31
+            && tm.tm_mday >= 1 && tm.tm_mday <= 31
+            && tm.tm_hour >= 0 && tm.tm_hour <= 23
+            && tm.tm_min >= 0 && tm.tm_min <= 59
+            && tm.tm_sec >= 0 && tm.tm_sec <= 60
+        {
+            Ok(DateTime {
+                year: (tm.tm_year + 1900) as u16,
+                month: (tm.tm_mon + 1) as u8,
+                day: tm.tm_mday as u8,
+                hour: tm.tm_hour as u8,
+                minute: tm.tm_min as u8,
+                second: tm.tm_sec as u8,
+            })
+        }
+        else {
+            Err(())
+        }
+    }
+
+    /// Gets the time portion of this datetime in the msdos representation
+    pub fn timepart(&self) -> u16 {
+        ((self.second as u16) >> 1) | ((self.minute as u16) << 5) | ((self.hour as u16) << 11)
+    }
+
+    /// Gets the date portion of this datetime in the msdos representation
+    pub fn datepart(&self) -> u16 {
+        (self.day as u16) | ((self.month as u16) << 5) | ((self.year - 1980) << 9)
     }
 }
 
@@ -157,7 +262,7 @@ mod test {
             version_made_by: 0,
             encrypted: false,
             compression_method: ::compression::CompressionMethod::Stored,
-            last_modified_time: DateTime::Tm(time::empty_tm()),
+            last_modified_time: DateTime::default(),
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
@@ -169,5 +274,41 @@ mod test {
             external_attributes: 0,
         };
         assert_eq!(data.file_name_sanitized(), ::std::path::PathBuf::from("path/etc/passwd"));
+    }
+
+    #[test]
+    fn datetime_default() {
+        use super::DateTime;
+        let dt = DateTime::default();
+        assert_eq!(dt.timepart(), 0);
+        assert_eq!(dt.datepart(), 0b0000000_0001_00001);
+    }
+
+    #[test]
+    fn datetime_max() {
+        use super::DateTime;
+        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
+        assert_eq!(dt.timepart(), 0b10111_111011_11110);
+        assert_eq!(dt.datepart(), 0b1111111_1100_11111);
+    }
+
+    #[test]
+    fn datetime_bounds() {
+        use super::DateTime;
+        let dt = DateTime::default();
+
+        assert!(dt.with_time(23, 59, 60).is_ok());
+        assert!(dt.with_time(24, 0, 0).is_err());
+        assert!(dt.with_time(0, 60, 0).is_err());
+        assert!(dt.with_time(0, 0, 61).is_err());
+
+        assert!(dt.with_date(2107, 12, 31).is_ok());
+        assert!(dt.with_date(1980, 1, 1).is_ok());
+        assert!(dt.with_date(1979, 1, 1).is_err());
+        assert!(dt.with_date(1980, 0, 1).is_err());
+        assert!(dt.with_date(1980, 1, 0).is_err());
+        assert!(dt.with_date(2108, 12, 31).is_err());
+        assert!(dt.with_date(2107, 13, 31).is_err());
+        assert!(dt.with_date(2107, 12, 32).is_err());
     }
 }

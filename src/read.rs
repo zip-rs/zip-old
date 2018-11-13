@@ -12,7 +12,6 @@ use std::borrow::Cow;
 use podio::{ReadPodExt, LittleEndian};
 use types::{ZipFileData, System, DateTime};
 use cp437::FromCp437;
-use msdos_time::MsDosDateTime;
 
 #[cfg(feature = "deflate")]
 use libflate;
@@ -351,7 +350,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
-        last_modified_time: DateTime::MsDos(MsDosDateTime::new(last_mod_time, last_mod_date)),
+        last_modified_time: DateTime::from_msdos(last_mod_time, last_mod_date),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -463,8 +462,8 @@ impl<'a> ZipFile<'a> {
         self.data.uncompressed_size
     }
     /// Get the time the file was last modified
-    pub fn last_modified(&self) -> ::time::Tm {
-        self.data.last_modified_time.to_tm()
+    pub fn last_modified(&self) -> DateTime {
+        self.data.last_modified_time
     }
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
@@ -592,7 +591,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: compression_method,
-        last_modified_time: DateTime::MsDos(MsDosDateTime::new(last_mod_time, last_mod_date)),
+        last_modified_time: DateTime::from_msdos(last_mod_time, last_mod_date),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
