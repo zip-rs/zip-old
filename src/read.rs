@@ -14,10 +14,8 @@ use types::{ZipFileData, System, DateTime};
 use cp437::FromCp437;
 use msdos_time::MsDosDateTime;
 
-#[cfg(feature = "flate2")]
-use flate2;
-#[cfg(feature = "flate2")]
-use flate2::read::DeflateDecoder;
+#[cfg(feature = "deflate")]
+use libflate;
 
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
@@ -66,8 +64,8 @@ pub struct ZipArchive<R: Read + io::Seek>
 enum ZipFileReader<'a> {
     NoReader,
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
-    #[cfg(feature = "flate2")]
-    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
+    #[cfg(feature = "deflate")]
+    Deflated(Crc32Reader<libflate::deflate::Decoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
@@ -97,10 +95,10 @@ fn make_reader<'a>(
                 reader,
                 crc32)))
         },
-        #[cfg(feature = "flate2")]
+        #[cfg(feature = "deflate")]
         CompressionMethod::Deflated =>
         {
-            let deflate_reader = DeflateDecoder::new(reader);
+            let deflate_reader = libflate::deflate::Decoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
                 deflate_reader,
                 crc32)))
@@ -419,14 +417,14 @@ fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
     match *reader {
         ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
         ZipFileReader::Stored(ref mut r) => r as &mut Read,
-        #[cfg(feature = "flate2")]
+        #[cfg(feature = "deflate")]
         ZipFileReader::Deflated(ref mut r) => r as &mut Read,
         #[cfg(feature = "bzip2")]
         ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
     }
 }
 
-/// Methods for retreiving information on zip files
+/// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> &mut Read {
         get_reader(&mut self.reader)
@@ -523,7 +521,7 @@ impl<'a> Drop for ZipFile<'a> {
             let mut reader = match innerreader {
                 ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
                 ZipFileReader::Stored(crcreader) => crcreader.into_inner(),
-                #[cfg(feature = "flate2")]
+                #[cfg(feature = "deflate")]
                 ZipFileReader::Deflated(crcreader) => crcreader.into_inner().into_inner(),
                 #[cfg(feature = "bzip2")]
                 ZipFileReader::Bzip2(crcreader) => crcreader.into_inner().into_inner(),
