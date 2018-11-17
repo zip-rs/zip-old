@@ -26,6 +26,10 @@ impl System {
 /// A DateTime field to be used for storing timestamps in a zip file
 ///
 /// This structure does bounds checking to ensure the date is able to be stored in a zip file.
+///
+/// When constructed manually from a date and time, it will also check if the input is sensible
+/// (e.g. months are from [1, 12]), but when read from a zip some parts may be out of their normal
+/// bounds (e.g. month 0, or hour 31).
 #[derive(Debug, Clone, Copy)]
 pub struct DateTime {
     year: u16,
@@ -36,9 +40,9 @@ pub struct DateTime {
     second: u8,
 }
 
-impl DateTime {
+impl std::default::Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
-    pub fn default() -> DateTime {
+    fn default() -> DateTime {
         DateTime {
             year: 1980,
             month: 1,
@@ -48,7 +52,9 @@ impl DateTime {
             second: 0,
         }
     }
+}
 
+impl DateTime {
     /// Converts an msdos (u16, u16) pair to a DateTime object
     pub fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
@@ -78,48 +84,17 @@ impl DateTime {
     /// * minute: [0, 59]
     /// * second: [0, 60]
     pub fn from_date_and_time(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Result<DateTime, ()> {
-        (DateTime { year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 })
-            .with_date(year, month, day)?
-            .with_time(hour, minute, second)
-    }
-
-    /// Constructs a DateTime with a specific date set.
-    ///
-    /// The bounds are:
-    /// * year: [1980, 2107]
-    /// * month: [1, 12]
-    /// * day: [1, 31]
-    pub fn with_date(self, year: u16, month: u8, day: u8) -> Result<DateTime, ()> {
         if year >= 1980 && year <= 2107
             && month >= 1 && month <= 12
             && day >= 1 && day <= 31
+            && hour <= 23
+            && minute <= 59
+            && second <= 60
         {
             Ok(DateTime {
                 year: year,
                 month: month,
                 day: day,
-                hour: self.hour,
-                minute: self.minute,
-                second: self.second,
-            })
-        }
-        else {
-            Err(())
-        }
-    }
-
-    /// Constructs a DateTime with a specific time set.
-    ///
-    /// The bounds are:
-    /// * hour: [0, 23]
-    /// * minute: [0, 59]
-    /// * second: [0, 60]
-    pub fn with_time(self, hour: u8, minute: u8, second: u8) -> Result<DateTime, ()> {
-        if hour <= 23 && minute <= 59 && second <= 60 {
-            Ok(DateTime {
-                year: self.year,
-                month: self.month,
-                day: self.day,
                 hour: hour,
                 minute: minute,
                 second: second,
@@ -164,6 +139,53 @@ impl DateTime {
     /// Gets the date portion of this datetime in the msdos representation
     pub fn datepart(&self) -> u16 {
         (self.day as u16) | ((self.month as u16) << 5) | ((self.year - 1980) << 9)
+    }
+
+    #[cfg(feature = "time")]
+    /// Converts the datetime to a Tm structure
+    ///
+    /// The fields `tm_wday`, `tm_yday`, `tm_utcoff` and `tm_nsec` are set to their defaults.
+    pub fn to_time(&self) -> ::time::Tm {
+        ::time::Tm {
+            tm_sec: self.second as i32,
+            tm_min: self.minute as i32,
+            tm_hour: self.hour as i32,
+            tm_mday: self.day as i32,
+            tm_mon: self.month as i32 - 1,
+            tm_year: self.year as i32 - 1900,
+            tm_isdst: -1,
+            .. ::time::empty_tm()
+        }
+    }
+
+    /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
+    pub fn year(&self) -> u16 {
+        self.year
+    }
+
+    /// Get the month, where 1 = january and 12 = december
+    pub fn month(&self) -> u8 {
+        self.month
+    }
+
+    /// Get the day
+    pub fn day(&self) -> u8 {
+        self.day
+    }
+
+    /// Get the hour
+    pub fn hour(&self) -> u8 {
+        self.hour
+    }
+
+    /// Get the minute
+    pub fn minute(&self) -> u8 {
+        self.minute
+    }
+
+    /// Get the second
+    pub fn second(&self) -> u8 {
+        self.second
     }
 }
 
@@ -295,20 +317,60 @@ mod test {
     #[test]
     fn datetime_bounds() {
         use super::DateTime;
-        let dt = DateTime::default();
 
-        assert!(dt.with_time(23, 59, 60).is_ok());
-        assert!(dt.with_time(24, 0, 0).is_err());
-        assert!(dt.with_time(0, 60, 0).is_err());
-        assert!(dt.with_time(0, 0, 61).is_err());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 23, 59, 60).is_ok());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 24, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 60, 0).is_err());
+        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 0, 61).is_err());
 
-        assert!(dt.with_date(2107, 12, 31).is_ok());
-        assert!(dt.with_date(1980, 1, 1).is_ok());
-        assert!(dt.with_date(1979, 1, 1).is_err());
-        assert!(dt.with_date(1980, 0, 1).is_err());
-        assert!(dt.with_date(1980, 1, 0).is_err());
-        assert!(dt.with_date(2108, 12, 31).is_err());
-        assert!(dt.with_date(2107, 13, 31).is_err());
-        assert!(dt.with_date(2107, 12, 32).is_err());
+        assert!(DateTime::from_date_and_time(2107, 12, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
+        assert!(DateTime::from_date_and_time(1979, 1, 1, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(1980, 0, 1, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(1980, 1, 0, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2108, 12, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2107, 13, 31, 0, 0, 0).is_err());
+        assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
+    }
+
+    #[test]
+    fn time_conversion() {
+        use super::DateTime;
+        let dt = DateTime::from_msdos(0x4D71, 0x54CF);
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 17);
+        assert_eq!(dt.hour(), 10);
+        assert_eq!(dt.minute(), 38);
+        assert_eq!(dt.second(), 30);
+
+        #[cfg(feature = "time")]
+        assert_eq!(format!("{}", dt.to_time().rfc3339()), "2018-11-17T10:38:30Z");
+    }
+
+    #[test]
+    fn time_out_of_bounds() {
+        use super::DateTime;
+        let dt = DateTime::from_msdos(0xFFFF, 0xFFFF);
+        assert_eq!(dt.year(), 2107);
+        assert_eq!(dt.month(), 15);
+        assert_eq!(dt.day(), 31);
+        assert_eq!(dt.hour(), 31);
+        assert_eq!(dt.minute(), 63);
+        assert_eq!(dt.second(), 62);
+
+        #[cfg(feature = "time")]
+        assert_eq!(format!("{}", dt.to_time().rfc3339()), "2107-15-31T31:63:62Z");
+
+        let dt = DateTime::from_msdos(0x0000, 0x0000);
+        assert_eq!(dt.year(), 1980);
+        assert_eq!(dt.month(), 0);
+        assert_eq!(dt.day(), 0);
+        assert_eq!(dt.hour(), 0);
+        assert_eq!(dt.minute(), 0);
+        assert_eq!(dt.second(), 0);
+
+        #[cfg(feature = "time")]
+        assert_eq!(format!("{}", dt.to_time().rfc3339()), "1980-00-00T00:00:00Z");
     }
 }
