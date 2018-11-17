@@ -62,6 +62,7 @@ pub struct ZipWriter<W: Write + io::Seek>
     inner: GenericZipWriter<W>,
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
+    writing_to_file: bool,
 }
 
 #[derive(Default)]
@@ -126,7 +127,7 @@ impl<W: Write+io::Seek> Write for ZipWriter<W>
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize>
     {
-        if self.files.len() == 0 { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started")) }
+        if !self.writing_to_file { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started")) }
         match self.inner.ref_mut()
         {
             Some(ref mut w) => {
@@ -172,6 +173,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
             inner: GenericZipWriter::Storer(inner),
             files: Vec::new(),
             stats: Default::default(),
+            writing_to_file: false,
         }
     }
 
@@ -240,6 +242,8 @@ impl<W: Write+io::Seek> ZipWriter<W>
 
         update_local_file_header(writer, file)?;
         writer.seek(io::SeekFrom::Start(file_end))?;
+
+        self.writing_to_file = false;
         Ok(())
     }
 
@@ -252,12 +256,13 @@ impl<W: Write+io::Seek> ZipWriter<W>
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
         self.start_entry(name, options)?;
+        self.writing_to_file = true;
         Ok(())
     }
 
     /// Add a directory entry.
     ///
-    /// You should not write data to the file afterwards.
+    /// You can't write data to the file afterwards.
     pub fn add_directory<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
         where S: Into<String>
     {
@@ -276,6 +281,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
         };
 
         self.start_entry(name_with_slash, options)?;
+        self.writing_to_file = false;
         Ok(())
     }
 
@@ -538,6 +544,7 @@ mod test {
         writer.add_directory("test", FileOptions::default().last_modified_time(
             DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap()
         )).unwrap();
+        assert!(writer.write(b"writing to a directory is not allowed, and will not write any data").is_err());
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 114);
         assert_eq!(*result.get_ref(), &[
