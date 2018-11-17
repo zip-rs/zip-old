@@ -272,7 +272,6 @@ impl<W: Write+io::Seek> ZipWriter<W>
         *options.permissions.as_mut().unwrap() |= 0o40000;
         options.compression_method = CompressionMethod::Stored;
 
-        // TODO: change the method signature to take an &str for 'name'
         let name_as_string = name.into();
         // Append a slash to the filename if it does not end with it.
         let name_with_slash = match name_as_string.chars().last() {
