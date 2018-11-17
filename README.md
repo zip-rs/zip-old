@@ -16,7 +16,7 @@ Supported compression formats:
 
 * stored (i.e. none)
 * deflate
-* bzip2 (optional, enabled by default)
+* bzip2
 
 Currently unsupported zip extensions:
 
@@ -32,27 +32,23 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "0.4"
+zip = "0.5"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "0.4", default-features = false }
+zip = { version = "0.5", default-features = false }
 ```
 
-You can further control the backend of `deflate` compression method with these features:
-* `deflate` (enabled by default) uses [miniz_oxide](https://github.com/Frommi/miniz_oxide)
-* `deflate-miniz` uses [miniz](https://github.com/richgel999/miniz)
-* `deflate-zlib` uses zlib
+The features available are:
 
-For example:
+* `deflate`: Enables the deflate compression algorithm, which is the default for zipfiles
+* `bzip2`: Enables the BZip2 compression algorithm.
+* `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 
-```toml
-[dependencies]
-zip = { version = "0.4", features = ["deflate-zlib"], default-features = false }
-```
+All of these are enabled by default.
 
 Examples
 --------
