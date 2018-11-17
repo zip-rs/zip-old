@@ -40,7 +40,7 @@ pub struct DateTime {
     second: u8,
 }
 
-impl std::default::Default for DateTime {
+impl ::std::default::Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
         DateTime {
