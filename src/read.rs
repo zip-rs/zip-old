@@ -350,7 +350,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: CompressionMethod::from_u16(compression_method),
-        last_modified_time: DateTime::from_msdos(last_mod_time, last_mod_date),
+        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -591,7 +591,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
         compression_method: compression_method,
-        last_modified_time: DateTime::from_msdos(last_mod_time, last_mod_date),
+        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32: crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
@@ -693,6 +693,9 @@ mod test {
 
         let mut file1 = reader1.by_index(0).unwrap();
         let mut file2 = reader2.by_index(0).unwrap();
+
+        let t = file1.last_modified();
+        assert_eq!((t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second()), (1980, 1, 1, 0, 0, 0));
 
         let mut buf1 = [0; 5];
         let mut buf2 = [0; 5];
