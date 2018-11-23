@@ -54,10 +54,12 @@ mod ffi {
 pub struct ZipArchive<R: Read + io::Seek>
 {
     reader: R,
+    number_of_files: usize,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
     offset: u64,
     comment: Vec<u8>,
+    last_central_header_end: u64,
 }
 
 enum ZipFileReader<'a> {
@@ -203,26 +205,14 @@ impl<R: Read+io::Seek> ZipArchive<R>
         let (archive_offset, directory_start, number_of_files) =
             Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
 
-        let mut files = Vec::new();
-        let mut names_map = HashMap::new();
-
-        if let Err(_) = reader.seek(io::SeekFrom::Start(directory_start)) {
-            return Err(ZipError::InvalidArchive("Could not seek to start of central directory"));
-        }
-
-        for _ in 0 .. number_of_files
-        {
-            let file = central_header_to_zip_file(&mut reader, archive_offset)?;
-            names_map.insert(file.file_name.clone(), files.len());
-            files.push(file);
-        }
-
         Ok(ZipArchive {
             reader: reader,
-            files: files,
-            names_map: names_map,
+            number_of_files: number_of_files,
+            files: Vec::with_capacity(number_of_files),
+            names_map: HashMap::new(),
             offset: archive_offset,
             comment: footer.zip_file_comment,
+            last_central_header_end: directory_start,
         })
     }
 
@@ -240,7 +230,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     /// ```
     pub fn len(&self) -> usize
     {
-        self.files.len()
+        self.number_of_files
     }
 
     /// Get the offset from the beginning of the underlying reader that this zip begins at, in bytes.
@@ -254,42 +244,44 @@ impl<R: Read+io::Seek> ZipArchive<R>
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>>
     {
-        let index = match self.names_map.get(name) {
-            Some(index) => *index,
-            None => { return Err(ZipError::FileNotFound); },
-        };
-        self.by_index(index)
+        if let Some(&index) = self.names_map.get(name) {
+            return self.by_index(index);
+        }
+
+        let data = read_files_till(
+            &mut self.reader,
+            self.number_of_files,
+            &mut self.files,
+            &mut self.names_map,
+            self.offset,
+            &mut self.last_central_header_end,
+            ReadFilesTillPredicate::FileName(name),
+        )?;
+
+        get_file_from_data(data, &mut self.reader)
     }
 
     /// Get a contained file by index
     pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>>
     {
-        if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
-        let ref mut data = self.files[file_number];
+        if file_number >= self.number_of_files { return Err(ZipError::FileNotFound); }
 
-        if data.encrypted
-        {
-            return unsupported_zip_error("Encrypted files are not supported")
+        let data = if file_number < self.files.len() {
+            &mut self.files[file_number]
         }
+        else {
+            read_files_till(
+                &mut self.reader,
+                self.number_of_files,
+                &mut self.files,
+                &mut self.names_map,
+                self.offset,
+                &mut self.last_central_header_end,
+                ReadFilesTillPredicate::Number(file_number),
+            )?
+        };
 
-        // Parse local header
-        self.reader.seek(io::SeekFrom::Start(data.header_start))?;
-        let signature = self.reader.read_u32::<LittleEndian>()?;
-        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
-        {
-            return Err(ZipError::InvalidArchive("Invalid local file header"))
-        }
-
-        self.reader.seek(io::SeekFrom::Current(22))?;
-        let file_name_length = self.reader.read_u16::<LittleEndian>()? as u64;
-        let extra_field_length = self.reader.read_u16::<LittleEndian>()? as u64;
-        let magic_and_header = 4 + 22 + 2 + 2;
-        data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
-
-        self.reader.seek(io::SeekFrom::Start(data.data_start))?;
-        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
-
-        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
+        get_file_from_data(data, &mut self.reader)
     }
 
     /// Unwrap and return the inner reader object
@@ -301,7 +293,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 }
 
-fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64) -> ZipResult<ZipFileData>
+fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64, central_header_end: &mut u64) -> ZipResult<ZipFileData>
 {
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
@@ -331,6 +323,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
     let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
     let file_comment_raw  = ReadPodExt::read_exact(reader, file_comment_length)?;
+    *central_header_end = reader.seek(io::SeekFrom::Current(0))?;
 
     let file_name = match is_utf8
     {
@@ -421,6 +414,68 @@ fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
         #[cfg(feature = "bzip2")]
         ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
     }
+}
+
+fn get_file_from_data<'a, R>(data: &'a mut ZipFileData, reader: &'a mut R) -> ZipResult<ZipFile<'a>> where R: Read + io::Seek {
+    if data.encrypted
+    {
+        return unsupported_zip_error("Encrypted files are not supported")
+    }
+
+    // Parse local header
+    reader.seek(io::SeekFrom::Start(data.header_start))?;
+    let signature = reader.read_u32::<LittleEndian>()?;
+    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
+    {
+        return Err(ZipError::InvalidArchive("Invalid local file header"))
+    }
+
+    reader.seek(io::SeekFrom::Current(22))?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+    let magic_and_header = 4 + 22 + 2 + 2;
+    data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+
+    reader.seek(io::SeekFrom::Start(data.data_start))?;
+    let limit_reader = (reader as &mut Read).take(data.compressed_size);
+
+    Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
+}
+
+fn read_files_till<'a, R>(
+    mut reader: R,
+    number_of_files: usize,
+    files: &'a mut Vec<ZipFileData>,
+    names_map: &mut HashMap<String, usize>,
+    offset: u64,
+    last_central_header_end: &mut u64,
+    predicate: ReadFilesTillPredicate,
+) -> ZipResult<&'a mut ZipFileData> where R: Read + io::Seek {
+    for file_number in files.len()..number_of_files {
+        if let Err(_) = reader.seek(io::SeekFrom::Start(*last_central_header_end)) {
+            return Err(ZipError::InvalidArchive("Could not seek to start of central file header"));
+        }
+        let file = central_header_to_zip_file(&mut reader, offset, last_central_header_end)?;
+
+        let matches = match predicate {
+            ReadFilesTillPredicate::FileName(file_name) => file.file_name == file_name,
+            ReadFilesTillPredicate::Number(number) => number == file_number,
+        };
+
+        names_map.insert(file.file_name.clone(), file_number);
+        files.push(file);
+
+        if matches {
+            return Ok(&mut files[file_number]);
+        }
+    }
+
+    return Err(ZipError::FileNotFound);
+}
+
+enum ReadFilesTillPredicate<'a> {
+    FileName(&'a str),
+    Number(usize),
 }
 
 /// Methods for retrieving information on zip files
