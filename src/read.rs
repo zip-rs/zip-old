@@ -451,10 +451,11 @@ fn read_files_till<'a, R>(
     last_central_header_end: &mut u64,
     predicate: ReadFilesTillPredicate,
 ) -> ZipResult<&'a mut ZipFileData> where R: Read + io::Seek {
+    if let Err(_) = reader.seek(io::SeekFrom::Start(*last_central_header_end)) {
+        return Err(ZipError::InvalidArchive("Could not seek to start of central file header"));
+    }
+
     for file_number in files.len()..number_of_files {
-        if let Err(_) = reader.seek(io::SeekFrom::Start(*last_central_header_end)) {
-            return Err(ZipError::InvalidArchive("Could not seek to start of central file header"));
-        }
         let file = central_header_to_zip_file(&mut reader, offset, last_central_header_end)?;
 
         let matches = match predicate {
