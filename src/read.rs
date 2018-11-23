@@ -293,7 +293,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 }
 
-fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64, central_header_end: &mut u64) -> ZipResult<ZipFileData>
+fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64) -> ZipResult<ZipFileData>
 {
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
@@ -323,7 +323,6 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
     let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
     let file_comment_raw  = ReadPodExt::read_exact(reader, file_comment_length)?;
-    *central_header_end = reader.seek(io::SeekFrom::Current(0))?;
 
     let file_name = match is_utf8
     {
@@ -456,7 +455,7 @@ fn read_files_till<'a, R>(
     }
 
     for file_number in files.len()..number_of_files {
-        let file = central_header_to_zip_file(&mut reader, offset, last_central_header_end)?;
+        let file = central_header_to_zip_file(&mut reader, offset)?;
 
         let matches = match predicate {
             ReadFilesTillPredicate::FileName(file_name) => file.file_name == file_name,
@@ -467,10 +466,12 @@ fn read_files_till<'a, R>(
         files.push(file);
 
         if matches {
+            *last_central_header_end = reader.seek(io::SeekFrom::Current(0))?;
             return Ok(&mut files[file_number]);
         }
     }
 
+    *last_central_header_end = reader.seek(io::SeekFrom::Current(0))?;
     return Err(ZipError::FileNotFound);
 }
 
