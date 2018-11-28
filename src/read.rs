@@ -8,6 +8,7 @@ use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use std::borrow::Cow;
+use std::mem;
 
 use podio::{ReadPodExt, LittleEndian};
 use types::{ZipFileData, System, DateTime};
@@ -59,7 +60,7 @@ pub struct ZipArchive<R: Read + io::Seek>
     names_map: HashMap<String, usize>,
     offset: u64,
     comment: Vec<u8>,
-    last_central_header_end: u64,
+    last_central_header_end: LastCentralHeaderEnd,
 }
 
 enum ZipFileReader<'a> {
@@ -69,6 +70,12 @@ enum ZipFileReader<'a> {
     Deflated(Crc32Reader<libflate::deflate::Decoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum LastCentralHeaderEnd {
+    Pos(u64),
+    Poisoned,
 }
 
 /// A struct for reading a zip file
@@ -212,7 +219,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
             names_map: HashMap::new(),
             offset: archive_offset,
             comment: footer.zip_file_comment,
-            last_central_header_end: directory_start,
+            last_central_header_end: LastCentralHeaderEnd::Pos(directory_start),
         })
     }
 
@@ -447,11 +454,16 @@ fn read_files_till<'a, R>(
     files: &'a mut Vec<ZipFileData>,
     names_map: &mut HashMap<String, usize>,
     offset: u64,
-    last_central_header_end: &mut u64,
+    last_central_header_end: &mut LastCentralHeaderEnd,
     predicate: ReadFilesTillPredicate,
 ) -> ZipResult<&'a mut ZipFileData> where R: Read + io::Seek {
-    if let Err(_) = reader.seek(io::SeekFrom::Start(*last_central_header_end)) {
-        return Err(ZipError::InvalidArchive("Could not seek to start of central file header"));
+    let last_central_header_end_pos = match mem::replace(last_central_header_end, LastCentralHeaderEnd::Poisoned) {
+        LastCentralHeaderEnd::Pos(pos) => pos,
+        LastCentralHeaderEnd::Poisoned => return Err(ZipError::InvalidArchive("Central file header is corrupt")),
+    };
+
+    if let Err(_) = reader.seek(io::SeekFrom::Start(last_central_header_end_pos)) {
+        return Err(ZipError::InvalidArchive("Could not seek to start of next central file header"));
     }
 
     for file_number in files.len()..number_of_files {
@@ -466,12 +478,12 @@ fn read_files_till<'a, R>(
         files.push(file);
 
         if matches {
-            *last_central_header_end = reader.seek(io::SeekFrom::Current(0))?;
+            *last_central_header_end = LastCentralHeaderEnd::Pos(reader.seek(io::SeekFrom::Current(0))?);
             return Ok(&mut files[file_number]);
         }
     }
 
-    *last_central_header_end = reader.seek(io::SeekFrom::Current(0))?;
+    *last_central_header_end = LastCentralHeaderEnd::Pos(reader.seek(io::SeekFrom::Current(0))?);
     return Err(ZipError::FileNotFound);
 }
 
