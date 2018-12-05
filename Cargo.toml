@@ -17,6 +17,8 @@ podio = "0.1"
 bzip2 = { version = "0.3", optional = true }
 libflate = { version = "0.1.16", optional = true }
 crc32fast = "1.0"
+bytes = "0.4.11"
+string = "0.1.2"
 
 [dev-dependencies]
 bencher = "0.1"

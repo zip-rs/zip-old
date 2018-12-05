@@ -1,5 +1,7 @@
 //! Convert a string in IBM codepage 437 to UTF-8
 
+use buffer::{StrBuf, ByteBuf};
+
 /// Trait to convert IBM codepage 437 to the target type
 pub trait FromCp437 {
     /// Target type
@@ -33,6 +35,19 @@ impl FromCp437 for Vec<u8> {
         }
         else {
             self.into_iter().map(|c| to_char(c)).collect()
+        }
+    }
+}
+
+impl FromCp437 for ByteBuf {
+    type Target = StrBuf;
+
+    fn from_cp437(self) -> Self::Target {
+        if self.as_ref().iter().all(|c| *c < 0x80) {
+            StrBuf::from_utf8(self).unwrap()
+        }
+        else {
+            self.as_ref().into_iter().map(|c| to_char(*c)).collect::<String>().into()
         }
     }
 }

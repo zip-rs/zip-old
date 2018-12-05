@@ -1,5 +1,6 @@
 //! Structs for creating a new zip archive
 
+use buffer::StrBuf;
 use compression::CompressionMethod;
 use types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
 use spec;
@@ -198,9 +199,9 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: file_name,
-                file_name_raw: file_name_raw,
-                file_comment: String::new(),
+                file_name: file_name.into(),
+                file_name_raw: file_name_raw.into(),
+                file_comment: StrBuf::from_str(""),
                 header_start: header_start,
                 data_start: 0,
                 external_attributes: permissions << 16,

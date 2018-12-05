@@ -1,5 +1,7 @@
 //! Types that specify what is contained in a ZIP.
 
+use buffer::{ByteBuf, StrBuf};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System
 {
@@ -193,7 +195,7 @@ pub const DEFAULT_VERSION: u8 = 46;
 
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone)]
-pub struct ZipFileData
+pub(crate) struct ZipFileData
 {
     /// Compatibility of the file attribute information
     pub system: System,
@@ -212,11 +214,11 @@ pub struct ZipFileData
     /// Size of the file when extracted
     pub uncompressed_size: u64,
     /// Name of the file
-    pub file_name: String,
+    pub file_name: StrBuf,
     /// Raw file name. To be used when file_name was incorrectly decoded.
-    pub file_name_raw: Vec<u8>,
+    pub file_name_raw: ByteBuf,
     /// File comment
-    pub file_comment: String,
+    pub file_comment: StrBuf,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
     /// Specifies where the compressed data of the file starts
@@ -278,7 +280,7 @@ mod test {
     #[test]
     fn sanitize() {
         use super::*;
-        let file_name = "/path/../../../../etc/./passwd\0/etc/shadow".to_string();
+        let file_name = "/path/../../../../etc/./passwd\0/etc/shadow";
         let data = ZipFileData {
             system: System::Dos,
             version_made_by: 0,
@@ -288,9 +290,9 @@ mod test {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.clone(),
-            file_name_raw: file_name.into_bytes(),
-            file_comment: String::new(),
+            file_name: StrBuf::from_str(file_name),
+            file_name_raw: ByteBuf::from(file_name.as_bytes().to_vec()),
+            file_comment: StrBuf::from_str(""),
             header_start: 0,
             data_start: 0,
             external_attributes: 0,
