@@ -20,8 +20,6 @@ use libflate;
 use bzip2;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
-#[allow(unused_imports)] // Rust <1.23 compat
-#[allow(deprecated)] use std::ascii::AsciiExt;
 
 enum GenericZipWriter<W: Write + io::Seek>
 {
