@@ -2,7 +2,6 @@ language: rust
 
 rust:
     - stable
-    - 1.20.0
 
 sudo: false
 
