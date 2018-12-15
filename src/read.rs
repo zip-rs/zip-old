@@ -308,6 +308,11 @@ fn central_header_to_zip_file(bytes: &mut ByteBuf, archive_offset: u64) -> ZipRe
         return Err(ZipError::InvalidArchive("Invalid Central Directory header"))
     }
 
+    // ensure that the header is big enough to parse the following fixed-length sections
+    if bytes.remaining() < 42 {
+        return Err(ZipError::Io(io::ErrorKind::UnexpectedEof.into()));
+    }
+
     let version_made_by = bytes.get_u16_le();
     let _version_to_extract = bytes.get_u16_le();
     let flags = bytes.get_u16_le();
@@ -326,6 +331,12 @@ fn central_header_to_zip_file(bytes: &mut ByteBuf, archive_offset: u64) -> ZipRe
     let _internal_file_attributes = bytes.get_u16_le();
     let external_file_attributes = bytes.get_u32_le();
     let offset = bytes.get_u32_le() as u64;
+
+    // ensure that the header is big enough to parse the following variable-length sections
+    if bytes.remaining() < file_name_length + extra_field_length + file_comment_length {
+        return Err(ZipError::Io(io::ErrorKind::UnexpectedEof.into()));
+    }
+
     let file_name_raw = bytes.split_to(file_name_length);
     let extra_field = bytes.split_to(extra_field_length);
     let file_comment_raw  = bytes.split_to(file_comment_length);
