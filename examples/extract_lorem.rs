@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use zip::ZipArchiveRead;
 
 extern crate zip;
 
