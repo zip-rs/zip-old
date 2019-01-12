@@ -2,7 +2,7 @@ extern crate zip;
 
 use std::io::prelude::*;
 use zip::write::FileOptions;
-use zip::ZipArchiveRead;
+use zip::{ZipArchiveRead, ZipArchiveWrite};
 use std::io::Cursor;
 
 // This test asserts that after creating a zip file, then reading its contents back out,

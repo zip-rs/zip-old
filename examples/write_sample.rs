@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use zip::write::FileOptions;
+use zip::write::{FileOptions, ZipArchiveWrite};
 
 extern crate zip;
 

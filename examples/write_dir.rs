@@ -4,7 +4,7 @@ extern crate walkdir;
 use std::io::prelude::*;
 use std::io::{Write, Seek};
 use std::iter::Iterator;
-use zip::write::FileOptions;
+use zip::write::{FileOptions, ZipArchiveWrite};
 use zip::result::ZipError;
 
 use walkdir::{WalkDir, DirEntry};

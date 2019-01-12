@@ -34,6 +34,7 @@ enum GenericZipWriter<W: Write + io::Seek>
 /// Generator for ZIP files.
 ///
 /// ```
+/// use zip::ZipArchiveWrite;
 /// fn doit() -> zip::result::ZipResult<()>
 /// {
 ///     use std::io::Write;
@@ -61,6 +62,26 @@ pub struct ZipWriter<W: Write + io::Seek>
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
+}
+
+/// Trait describing how to write to a ZIP file
+pub trait ZipArchiveWrite {
+    /// Underlying writer
+    type Writer;
+
+    /// Starts a file.
+    fn start_file<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()> where S: Into<String>;
+
+    /// Add a directory entry.
+    ///
+    /// You can't write data to the file afterwards.
+    fn add_directory<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()> where S: Into<String>;
+
+    /// Finish the last file and write all other zip-structures
+    ///
+    /// This will return the writer, but one should normally not append any data to the end of the file.
+    /// Note that the zipfile will also be finished on drop.
+    fn finish(&mut self) -> ZipResult<Self::Writer>;
 }
 
 #[derive(Default)]
@@ -245,54 +266,6 @@ impl<W: Write+io::Seek> ZipWriter<W>
         Ok(())
     }
 
-    /// Starts a file.
-    pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
-        where S: Into<String>
-    {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
-        *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options)?;
-        self.writing_to_file = true;
-        Ok(())
-    }
-
-    /// Add a directory entry.
-    ///
-    /// You can't write data to the file afterwards.
-    pub fn add_directory<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
-        where S: Into<String>
-    {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o755);
-        }
-        *options.permissions.as_mut().unwrap() |= 0o40000;
-        options.compression_method = CompressionMethod::Stored;
-
-        let name_as_string = name.into();
-        // Append a slash to the filename if it does not end with it.
-        let name_with_slash = match name_as_string.chars().last() {
-            Some('/') | Some('\\') => name_as_string,
-            _ => name_as_string + "/",
-        };
-
-        self.start_entry(name_with_slash, options)?;
-        self.writing_to_file = false;
-        Ok(())
-    }
-
-    /// Finish the last file and write all other zip-structures
-    ///
-    /// This will return the writer, but one should normally not append any data to the end of the file.
-    /// Note that the zipfile will also be finished on drop.
-    pub fn finish(&mut self) -> ZipResult<W>
-    {
-        self.finalize()?;
-        let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
-        Ok(inner.unwrap())
-    }
-
     fn finalize(&mut self) -> ZipResult<()>
     {
         self.finish_file()?;
@@ -322,6 +295,50 @@ impl<W: Write+io::Seek> ZipWriter<W>
         }
 
         Ok(())
+    }
+}
+
+impl<W: Write+io::Seek> ZipArchiveWrite for ZipWriter<W> {
+    type Writer = W;
+
+    fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
+        where S: Into<String>
+    {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o644);
+        }
+        *options.permissions.as_mut().unwrap() |= 0o100000;
+        self.start_entry(name, options)?;
+        self.writing_to_file = true;
+        Ok(())
+    }
+
+    fn add_directory<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
+        where S: Into<String>
+    {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o755);
+        }
+        *options.permissions.as_mut().unwrap() |= 0o40000;
+        options.compression_method = CompressionMethod::Stored;
+
+        let name_as_string = name.into();
+        // Append a slash to the filename if it does not end with it.
+        let name_with_slash = match name_as_string.chars().last() {
+            Some('/') | Some('\\') => name_as_string,
+            _ => name_as_string + "/",
+        };
+
+        self.start_entry(name_with_slash, options)?;
+        self.writing_to_file = false;
+        Ok(())
+    }
+
+    fn finish(&mut self) -> ZipResult<W>
+    {
+        self.finalize()?;
+        let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
+        Ok(inner.unwrap())
     }
 }
 
@@ -524,7 +541,7 @@ mod test {
     use std::io;
     use std::io::Write;
     use types::DateTime;
-    use super::{FileOptions, ZipWriter};
+    use super::{FileOptions, ZipWriter, ZipArchiveWrite};
     use compression::CompressionMethod;
 
     #[test]
