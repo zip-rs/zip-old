@@ -64,6 +64,8 @@ pub struct ZipArchive<R: Read + io::Seek>
 
 /// Trait describing functionality of a ZIP file
 pub trait ZipArchiveRead {
+    /// Underlying reader type
+    type Reader;
     /// Number of files contained in this zip.
     ///
     /// ```
@@ -93,6 +95,11 @@ pub trait ZipArchiveRead {
 
     /// Get the comment field for this archive
     fn comment<'a>(&'a self) -> &Vec<u8>;
+
+    /// Unwrap and return the inner reader object
+    ///
+    /// The position of the reader is undefined.
+    fn into_inner(self) -> Self::Reader;
 }
 
 enum ZipFileReader<'a> {
@@ -261,16 +268,10 @@ impl<R: Read+io::Seek> ZipArchive<R>
         })
     }
 
-    /// Unwrap and return the inner reader object
-    ///
-    /// The position of the reader is undefined.
-    pub fn into_inner(self) -> R
-    {
-        self.reader
-    }
 }
 
 impl <R: Read+io::Seek> ZipArchiveRead for ZipArchive<R> {
+    type Reader = R;
     fn len(&self) -> usize
     {
         self.files.len()
@@ -320,6 +321,11 @@ impl <R: Read+io::Seek> ZipArchiveRead for ZipArchive<R> {
     }
     fn comment<'a>(&'a self) -> &Vec<u8> {
         &self.comment
+    }
+
+    fn into_inner(self) -> R
+    {
+        self.reader
     }
 }
 
