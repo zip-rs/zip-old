@@ -225,6 +225,32 @@ pub struct ZipFileData
     pub external_attributes: u32,
 }
 
+/// Helper struct for slightly more idiomatic interaction
+/// with archives
+pub struct ZipFileId {
+    data_start: u64,
+    header_start: u64,
+    crc32: u32,
+}
+
+impl From<&'_ ZipFileData> for ZipFileId {
+    fn from(other: &'_ ZipFileData) -> Self {
+        ZipFileId {
+            data_start: other.data_start,
+            header_start: other.header_start,
+            crc32: other.crc32,
+        }
+    }
+}
+
+impl PartialEq<ZipFileData> for ZipFileId {
+    fn eq(&self, fd: &ZipFileData) -> bool {
+        self.header_start == fd.header_start
+            && self.data_start == fd.data_start
+            && self.crc32 == fd.crc32
+    }
+}
+
 impl ZipFileData {
     pub fn file_name_sanitized(&self) -> ::std::path::PathBuf {
         let no_null_filename = match self.file_name.find('\0') {

@@ -1,17 +1,18 @@
 //! Structs for reading a ZIP archive
 
-use crc32::Crc32Reader;
 use compression::CompressionMethod;
+use crc32::Crc32Reader;
+use result::{ZipError, ZipResult};
 use spec;
-use result::{ZipResult, ZipError};
-use std::io;
-use std::io::prelude::*;
-use std::collections::HashMap;
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    io::{self, prelude::*},
+};
 
-use podio::{ReadPodExt, LittleEndian};
-use types::{ZipFileData, System, DateTime};
 use cp437::FromCp437;
+use podio::{LittleEndian, ReadPodExt};
+use types::{DateTime, System, ZipFileData, ZipFileId};
 
 #[cfg(feature = "deflate")]
 use libflate;
@@ -289,7 +290,24 @@ impl<R: Read+io::Seek> ZipArchive<R>
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
 
-        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
+        Ok(ZipFile {
+            reader: make_reader(data.compression_method, data.crc32, limit_reader)?,
+            data: Cow::Borrowed(data),
+        })
+    }
+
+    /// Get a contained file by its metadata
+    pub fn by_id<'a>(&'a mut self, id: ZipFileId) -> ZipResult<ZipFile<'a>> {
+        if let Some(index) = self.files.iter().position(|file| id == *file) {
+            self.by_index(index)
+        } else {
+            Err(ZipError::FileNotFound)
+        }
+    }
+
+    /// Returns an iterator over the file metadata in this archive.
+    pub fn iter_files<'a>(&'a self) -> impl Iterator<Item = &'a ZipFileData> {
+        self.files.iter()
     }
 
     /// Unwrap and return the inner reader object
@@ -710,5 +728,57 @@ mod test {
         assert_eq!(buf1, buf2);
         assert_eq!(buf3, buf4);
         assert!(buf1 != buf3);
+    }
+
+    #[test]
+    fn zip_files() {
+        use super::ZipArchive;
+        use std::io::{self, Read};
+        use types::ZipFileId;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let mut archive = ZipArchive::new(io::Cursor::new(v)).unwrap();
+
+        assert_eq!(1, archive.len());
+        assert_eq!(1, archive.iter_files().count());
+
+        let expected_files = [("mimetype", 39, 39)];
+
+        for (expected, file) in expected_files.iter().zip(archive.iter_files()) {
+            assert_eq!(expected.0, file.file_name);
+            assert_eq!(expected.1, file.compressed_size);
+            assert_eq!(expected.2, file.uncompressed_size);
+        }
+
+        assert_eq!(
+            0,
+            archive
+                .iter_files()
+                .position(|f| f.file_name == "mimetype")
+                .unwrap()
+        );
+
+        let file_by_id_data = {
+            let file_id = archive
+                .iter_files()
+                .find(|f| (*f).file_name == "mimetype")
+                .map(ZipFileId::from)
+                .unwrap();
+
+            let mut file_by_id = archive.by_id(file_id).unwrap();
+            let mut file_by_id_data = Vec::new();
+            file_by_id.read_to_end(&mut file_by_id_data).unwrap();
+            file_by_id_data
+        };
+
+        {
+            let mut file_by_index = archive.by_index(0).unwrap();
+
+            let mut file_by_index_data = Vec::new();
+            file_by_index.read_to_end(&mut file_by_index_data).unwrap();
+
+            assert_eq!(file_by_id_data, file_by_index_data);
+        }
     }
 }
