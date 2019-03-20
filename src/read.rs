@@ -310,6 +310,17 @@ impl<R: Read+io::Seek> ZipArchive<R>
         self.files.iter()
     }
 
+    /// Returns the first file matching the specified predicate (just as with Iterator::find)
+    pub fn find<'a, P: FnMut(&ZipFileData) -> bool>(
+        &'a mut self,
+        predicate: P,
+    ) -> ZipResult<ZipFile<'a>> {
+        match self.files.iter().position(predicate) {
+            Some(i) => self.by_index(i),
+            None => Err(ZipError::FileNotFound),
+        }
+    }
+
     /// Unwrap and return the inner reader object
     ///
     /// The position of the reader is undefined.
@@ -779,6 +790,15 @@ mod test {
             file_by_index.read_to_end(&mut file_by_index_data).unwrap();
 
             assert_eq!(file_by_id_data, file_by_index_data);
+        }
+
+        {
+            let mut file_by_find = archive.find(|f| (*f).file_name == "mimetype").unwrap();
+
+            let mut file_by_find_data = Vec::new();
+            file_by_find.read_to_end(&mut file_by_find_data).unwrap();
+
+            assert_eq!(file_by_id_data, file_by_find_data);
         }
     }
 }
