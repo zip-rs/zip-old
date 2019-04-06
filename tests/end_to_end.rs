@@ -7,7 +7,7 @@ use std::io::Cursor;
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
-fn main() {
+fn end_to_end() {
     let file = &mut Cursor::new(Vec::new());
 
     write_to_zip_file(file).expect("file written");

@@ -26,6 +26,6 @@ const BUF : &[u8] = &[
 ];
 
 #[test]
-fn main() {
+fn invalid_date() {
     let _archive = ZipArchive::new(Cursor::new(BUF)).unwrap();
 }
