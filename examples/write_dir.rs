@@ -65,14 +65,21 @@ fn zip_dir<T>(it: &mut Iterator<Item=DirEntry>, prefix: &str, writer: T, method:
             .to_str()
             .unwrap();
 
+        // Write file or directory explicitly
+        // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
-            println!("adding {:?} as {:?} ...", path, name);
+            println!("adding file {:?} as {:?} ...", path, name);
             zip.start_file(name, options)?;
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
             zip.write_all(&*buffer)?;
             buffer.clear();
+        } else if !name.is_empty() {
+            // Only if not root! Avoids path spec / warning
+            // and mapname conversion failed error on unzip
+            println!("adding dir {:?} as {:?} ...", path, name);
+            zip.add_directory(name, options)?;
         }
     }
     zip.finish()?;
