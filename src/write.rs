@@ -258,6 +258,14 @@ impl<W: Write+io::Seek> ZipWriter<W>
         Ok(())
     }
 
+    /// Starts a file, taking a Path as argument.
+    ///
+    /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
+    /// Components, such as a starting '/' or '..' and '.'.
+    pub fn start_file_from_path(&mut self, path: &std::path::Path, options: FileOptions) -> ZipResult<()> {
+        self.start_file(path_to_string(path), options)
+    }
+
     /// Add a directory entry.
     ///
     /// You can't write data to the file afterwards.
@@ -280,6 +288,14 @@ impl<W: Write+io::Seek> ZipWriter<W>
         self.start_entry(name_with_slash, options)?;
         self.writing_to_file = false;
         Ok(())
+    }
+
+    /// Add a directory entry, taking a Path as argument.
+    ///
+    /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
+    /// Components, such as a starting '/' or '..' and '.'.
+    pub fn add_directory_from_path(&mut self, path: &std::path::Path, options: FileOptions) -> ZipResult<()> {
+        self.add_directory(path_to_string(path.into()), options)
     }
 
     /// Finish the last file and write all other zip-structures
@@ -519,6 +535,22 @@ fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>>
     Ok(writer)
 }
 
+fn path_to_string(path: &std::path::Path) -> String {
+    let mut path_str = String::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(os_str) => {
+                if path_str.len() != 0 {
+                    path_str.push('/');
+                }
+                path_str.push_str(&*os_str.to_string_lossy());
+            }
+            _ => (),
+        }
+    }
+    path_str
+}
+
 #[cfg(test)]
 mod test {
     use std::io;
@@ -567,5 +599,18 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         assert_eq!(result.get_ref(), &v);
+    }
+
+    #[test]
+    fn path_to_string() {
+        let mut path = std::path::PathBuf::new();
+        #[cfg(windows)] path.push(r"C:\");
+        #[cfg(unix)] path.push("/");
+        path.push("windows");
+        path.push("..");
+        path.push(".");
+        path.push("system32");
+        let path_str = super::path_to_string(&path);
+        assert_eq!(path_str, "windows/system32");
     }
 }
