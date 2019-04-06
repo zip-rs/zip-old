@@ -465,6 +465,14 @@ impl<'a> ZipFile<'a> {
     pub fn last_modified(&self) -> DateTime {
         self.data.last_modified_time
     }
+    /// Returns whether the file is actually a directory
+    pub fn is_dir(&self) -> bool {
+        self.name().chars().rev().next().map_or(false, |c| c == '/' || c == '\\')
+    }
+    /// Returns whether the file is a regular file
+    pub fn is_file(&self) -> bool {
+        !self.is_dir()
+    }
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
         if self.data.external_attributes == 0 {
@@ -710,5 +718,25 @@ mod test {
         assert_eq!(buf1, buf2);
         assert_eq!(buf3, buf4);
         assert!(buf1 != buf3);
+    }
+
+    #[test]
+    fn file_and_dir_predicates() {
+        use super::ZipArchive;
+        use std::io;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/files_and_dirs.zip"));
+        let mut zip = ZipArchive::new(io::Cursor::new(v)).unwrap();
+
+        for i in 0..zip.len() {
+            let zip_file = zip.by_index(i).unwrap();
+            let full_name = zip_file.sanitized_name();
+            let file_name = full_name.file_name().unwrap().to_str().unwrap();
+            assert!(
+                (file_name.starts_with("dir") && zip_file.is_dir())
+                    || (file_name.starts_with("file") && zip_file.is_file())
+            );
+        }
     }
 }
