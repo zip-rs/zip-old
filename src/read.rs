@@ -7,7 +7,6 @@ use result::{ZipResult, ZipError};
 use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
-use std::borrow::Cow;
 
 use podio::{ReadPodExt, LittleEndian};
 use types::{ZipFileData, System, DateTime};
@@ -65,21 +64,89 @@ enum ZipFileReader<R: Read> {
     NoReader,
     Stored(Crc32Reader<R>),
     #[cfg(feature = "deflate")]
-    Deflated(Crc32Reader<libflate::deflate::Decoder<R>>),
+    Deflated(Crc32Reader<libflate::deflate::Decoder<R>>, bool),
     #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<R>>),
+    Bzip2(Crc32Reader<BzDecoder<R>>, bool),
+}
+
+impl<'a, R: Read + io::Seek + Clone> ZipFileReader<io::Take<&'a mut R>> {
+    fn try_clone(&self) -> ZipResult<ZipFileReader<io::Take<R>>> {
+        match self {
+            ZipFileReader::NoReader => Ok(ZipFileReader::NoReader),
+            ZipFileReader::Stored(ref reader) => {
+                let inner = reader.get_ref();
+                let inner = (*inner.get_ref()).clone().take(inner.limit());
+                Ok(ZipFileReader::Stored(reader.replace_inner(inner)))
+            },
+            #[cfg(feature = "deflate")]
+            ZipFileReader::Deflated(_, true) =>
+                unsupported_reader_operation_error("deflate reader is used, unable to revert"),
+            #[cfg(feature = "deflate")]
+            ZipFileReader::Deflated(ref reader, false) => {
+                let inner = reader.get_ref().as_inner_ref();
+                let inner = (*inner.get_ref()).clone().take(inner.limit());
+                let deflate_reader = libflate::deflate::Decoder::new(inner);
+                Ok(ZipFileReader::Deflated(reader.replace_inner(deflate_reader), false))
+            },
+            #[cfg(feature = "bzip2")]
+            ZipFileReader::Bzip2(_, true) =>
+                unsupported_reader_operation_error("bzip2 reader is used, unable to revert"),
+            #[cfg(feature = "bzip2")]
+            ZipFileReader::Bzip2(ref reader, false) => {
+                let inner = reader.get_ref().get_ref();
+                let inner = (*inner.get_ref()).clone().take(inner.limit());
+                let bzip2_reader = BzDecoder::new(inner);
+                Ok(ZipFileReader::Bzip2(reader.replace_inner(bzip2_reader), false))
+            },
+        }
+    }
 }
 
 /// A struct for reading a zip file
 pub struct ZipFile<'a, R: Read> {
-    data: Cow<'a, ZipFileData>,
+    data: &'a ZipFileData,
     reader: ZipFileReader<io::Take<&'a mut R>>,
 }
 
-/// A struct for reading a zip stream file
+/// A struct for reading a zip stream file (cannot seek)
 pub struct ZipStreamFile<'a> {
     data: ZipFileData,
     reader: ZipFileReader<io::Take<&'a mut Read>>,
+}
+
+/// A struct for reading a zip file that owned its data
+/// could used independent of `ZipArchive`
+/// see also `ZipFile::try_clone`
+///
+/// ```
+/// use zip::read::ZipFileEntry;
+/// fn doit() -> zip::result::ZipResult<()>
+/// {
+///     use std::io::prelude::*;
+///
+///     // For demonstration purposes we read from an empty buffer.
+///     // Normally a File object would be used.
+///     let buf: &[u8] = &[0u8; 128];
+///     let mut reader = std::io::Cursor::new(buf);
+///
+///     let mut zip = zip::ZipArchive::new(reader)?;
+///
+///     let mut files = Vec::new();
+///     for i in 0..zip.len()
+///     {
+///         let file = zip.by_index(i).unwrap().try_clone().unwrap();
+///         println!("Filename: {}", file.name());
+///         files.push(file);
+///     }
+///     // Do with files
+///     Ok(())
+/// }
+///
+/// println!("Result: {:?}", doit());
+/// ```
+pub struct ZipFileOwned<R: Read + io::Seek> {
+    data: ZipFileData,
+    reader: ZipFileReader<io::Take<R>>,
 }
 
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
@@ -87,6 +154,10 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
     Err(ZipError::UnsupportedArchive(detail))
 }
 
+fn unsupported_reader_operation_error<T>(detail: &'static str) -> ZipResult<T>
+{
+    Err(ZipError::UnsupportedReaderOperation(detail))
+}
 
 fn make_reader<R: Read>(
     compression_method: ::compression::CompressionMethod,
@@ -107,7 +178,7 @@ fn make_reader<R: Read>(
             let deflate_reader = libflate::deflate::Decoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
                 deflate_reader,
-                crc32)))
+                crc32), false))
         },
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 =>
@@ -115,7 +186,7 @@ fn make_reader<R: Read>(
             let bzip2_reader = BzDecoder::new(reader);
             Ok(ZipFileReader::Bzip2(Crc32Reader::new(
                 bzip2_reader,
-                crc32)))
+                crc32), false))
         },
         _ => unsupported_zip_error("Compression method not supported"),
     }
@@ -296,7 +367,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = self.reader.by_ref().take(data.compressed_size);
 
-        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
+        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data })
     }
 
     /// Unwrap and return the inner reader object
@@ -424,15 +495,24 @@ fn get_reader<R: Read>(reader: &mut ZipFileReader<R>) -> &mut Read {
         ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
         ZipFileReader::Stored(ref mut r) => r.by_ref() as &mut Read,
         #[cfg(feature = "deflate")]
-        ZipFileReader::Deflated(ref mut r) => r.by_ref() as &mut Read,
+        ZipFileReader::Deflated(ref mut r, ref mut used) => {
+            *used = true;
+            r.by_ref() as &mut Read
+        },
         #[cfg(feature = "bzip2")]
-        ZipFileReader::Bzip2(ref mut r) => r.by_ref() as &mut Read,
+        ZipFileReader::Bzip2(ref mut r, ref mut used) => {
+            *used = true;
+            r.by_ref() as &mut Read
+        }
     }
 }
 
 /// Methods for retrieving information on zip files
 pub trait ZipFileEntry {
+    /// get the inner reader
     fn get_reader(&mut self) -> &mut Read;
+
+    /// get the inner data of the zip file
     fn get_data(&self) -> &ZipFileData;
 
     /// Get the version of the file
@@ -523,8 +603,7 @@ impl<'a, R: Read> ZipFileEntry for ZipFile<'a, R> {
     }
 
     fn get_data(&self) -> &ZipFileData {
-        use std::borrow::Borrow;
-        self.data.borrow()
+        self.data
     }
 }
 
@@ -534,14 +613,23 @@ impl<'a, R: Read> Read for ZipFile<'a, R> {
      }
 }
 
+impl<'a, R: Read + io::Seek + Clone> ZipFile<'a, R> {
+    /// try to clone `ZipFile` into `ZipFileOwned`
+    /// if the underlying reader is already used, the clone may failed with
+    /// `ZipError::UnsupportedReaderOperation`
+    pub fn try_clone(&self) -> ZipResult<ZipFileOwned<R>> {
+        Ok(ZipFileOwned { reader: self.reader.try_clone()?, data: self.data.clone() })
+    }
+}
+
+
 impl<'a> ZipFileEntry for ZipStreamFile<'a> {
     fn get_reader(&mut self) -> &mut Read {
         get_reader(&mut self.reader)
     }
 
     fn get_data(&self) -> &ZipFileData {
-        use std::borrow::Borrow;
-        self.data.borrow()
+        &self.data
     }
 }
 
@@ -563,9 +651,9 @@ impl<'a> Drop for ZipStreamFile<'a> {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Stored(crcreader) => crcreader.into_inner(),
             #[cfg(feature = "deflate")]
-            ZipFileReader::Deflated(crcreader) => crcreader.into_inner().into_inner(),
+            ZipFileReader::Deflated(crcreader, _) => crcreader.into_inner().into_inner(),
             #[cfg(feature = "bzip2")]
-            ZipFileReader::Bzip2(crcreader) => crcreader.into_inner().into_inner(),
+            ZipFileReader::Bzip2(crcreader, _) => crcreader.into_inner().into_inner(),
         };
 
         loop {
@@ -576,6 +664,22 @@ impl<'a> Drop for ZipStreamFile<'a> {
             }
         }
     }
+}
+
+impl<R: Read + io::Seek> ZipFileEntry for ZipFileOwned<R> {
+    fn get_reader(&mut self) -> &mut Read {
+        get_reader(&mut self.reader)
+    }
+
+    fn get_data(&self) -> &ZipFileData {
+        &self.data
+    }
+}
+
+impl<R: Read + io::Seek> Read for ZipFileOwned<R> {
+     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+         self.get_reader().read(buf)
+     }
 }
 
 /// Read ZipFile structures from a non-seekable reader.
@@ -661,7 +765,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         return unsupported_zip_error("The file length is not available in the local header");
     }
 
-    let limit_reader = (reader as &'a mut io::Read).take(result.compressed_size as u64);
+    let limit_reader = (reader.by_ref() as &mut Read).take(result.compressed_size as u64);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
@@ -734,6 +838,37 @@ mod test {
 
         let mut file1 = reader1.by_index(0).unwrap();
         let mut file2 = reader2.by_index(0).unwrap();
+
+        let t = file1.last_modified();
+        assert_eq!((t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second()), (1980, 1, 1, 0, 0, 0));
+
+        let mut buf1 = [0; 5];
+        let mut buf2 = [0; 5];
+        let mut buf3 = [0; 5];
+        let mut buf4 = [0; 5];
+
+        file1.read(&mut buf1).unwrap();
+        file2.read(&mut buf2).unwrap();
+        file1.read(&mut buf3).unwrap();
+        file2.read(&mut buf4).unwrap();
+
+        assert_eq!(buf1, buf2);
+        assert_eq!(buf3, buf4);
+        assert!(buf1 != buf3);
+    }
+
+
+    #[test]
+    fn zip_file_clone() {
+        use std::io::{self, Read};
+        use super::{ZipArchive, ZipFileEntry};
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+
+        let mut file1 = reader.by_index(0).unwrap().try_clone().unwrap();
+        let mut file2 = reader.by_index(0).unwrap().try_clone().unwrap();
 
         let t = file1.last_modified();
         assert_eq!((t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second()), (1980, 1, 1, 0, 0, 0));

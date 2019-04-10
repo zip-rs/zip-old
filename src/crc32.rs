@@ -31,6 +31,18 @@ impl<R> Crc32Reader<R>
         self.check == self.hasher.clone().finalize()
     }
 
+    pub fn get_ref(&self) -> &R {
+        &self.inner
+    }
+
+    pub fn replace_inner<S>(&self, inner: S) -> Crc32Reader<S> {
+        Crc32Reader {
+            inner,
+            hasher: self.hasher.clone(),
+            check: self.check,
+        }
+    }
+
     pub fn into_inner(self) -> R {
         self.inner
     }

@@ -23,6 +23,9 @@ pub enum ZipError
 
     /// The requested file could not be found in the archive
     FileNotFound,
+
+    /// The reader operation is probably unsupported
+    UnsupportedReaderOperation(&'static str),
 }
 
 impl ZipError
@@ -36,7 +39,7 @@ impl ZipError
             ZipError::Io(ref io_err) => {
                 ("Io Error: ".to_string() + (io_err as &error::Error).description()).into()
             },
-            ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
+            ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) | ZipError::UnsupportedReaderOperation(msg) => {
                 (self.description().to_string() + ": " + msg).into()
             },
             ZipError::FileNotFound => {
@@ -80,6 +83,7 @@ impl error::Error for ZipError
             ZipError::InvalidArchive(..) => "Invalid Zip archive",
             ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
             ZipError::FileNotFound => "Specified file not found in archive",
+            ZipError::UnsupportedReaderOperation(..) => "Unsupported reader operation",
         }
     }
 
