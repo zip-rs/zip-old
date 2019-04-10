@@ -27,6 +27,7 @@ mod ffi {
 /// Wrapper for reading the contents of a ZIP file.
 ///
 /// ```
+/// use zip::read::ZipFileEntry;
 /// fn doit() -> zip::result::ZipResult<()>
 /// {
 ///     use std::io::prelude::*;
@@ -60,19 +61,19 @@ pub struct ZipArchive<R: Read + io::Seek>
     comment: Vec<u8>,
 }
 
-enum ZipFileReader<'a> {
+enum ZipFileReader<R: Read> {
     NoReader,
-    Stored(Crc32Reader<io::Take<&'a mut Read>>),
+    Stored(Crc32Reader<R>),
     #[cfg(feature = "deflate")]
-    Deflated(Crc32Reader<libflate::deflate::Decoder<io::Take<&'a mut Read>>>),
+    Deflated(Crc32Reader<libflate::deflate::Decoder<R>>),
     #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+    Bzip2(Crc32Reader<BzDecoder<R>>),
 }
 
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
     data: Cow<'a, ZipFileData>,
-    reader: ZipFileReader<'a>,
+    reader: ZipFileReader<io::Take<&'a mut Read>>,
 }
 
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
@@ -81,11 +82,11 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 }
 
 
-fn make_reader<'a>(
+fn make_reader<R: Read>(
     compression_method: ::compression::CompressionMethod,
     crc32: u32,
-    reader: io::Take<&'a mut io::Read>)
-        -> ZipResult<ZipFileReader<'a>> {
+    reader: R)
+        -> ZipResult<ZipFileReader<R>> {
 
     match compression_method {
         CompressionMethod::Stored =>
@@ -412,85 +413,85 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
     Ok(())
 }
 
-fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
+fn get_reader<R: Read>(reader: &mut ZipFileReader<R>) -> &mut Read {
     match *reader {
         ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
-        ZipFileReader::Stored(ref mut r) => r as &mut Read,
+        ZipFileReader::Stored(ref mut r) => r.by_ref() as &mut Read,
         #[cfg(feature = "deflate")]
-        ZipFileReader::Deflated(ref mut r) => r as &mut Read,
+        ZipFileReader::Deflated(ref mut r) => r.by_ref() as &mut Read,
         #[cfg(feature = "bzip2")]
-        ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
+        ZipFileReader::Bzip2(ref mut r) => r.by_ref() as &mut Read,
     }
 }
 
 /// Methods for retrieving information on zip files
-impl<'a> ZipFile<'a> {
-    fn get_reader(&mut self) -> &mut Read {
-        get_reader(&mut self.reader)
-    }
+pub trait ZipFileEntry {
+    fn get_reader(&mut self) -> &mut Read;
+    fn get_data(&self) -> &ZipFileData;
+
     /// Get the version of the file
-    pub fn version_made_by(&self) -> (u8, u8) {
-        (self.data.version_made_by / 10, self.data.version_made_by % 10)
+    fn version_made_by(&self) -> (u8, u8) {
+        (self.get_data().version_made_by / 10, self.get_data().version_made_by % 10)
     }
     /// Get the name of the file
-    pub fn name(&self) -> &str {
-        &*self.data.file_name
+    fn name(&self) -> &str {
+        &*self.get_data().file_name
     }
     /// Get the name of the file, in the raw (internal) byte representation.
-    pub fn name_raw(&self) -> &[u8] {
-        &*self.data.file_name_raw
+    fn name_raw(&self) -> &[u8] {
+        &*self.get_data().file_name_raw
     }
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
     /// removes a leading '/' and removes '..' parts.
-    pub fn sanitized_name(&self) -> ::std::path::PathBuf {
-        self.data.file_name_sanitized()
+    fn sanitized_name(&self) -> ::std::path::PathBuf {
+        self.get_data().file_name_sanitized()
     }
     /// Get the comment of the file
-    pub fn comment(&self) -> &str {
-        &*self.data.file_comment
+    fn comment(&self) -> &str {
+        &*self.get_data().file_comment
     }
     /// Get the compression method used to store the file
-    pub fn compression(&self) -> CompressionMethod {
-        self.data.compression_method
+    fn compression(&self) -> CompressionMethod {
+        self.get_data().compression_method
     }
     /// Get the size of the file in the archive
-    pub fn compressed_size(&self) -> u64 {
-        self.data.compressed_size
+    fn compressed_size(&self) -> u64 {
+        self.get_data().compressed_size
     }
     /// Get the size of the file when uncompressed
-    pub fn size(&self) -> u64 {
-        self.data.uncompressed_size
+    fn size(&self) -> u64 {
+        self.get_data().uncompressed_size
     }
     /// Get the time the file was last modified
-    pub fn last_modified(&self) -> DateTime {
-        self.data.last_modified_time
+    fn last_modified(&self) -> DateTime {
+        self.get_data().last_modified_time
     }
     /// Returns whether the file is actually a directory
-    pub fn is_dir(&self) -> bool {
+    fn is_dir(&self) -> bool {
         self.name().chars().rev().next().map_or(false, |c| c == '/' || c == '\\')
     }
     /// Returns whether the file is a regular file
-    pub fn is_file(&self) -> bool {
+    fn is_file(&self) -> bool {
         !self.is_dir()
     }
     /// Get unix mode for the file
-    pub fn unix_mode(&self) -> Option<u32> {
-        if self.data.external_attributes == 0 {
+    fn unix_mode(&self) -> Option<u32> {
+        if self.get_data().external_attributes == 0 {
             return None;
         }
 
-        match self.data.system {
+        match self.get_data().system {
             System::Unix => {
-                Some(self.data.external_attributes >> 16)
+                Some(self.get_data().external_attributes >> 16)
             },
             System::Dos => {
                 // Interpret MSDOS directory bit
-                let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
+                let mut mode = if 0x10 == (self.get_data().external_attributes & 0x10) {
                     ffi::S_IFDIR | 0o0775
                 } else {
                     ffi::S_IFREG | 0o0664
                 };
-                if 0x01 == (self.data.external_attributes & 0x01) {
+                if 0x01 == (self.get_data().external_attributes & 0x01) {
                     // Read-only bit; strip write permissions
                     mode &= 0o0555;
                 }
@@ -500,13 +501,24 @@ impl<'a> ZipFile<'a> {
         }
     }
     /// Get the CRC32 hash of the original file
-    pub fn crc32(&self) -> u32 {
-        self.data.crc32
+    fn crc32(&self) -> u32 {
+        self.get_data().crc32
     }
 
     /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> u64 {
-        self.data.data_start
+    fn data_start(&self) -> u64 {
+        self.get_data().data_start
+    }
+}
+
+impl<'a> ZipFileEntry for ZipFile<'a> {
+    fn get_reader(&mut self) -> &mut Read {
+        get_reader(&mut self.reader)
+    }
+
+    fn get_data(&self) -> &ZipFileData {
+        use std::borrow::Borrow;
+        self.data.borrow()
     }
 }
 
@@ -692,7 +704,7 @@ mod test {
     #[test]
     fn zip_clone() {
         use std::io::{self, Read};
-        use super::ZipArchive;
+        use super::{ZipArchive, ZipFileEntry};
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -722,8 +734,8 @@ mod test {
 
     #[test]
     fn file_and_dir_predicates() {
-        use super::ZipArchive;
         use std::io;
+        use super::{ZipArchive, ZipFileEntry};
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/files_and_dirs.zip"));

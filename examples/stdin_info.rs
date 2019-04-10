@@ -1,6 +1,7 @@
 extern crate zip;
 
 use std::io::{self, Read};
+use zip::read::ZipFileEntry;
 
 fn main() {
     std::process::exit(real_main());

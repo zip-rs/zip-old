@@ -2,6 +2,7 @@ extern crate zip;
 
 use std::io;
 use std::fs;
+use zip::read::ZipFileEntry;
 
 fn main() {
     std::process::exit(real_main());
