@@ -71,8 +71,14 @@ enum ZipFileReader<R: Read> {
 }
 
 /// A struct for reading a zip file
-pub struct ZipFile<'a> {
+pub struct ZipFile<'a, R: Read> {
     data: Cow<'a, ZipFileData>,
+    reader: ZipFileReader<io::Take<&'a mut R>>,
+}
+
+/// A struct for reading a zip stream file
+pub struct ZipStreamFile<'a> {
+    data: ZipFileData,
     reader: ZipFileReader<io::Take<&'a mut Read>>,
 }
 
@@ -253,7 +259,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>>
+    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a, R>>
     {
         let index = match self.names_map.get(name) {
             Some(index) => *index,
@@ -263,7 +269,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>>
+    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a, R>>
     {
         if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
         let ref mut data = self.files[file_number];
@@ -288,7 +294,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
 
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
-        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
+        let limit_reader = self.reader.by_ref().take(data.compressed_size);
 
         Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
     }
@@ -511,7 +517,7 @@ pub trait ZipFileEntry {
     }
 }
 
-impl<'a> ZipFileEntry for ZipFile<'a> {
+impl<'a, R: Read> ZipFileEntry for ZipFile<'a, R> {
     fn get_reader(&mut self) -> &mut Read {
         get_reader(&mut self.reader)
     }
@@ -522,36 +528,51 @@ impl<'a> ZipFileEntry for ZipFile<'a> {
     }
 }
 
-impl<'a> Read for ZipFile<'a> {
+impl<'a, R: Read> Read for ZipFile<'a, R> {
      fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
          self.get_reader().read(buf)
      }
 }
 
-impl<'a> Drop for ZipFile<'a> {
+impl<'a> ZipFileEntry for ZipStreamFile<'a> {
+    fn get_reader(&mut self) -> &mut Read {
+        get_reader(&mut self.reader)
+    }
+
+    fn get_data(&self) -> &ZipFileData {
+        use std::borrow::Borrow;
+        self.data.borrow()
+    }
+}
+
+impl<'a> Read for ZipStreamFile<'a> {
+     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+         self.get_reader().read(buf)
+     }
+}
+
+impl<'a> Drop for ZipStreamFile<'a> {
     fn drop(&mut self) {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.
-        if let Cow::Owned(_) = self.data {
-            let mut buffer = [0; 1<<16];
+        let mut buffer = [0; 1<<16];
 
-            // Get the inner `Take` reader so all decompression and CRC calculation is skipped.
-            let innerreader = ::std::mem::replace(&mut self.reader, ZipFileReader::NoReader);
-            let mut reader = match innerreader {
-                ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
-                ZipFileReader::Stored(crcreader) => crcreader.into_inner(),
-                #[cfg(feature = "deflate")]
-                ZipFileReader::Deflated(crcreader) => crcreader.into_inner().into_inner(),
-                #[cfg(feature = "bzip2")]
-                ZipFileReader::Bzip2(crcreader) => crcreader.into_inner().into_inner(),
-            };
+        // Get the inner `Take` reader so all decompression and CRC calculation is skipped.
+        let innerreader = ::std::mem::replace(&mut self.reader, ZipFileReader::NoReader);
+        let mut reader = match innerreader {
+            ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            ZipFileReader::Stored(crcreader) => crcreader.into_inner(),
+            #[cfg(feature = "deflate")]
+            ZipFileReader::Deflated(crcreader) => crcreader.into_inner().into_inner(),
+            #[cfg(feature = "bzip2")]
+            ZipFileReader::Bzip2(crcreader) => crcreader.into_inner().into_inner(),
+        };
 
-            loop {
-                match reader.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(_) => (),
-                    Err(e) => panic!("Could not consume all of the output of the current ZipFile: {:?}", e),
-                }
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(_) => (),
+                Err(e) => panic!("Could not consume all of the output of the current ZipFile: {:?}", e),
             }
         }
     }
@@ -573,7 +594,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile>> {
+pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipStreamFile<'a>>> {
     let signature = reader.read_u32::<LittleEndian>()?;
 
     match signature {
@@ -644,8 +665,8 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
-    Ok(Some(ZipFile {
-        data: Cow::Owned(result),
+    Ok(Some(ZipStreamFile {
+        data: result,
         reader: make_reader(result_compression_method, result_crc32, limit_reader)?
     }))
 }
