@@ -5,8 +5,8 @@
 #[cfg(feature = "bzip2")]
 extern crate bzip2;
 extern crate crc32fast;
-#[cfg(feature = "deflate")]
-extern crate libflate;
+#[cfg(feature = "flate2")]
+extern crate flate2;
 extern crate podio;
 #[cfg(feature = "time")]
 extern crate time;
