@@ -13,9 +13,9 @@ use std::mem;
 use time;
 use podio::{WritePodExt, LittleEndian};
 
-#[cfg(feature = "flate2")]
+#[cfg(feature = "deflate")]
 use flate2;
-#[cfg(feature = "flate2")]
+#[cfg(feature = "deflate")]
 use flate2::write::DeflateEncoder;
 
 #[cfg(feature = "bzip2")]
@@ -27,7 +27,7 @@ enum GenericZipWriter<W: Write + io::Seek>
 {
     Closed,
     Storer(W),
-    #[cfg(feature = "flate2")]
+    #[cfg(feature = "deflate")]
     Deflater(DeflateEncoder<W>),
     #[cfg(feature = "bzip2")]
     Bzip2(BzEncoder<W>),
@@ -85,8 +85,8 @@ impl FileOptions {
     /// Construct a new FileOptions object
     pub fn default() -> FileOptions {
         FileOptions {
-            #[cfg(feature = "flate2")]      compression_method: CompressionMethod::Deflated,
-            #[cfg(not(feature = "flate2"))] compression_method: CompressionMethod::Stored,
+            #[cfg(feature = "deflate")]      compression_method: CompressionMethod::Deflated,
+            #[cfg(not(feature = "deflate"))] compression_method: CompressionMethod::Stored,
             #[cfg(feature = "time")]      last_modified_time: DateTime::from_time(time::now()).unwrap_or(DateTime::default()),
             #[cfg(not(feature = "time"))] last_modified_time: DateTime::default(),
             permissions: None,
@@ -369,7 +369,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         let bare = match mem::replace(self, GenericZipWriter::Closed)
         {
             GenericZipWriter::Storer(w) => w,
-            #[cfg(feature = "flate2")]
+            #[cfg(feature = "deflate")]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
@@ -379,7 +379,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         *self = match compression
         {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            #[cfg(feature = "flate2")]
+            #[cfg(feature = "deflate")]
             CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(bare, flate2::Compression::default())),
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default)),
@@ -392,7 +392,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
     fn ref_mut(&mut self) -> Option<&mut Write> {
         match *self {
             GenericZipWriter::Storer(ref mut w) => Some(w as &mut Write),
-            #[cfg(feature = "flate2")]
+            #[cfg(feature = "deflate")]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut Write),
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut Write),
@@ -421,7 +421,7 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
     fn current_compression(&self) -> Option<CompressionMethod> {
         match *self {
             GenericZipWriter::Storer(..) => Some(CompressionMethod::Stored),
-            #[cfg(feature = "flate2")]
+            #[cfg(feature = "deflate")]
             GenericZipWriter::Deflater(..) => Some(CompressionMethod::Deflated),
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(..) => Some(CompressionMethod::Bzip2),

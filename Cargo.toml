@@ -24,9 +24,9 @@ rand = "0.4"
 walkdir = "1.0"
 
 [features]
-deflate = ["flate2", "flate2/default"]
-deflate-zlib = ["flate2", "flate2/zlib"]
-deflate-rust = ["flate2", "flate2/rust_backend"]
+deflate = ["flate2/default"]
+deflate-zlib = ["flate2/zlib"]
+deflate-rust = ["flate2/rust_backend"]
 default = ["bzip2", "deflate", "time"]
 
 [[bench]]
