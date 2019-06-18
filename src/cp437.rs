@@ -170,7 +170,6 @@ fn to_char(input: u8) -> char
         0xfd => 0x00b2,
         0xfe => 0x25a0,
         0xff => 0x00a0,
-        _    => 0x0
     };
     ::std::char::from_u32(output).unwrap()
 }
