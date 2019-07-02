@@ -508,6 +508,11 @@ impl<'a> ZipFile<'a> {
     pub fn data_start(&self) -> u64 {
         self.data.data_start
     }
+
+    /// Get the starting offset of the zip header for this file
+    pub fn header_start(&self) -> u64 {
+        self.data.header_start
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
