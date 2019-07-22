@@ -33,13 +33,13 @@ fn doit(filename: &str) -> zip::result::ZipResult<()>
 
     let mut zip = zip::ZipWriter::new(file);
 
-    zip.add_directory("test/", FileOptions::default())?;
+    zip.add_directory("test/", Default::default())?;
 
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored).unix_permissions(0o755);
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
-    zip.start_file("test/lorem_ipsum.txt", FileOptions::default())?;
+    zip.start_file("test/lorem_ipsum.txt", Default::default())?;
     zip.write_all(LOREM_IPSUM)?;
 
     zip.finish()?;
