@@ -121,6 +121,12 @@ impl FileOptions {
     }
 }
 
+impl Default for FileOptions {
+    fn default() -> Self {
+        Self::default()
+    }
+}
+
 impl<W: Write+io::Seek> Write for ZipWriter<W>
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize>

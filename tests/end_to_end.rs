@@ -20,7 +20,7 @@ fn end_to_end() {
 fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     let mut zip = zip::ZipWriter::new(file);
 
-    zip.add_directory("test/", FileOptions::default())?;
+    zip.add_directory("test/", Default::default())?;
 
     let options = FileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
@@ -28,7 +28,7 @@ fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
-    zip.start_file("test/lorem_ipsum.txt", FileOptions::default())?;
+    zip.start_file("test/lorem_ipsum.txt", Default::default())?;
     zip.write_all(LOREM_IPSUM)?;
 
     zip.finish()?;
