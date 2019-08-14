@@ -14,7 +14,9 @@ use types::{ZipFileData, System, DateTime};
 use cp437::FromCp437;
 
 #[cfg(feature = "deflate")]
-use libflate;
+use flate2;
+#[cfg(feature = "deflate")]
+use flate2::read::DeflateDecoder;
 
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
@@ -64,7 +66,7 @@ enum ZipFileReader<'a> {
     NoReader,
     Stored(Crc32Reader<io::Take<&'a mut Read>>),
     #[cfg(feature = "deflate")]
-    Deflated(Crc32Reader<libflate::deflate::Decoder<io::Take<&'a mut Read>>>),
+    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
 }
@@ -97,7 +99,7 @@ fn make_reader<'a>(
         #[cfg(feature = "deflate")]
         CompressionMethod::Deflated =>
         {
-            let deflate_reader = libflate::deflate::Decoder::new(reader);
+            let deflate_reader = DeflateDecoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
                 deflate_reader,
                 crc32)))
