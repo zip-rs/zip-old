@@ -8,17 +8,28 @@ use std::io::Cursor;
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn end_to_end() {
-    let file = &mut Cursor::new(Vec::new());
+    let mut file = Cursor::new(Vec::new());
 
-    write_to_zip_file(file).expect("file written");
+    write_to_zip_file(zip::ZipWriter::new(&mut file)).expect("file written");
 
-    let file_contents: String = read_zip_file(file).unwrap();
+    let file_contents: String = read_zip_file(&mut file).unwrap();
 
     assert!(file_contents.as_bytes() == LOREM_IPSUM);
 }
 
-fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
-    let mut zip = zip::ZipWriter::new(file);
+#[test]
+fn end_to_end_streaming_write() {
+    let mut file =Vec::new();
+
+    write_to_zip_file(zip::ZipWriter::new_streaming(&mut file)).expect("file written");
+
+    let mut file_in = Cursor::new(file);
+    let file_contents: String = read_zip_file(&mut file_in).unwrap();
+
+    assert!(file_contents.as_bytes() == LOREM_IPSUM);
+}
+
+fn write_to_zip_file<W:Write>(mut zip:  zip::ZipWriter<W>) -> zip::result::ZipResult<()> {
 
     zip.add_directory("test/", Default::default())?;
 

@@ -12,7 +12,6 @@ use std::mem;
 #[cfg(feature = "time")]
 use time;
 use podio::{WritePodExt, LittleEndian};
-use std::marker::PhantomData;
 
 #[cfg(feature = "deflate")]
 use flate2;
@@ -24,7 +23,7 @@ use bzip2;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
-enum GenericZipWriter<W: MaybeSeek>
+enum GenericZipWriter<W: Write>
 {
     Closed,
     Storer(W),
@@ -58,13 +57,12 @@ enum GenericZipWriter<W: MaybeSeek>
 ///
 /// println!("Result: {:?}", doit().unwrap());
 /// ```
-pub struct ZipWriter<W: MaybeSeek, T>
+pub struct ZipWriter<W: Write>
 {
-    inner: GenericZipWriter<W>,
+    inner: GenericZipWriter<WriterWrapper<W>>,
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
-    _marker: PhantomData<T>
 }
 
 #[derive(Default)]
@@ -131,7 +129,7 @@ impl Default for FileOptions {
     }
 }
 
-impl<W:MaybeSeek, T> Write for ZipWriter<W,T>
+impl<W:Write> Write for ZipWriter<W>
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize>
     {
@@ -162,13 +160,13 @@ impl ZipWriterStats
     }
 }
 
-impl <W:Write+io::Seek,T> ZipWriter<WriterWrapper<W>,T> {
-
+impl <W:Write> ZipWriter<W> {
 
     /// Initializes the ZipWriter.
     ///
     /// Before writing to this object, the start_file command should be called.
-    pub fn new(inner: W) -> ZipWriter<WriterWrapper<W>,T>
+    pub fn new(inner: W) -> ZipWriter<W>
+    where W: Seek
     {
         ZipWriter
         {
@@ -176,35 +174,24 @@ impl <W:Write+io::Seek,T> ZipWriter<WriterWrapper<W>,T> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            _marker: PhantomData
         }
     }
-
-}
-
-impl <W:Write,T> ZipWriter<CountingWriter<W>,T> {
-
 
     /// Initializes ZipWriter in streamming mode
     /// 
-    /// It means that out stream may not seekable
-    pub fn new_streaming(inner: W) -> ZipWriter<CountingWriter<W>,T>
+    /// It means that output stream may not be seekable (like stdout, pipe, socket ...).
+    /// Zip format still supports this mode, local file header will contain 0 for file length and CRC32 
+    /// and data descriptor record is added after file data containing actual CRC32 and file length
+    pub fn new_streaming(inner: W) -> ZipWriter<W>
     {
         ZipWriter
         {
-            inner: GenericZipWriter::Storer(CountingWriter::new(inner)),
+            inner: GenericZipWriter::Storer(WriterWrapper::new_unseekable(inner)),
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            _marker: PhantomData
         }
     }
-
-}
-
-
-impl <W:MaybeSeek,T> ZipWriter<W,T> 
-{
 
     /// Start a new file for with the requested options.
     fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
@@ -364,22 +351,20 @@ impl <W:MaybeSeek,T> ZipWriter<W,T>
 
         Ok(())
     }
-}
 
-impl <T,W:MaybeSeek+IntoInner<T>> ZipWriter<W,T> {
     /// Finish the last file and write all other zip-structures
     ///
     /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
-    pub fn finish(&mut self) -> ZipResult<T>
+    pub fn finish(&mut self) -> ZipResult<W>
     {
         self.finalize()?;
         let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
-        Ok(inner.unwrap())
+        Ok(inner.unwrap().unwrap())
     }
 }
 
-impl<W:MaybeSeek,T> Drop for ZipWriter<W,T>
+impl<W:Write> Drop for ZipWriter<W>
 {
     fn drop(&mut self)
     {
@@ -392,7 +377,7 @@ impl<W:MaybeSeek,T> Drop for ZipWriter<W,T>
     }
 }
 
-impl<W: MaybeSeek> GenericZipWriter<W>
+impl<W: Write> GenericZipWriter<W>
 {
     fn is_closed(&self) -> bool
     {
@@ -465,14 +450,12 @@ impl<W: MaybeSeek> GenericZipWriter<W>
             GenericZipWriter::Closed => None,
         }
     }
-}
 
-impl  <T, W:MaybeSeek+IntoInner<T>> IntoInner<T> for GenericZipWriter<W> {
-    fn unwrap(self) -> T
+    fn unwrap(self) -> W
     {
         match self
         {
-            GenericZipWriter::Storer(w) => w.unwrap(),
+            GenericZipWriter::Storer(w) => w,
             _ => panic!("Should have switched to stored beforehand"),
         }
     }
@@ -513,7 +496,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     Ok(())
 }
 
-fn update_local_file_header<W:MaybeSeek>(writer: &mut W, file: &ZipFileData) -> ZipResult<()>
+fn update_local_file_header<W:Write>(writer: &mut WriterWrapper<W>, file: &ZipFileData) -> ZipResult<()>
 {
     const CRC32_OFFSET : u64 = 14;
     writer.seek_position(file.header_start + CRC32_OFFSET)?;
@@ -610,117 +593,79 @@ fn path_to_string(path: &std::path::Path) -> String {
 
 // Here are types for making ZipWriter work with non-seekable streams 
 
-/// Suporting trait to be able to work with Writer without Seek
-pub trait MaybeSeek:Write {
-    
-    /// Current position in the stream
-    fn current_position(&mut self) -> io::Result<u64>;
-    /// Does wrapped stream support Seek 
-    fn can_seek(&self) -> bool;
-    /// Seek to position from begining of the stream 
-    fn seek_position(&mut self, pos: u64) -> io::Result<u64>;
+type SeekFn<W> =  for<'a> fn(&'a mut W, io::SeekFrom)->io::Result<u64>;
+
+enum WriterFlavour<W> {
+    CanSeek{
+        seek: SeekFn<W>
+    },
+    CannotSeek {
+        pos: u64
+    }
 }
 
-/// Supporting traint for extracting wrapped stream
-pub trait IntoInner<W> {
-    /// Unwrap stream
-    fn unwrap(self) -> W;
-}
-
-/// Wrapper for stream without Seek
-pub struct CountingWriter<W> {
-    count: u64,
+struct WriterWrapper<W> {
     inner: W,
+    flavour: WriterFlavour<W>
 }
 
-impl <W:Write> CountingWriter<W> {
-    fn new(inner: W) -> Self{
-        CountingWriter {
-            count: 0,
-            inner
+
+impl <W:Write> WriterWrapper<W> {
+    pub fn new_unseekable(inner: W) -> Self {
+        WriterWrapper{
+            inner,
+            flavour: WriterFlavour::CannotSeek{ pos: 0}
         }
     }
-}
 
-impl <W:Write> Write for CountingWriter<W> {
-
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let res = self.inner.write(buf);
-
-        if let Ok(n) = res {
-            self.count += n as u64;
+    pub fn new(inner: W) -> Self 
+    where W:Seek
+    {
+        WriterWrapper{
+            inner,
+            flavour: WriterFlavour::CanSeek{ seek: Seek::seek}
         }
-
-        res
-
     }
 
-    fn flush(&mut self) ->io::Result<()> {
-        self.inner.flush()
+    fn can_seek(&self) -> bool {
+        match self.flavour {
+            WriterFlavour::CannotSeek{..} => false,
+            WriterFlavour::CanSeek{..} => true
+        }
     }
 
-}
+    fn current_position(&mut self) -> io::Result<u64> {
+        match self.flavour {
+            WriterFlavour::CannotSeek{pos} => Ok(pos),
+            WriterFlavour::CanSeek{seek} => seek(&mut self.inner, io::SeekFrom::Current(0))
+        }
+    }
 
-impl <W> IntoInner<W> for CountingWriter<W> {
+    fn seek_position(&mut self, pos: u64) -> io::Result<u64> {
+        match self.flavour {
+            WriterFlavour::CannotSeek{..} => Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation")),
+            WriterFlavour::CanSeek{seek} => seek(&mut self.inner, io::SeekFrom::Start(pos))
+        }
+        
+    }
 
     fn unwrap(self) -> W {
         self.inner
     }
 }
 
-impl <W:Write> MaybeSeek for CountingWriter<W> {
-
-    fn current_position(&mut self) -> io::Result<u64> {
-        Ok(self.count)
-    }
-    fn can_seek(&self) -> bool {
-        false
-    }
-    fn seek_position(&mut self, _pos: u64) -> io::Result<u64> {
-        Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation"))
-    }
-}
-
-/// Wrapper for stream supporting Seek
-pub struct WriterWrapper<W>(W);
-
-impl <W:Write> WriterWrapper<W> {
-    fn new(inner: W) -> Self{
-        WriterWrapper(inner)
-    }
-
-}
-
-
 impl <W:Write> Write for WriterWrapper<W> {
 
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-
+        let n = self.inner.write(buf)?;
+        if let WriterFlavour::CannotSeek{ref mut pos} = &mut self.flavour  {
+            *pos += n as u64
+        };
+        Ok(n)
     }
 
-    fn flush(&mut self) ->io::Result<()> {
-        self.0.flush()
-    }
-
-}
-
-impl <W> IntoInner<W> for WriterWrapper<W> {
-    fn unwrap(self) -> W {
-        self.0
-    }
-}
-
-impl <W:Write+io::Seek> MaybeSeek for WriterWrapper<W> {
-    
-    fn current_position(&mut self) -> io::Result<u64> {
-        self.0.seek(io::SeekFrom::Current(0))
-    }
-    fn can_seek(&self) -> bool {
-        true
-    }
-    fn seek_position(&mut self, pos: u64) -> io::Result<u64> {
-        self.0.seek(io::SeekFrom::Start(pos))
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 }
 
@@ -788,7 +733,7 @@ mod test {
     }
 
         #[test]
-    fn test_stream_write() {
+    fn write_to_noseekable_stream() {
         use podio::{ReadPodExt, LittleEndian};
         let w = Vec::new();
         let mut zip = ZipWriter::new_streaming(w);
