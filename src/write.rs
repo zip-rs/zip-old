@@ -461,6 +461,11 @@ impl<W: Write> GenericZipWriter<W>
     }
 }
 
+fn calc_generic_flags(file: &ZipFileData) -> u16 {
+    let mut flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
+    if file.streaming { flag |= 0x08 }
+    flag
+}
 
 fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
 {
@@ -469,9 +474,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     // version needed to extract
     writer.write_u16::<LittleEndian>(file.version_needed())?;
     // general purpose bit flag
-    let mut flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
-    if file.streaming { flag |= 0x08 }
-    writer.write_u16::<LittleEndian>(flag)?;
+    writer.write_u16::<LittleEndian>(calc_generic_flags(file))?;
     // Compression method
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time and last mod file date
@@ -516,8 +519,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // version needed to extract
     writer.write_u16::<LittleEndian>(file.version_needed())?;
     // general puprose bit flag
-    let flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
-    writer.write_u16::<LittleEndian>(flag)?;
+    writer.write_u16::<LittleEndian>(calc_generic_flags(file))?;
     // compression method
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time + date
@@ -747,7 +749,12 @@ mod test {
         let read_u32 = |idx| {
              (&res[idx..]).read_u32::<LittleEndian>().unwrap()
         };
-        // loclal file header lengths are empty
+        let test_flag = |idx| {
+            (&res[idx..]).read_u16::<LittleEndian>().unwrap() & 0x8 > 0
+        };
+        // has flag 3
+        assert!(test_flag(6));
+        // local file header lengths are empty
         assert_eq!(0, read_u32(18));
         assert_eq!(0, read_u32(22));
         // but there is data descriptor after file 
@@ -756,7 +763,12 @@ mod test {
         assert!(read_u32(dd_start+4) != 0);
         assert_eq!(23, read_u32(dd_start+8));
         assert_eq!(23, read_u32(dd_start+12));
-        
+
+        // and correct data are also in files dictionary
+        let fd_start = 171;
+        assert!(test_flag(fd_start+8));
+        assert_eq!(23, read_u32(fd_start+20));
+        assert_eq!(23, read_u32(fd_start+24));
         // let mut f = std::fs::File::create("/tmp/my_zip_test.zip").unwrap();
         // f.write_all(&res).unwrap();
 
