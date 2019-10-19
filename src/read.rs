@@ -317,7 +317,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
             Some(index) => *index,
             None => { return Err(ZipError::FileNotFound); },
         };
-        self.by_index(index)
+        self.by_index_internal(index, password)
     }
     
     /// Get a contained file by index, decrypt with given password
