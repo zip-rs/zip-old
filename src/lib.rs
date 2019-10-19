@@ -24,3 +24,4 @@ mod compression;
 pub mod write;
 mod cp437;
 pub mod result;
+mod zipcrypto;

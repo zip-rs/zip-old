@@ -2,6 +2,8 @@
 
 use crc32::Crc32Reader;
 use compression::CompressionMethod;
+use zipcrypto::ZipCryptoReader;
+use zipcrypto::ZipCryptoReaderValid;
 use spec;
 use result::{ZipResult, ZipError};
 use std::io;
@@ -69,6 +71,9 @@ enum ZipFileReader<'a> {
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+    StoredZipCrypto(Crc32Reader<ZipCryptoReaderValid<io::Take<&'a mut Read>>>),
+    #[cfg(feature = "deflate")]
+    DeflatedZipCrypto(Crc32Reader<flate2::read::DeflateDecoder<ZipCryptoReaderValid<io::Take<&'a mut Read>>>>),
 }
 
 /// A struct for reading a zip file
@@ -86,33 +91,74 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 fn make_reader<'a>(
     compression_method: ::compression::CompressionMethod,
     crc32: u32,
-    reader: io::Take<&'a mut io::Read>)
+    reader: io::Take<&'a mut io::Read>,
+    password: Option<&[u8]>)
         -> ZipResult<ZipFileReader<'a>> {
 
-    match compression_method {
-        CompressionMethod::Stored =>
+    match password
+    {
+        None => match compression_method
         {
-            Ok(ZipFileReader::Stored(Crc32Reader::new(
-                reader,
-                crc32)))
-        },
-        #[cfg(feature = "deflate")]
-        CompressionMethod::Deflated =>
+            CompressionMethod::Stored =>
+            {
+                Ok(ZipFileReader::Stored(Crc32Reader::new(
+                    reader,
+                    crc32)))
+            },
+            #[cfg(feature = "deflate")]
+            CompressionMethod::Deflated =>
+            {
+                let deflate_reader = DeflateDecoder::new(reader);
+                Ok(ZipFileReader::Deflated(Crc32Reader::new(
+                    deflate_reader,
+                    crc32)))
+            },
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2 =>
+            {
+                let bzip2_reader = BzDecoder::new(reader);
+                Ok(ZipFileReader::Bzip2(Crc32Reader::new(
+                    bzip2_reader,
+                    crc32)))
+            },
+            _ => unsupported_zip_error("Compression method not supported"),
+        }
+        Some(password) => match compression_method
         {
-            let deflate_reader = DeflateDecoder::new(reader);
-            Ok(ZipFileReader::Deflated(Crc32Reader::new(
-                deflate_reader,
-                crc32)))
+            CompressionMethod::Stored =>
+            {
+                let zipcrypto_reader = ZipCryptoReader::new(reader, password);
+                let zipcrypto_reader = zipcrypto_reader.validate(crc32)?;
+                if let Some(zipcrypto_reader) = zipcrypto_reader
+                {
+                    Ok(ZipFileReader::StoredZipCrypto(Crc32Reader::new(
+                        zipcrypto_reader,
+                        crc32)))
+                }
+                else
+                {
+                    Err(ZipError::InvalidPassword)
+                }
+            },
+            #[cfg(feature = "deflate")]
+            CompressionMethod::Deflated =>
+            {
+                let zipcrypto_reader = ZipCryptoReader::new(reader, password);
+                let zipcrypto_reader = zipcrypto_reader.validate(crc32)?;
+                if let Some(zipcrypto_reader) = zipcrypto_reader
+                {
+                    let deflate_reader = DeflateDecoder::new(zipcrypto_reader);
+                    Ok(ZipFileReader::DeflatedZipCrypto(Crc32Reader::new(
+                        deflate_reader,
+                        crc32)))
+                }
+                else
+                {
+                    Err(ZipError::InvalidPassword)
+                }
+            },
+            _ => unsupported_zip_error("Compression method not supported"),
         },
-        #[cfg(feature = "bzip2")]
-        CompressionMethod::Bzip2 =>
-        {
-            let bzip2_reader = BzDecoder::new(reader);
-            Ok(ZipFileReader::Bzip2(Crc32Reader::new(
-                bzip2_reader,
-                crc32)))
-        },
-        _ => unsupported_zip_error("Compression method not supported"),
     }
 }
 
@@ -252,9 +298,20 @@ impl<R: Read+io::Seek> ZipArchive<R>
     pub fn offset(&self) -> u64 {
         self.offset
     }
+    
+    /// Search for a file entry by name, decrypt with given password
+    pub fn by_name_decrypt<'a>(&'a mut self, name: &str, password: &[u8]) -> ZipResult<ZipFile<'a>>
+    {
+        self.by_name_internal(name, Some(password))
+    }
 
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>>
+    {
+        self.by_name_internal(name, None)
+    }
+    
+    fn by_name_internal<'a>(&'a mut self, name: &str, password: Option<&[u8]>) -> ZipResult<ZipFile<'a>>
     {
         let index = match self.names_map.get(name) {
             Some(index) => *index,
@@ -262,16 +319,27 @@ impl<R: Read+io::Seek> ZipArchive<R>
         };
         self.by_index(index)
     }
-
+    
+    /// Get a contained file by index, decrypt with given password
+    pub fn by_index_decrypt<'a>(&'a mut self, file_number: usize, password: &[u8]) -> ZipResult<ZipFile<'a>>
+    {
+        self.by_index_internal(file_number, Some(password))
+    }
+    
     /// Get a contained file by index
     pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>>
     {
+        self.by_index_internal(file_number, None)
+    }
+    
+    fn by_index_internal<'a>(&'a mut self, file_number: usize, password: Option<&[u8]>) -> ZipResult<ZipFile<'a>>
+    {
         if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
         let ref mut data = self.files[file_number];
-
-        if data.encrypted
+        
+        if data.encrypted && password == None
         {
-            return unsupported_zip_error("Encrypted files are not supported")
+            return Err(ZipError::PasswordRequired)
         }
 
         // Parse local header
@@ -290,8 +358,8 @@ impl<R: Read+io::Seek> ZipArchive<R>
 
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
-
-        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
+        
+        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader, password)?, data: Cow::Borrowed(data) })
     }
 
     /// Unwrap and return the inner reader object
@@ -422,6 +490,9 @@ fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
         ZipFileReader::Deflated(ref mut r) => r as &mut Read,
         #[cfg(feature = "bzip2")]
         ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
+        ZipFileReader::StoredZipCrypto(ref mut r) => r as &mut Read,
+        #[cfg(feature = "deflate")]
+        ZipFileReader::DeflatedZipCrypto(ref mut r) => r as &mut Read,
     }
 }
 
@@ -534,6 +605,9 @@ impl<'a> Drop for ZipFile<'a> {
                 ZipFileReader::Deflated(crcreader) => crcreader.into_inner().into_inner(),
                 #[cfg(feature = "bzip2")]
                 ZipFileReader::Bzip2(crcreader) => crcreader.into_inner().into_inner(),
+                ZipFileReader::StoredZipCrypto(crcreader) => crcreader.into_inner().into_inner(),
+                #[cfg(feature = "deflate")]
+                ZipFileReader::DeflatedZipCrypto(crcreader) => crcreader.into_inner().into_inner().into_inner(),
             };
 
             loop {
@@ -636,7 +710,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
     let result_compression_method = result.compression_method;
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(result_compression_method, result_crc32, limit_reader)?
+        reader: make_reader(result_compression_method, result_crc32, limit_reader, None)?
     }))
 }
 

@@ -23,6 +23,12 @@ pub enum ZipError
 
     /// The requested file could not be found in the archive
     FileNotFound,
+    
+    /// No password was given but the data is encrypted
+    PasswordRequired,
+    
+    /// The given password is wrong
+    InvalidPassword,
 }
 
 impl ZipError
@@ -39,7 +45,7 @@ impl ZipError
             ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
                 (self.description().to_string() + ": " + msg).into()
             },
-            ZipError::FileNotFound => {
+            ZipError::FileNotFound | ZipError::PasswordRequired | ZipError::InvalidPassword => {
                 self.description().into()
             },
         }
@@ -80,6 +86,8 @@ impl error::Error for ZipError
             ZipError::InvalidArchive(..) => "Invalid Zip archive",
             ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
             ZipError::FileNotFound => "Specified file not found in archive",
+            ZipError::PasswordRequired => "Missing password, file in archive is encrypted",
+            ZipError::InvalidPassword => "Invalid password for file in archive",
         }
     }
 
