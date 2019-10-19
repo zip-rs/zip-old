@@ -117,14 +117,10 @@ pub struct ZipCryptoReaderValid<R> {
 impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R>
 {
     fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize>
-    {
-        if buf.len() == 0 {
-            return Ok(0);
-        }
-        
+    {   
         //Note: There might be potential for optimization. Inspiration can be found at:
         //https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
-        
+
         let result = self.reader.file.read(&mut buf);
         for byte in buf.iter_mut() {
             *byte = self.reader.keys.decrypt_byte(*byte);
