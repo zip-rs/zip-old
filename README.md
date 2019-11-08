@@ -1,3 +1,5 @@
+**Unfortunately, due to a lack of time and loss of interest, this project will no longer be actively maintained.**
+
 zip-rs
 ======
 
@@ -6,6 +8,7 @@ zip-rs
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 
 [Documentation](http://mvdnes.github.io/rust-docs/zip-rs/zip/index.html)
+
 
 Info
 ----
