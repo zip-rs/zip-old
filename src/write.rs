@@ -1,10 +1,10 @@
 //! Structs for creating a new zip archive
 
-use compression::CompressionMethod;
-use types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
-use spec;
+use crate::compression::CompressionMethod;
+use crate::types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
+use crate::spec;
 use crc32fast::Hasher;
-use result::{ZipResult, ZipError};
+use crate::result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -395,13 +395,13 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         Ok(())
     }
 
-    fn ref_mut(&mut self) -> Option<&mut Write> {
+    fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match *self {
-            GenericZipWriter::Storer(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             GenericZipWriter::Closed => None,
         }
     }
@@ -563,9 +563,9 @@ fn path_to_string(path: &std::path::Path) -> String {
 mod test {
     use std::io;
     use std::io::Write;
-    use types::DateTime;
+    use crate::types::DateTime;
     use super::{FileOptions, ZipWriter};
-    use compression::CompressionMethod;
+    use crate::compression::CompressionMethod;
 
     #[test]
     fn write_empty_zip() {

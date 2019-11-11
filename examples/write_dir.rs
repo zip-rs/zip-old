@@ -48,7 +48,7 @@ fn real_main() -> i32 {
     return 0;
 }
 
-fn zip_dir<T>(it: &mut Iterator<Item=DirEntry>, prefix: &str, writer: T, method: zip::CompressionMethod)
+fn zip_dir<T>(it: &mut dyn Iterator<Item=DirEntry>, prefix: &str, writer: T, method: zip::CompressionMethod)
               -> zip::result::ZipResult<()>
     where T: Write+Seek
 {

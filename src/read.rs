@@ -1,17 +1,17 @@
 //! Structs for reading a ZIP archive
 
-use crc32::Crc32Reader;
-use compression::CompressionMethod;
-use spec;
-use result::{ZipResult, ZipError};
+use crate::crc32::Crc32Reader;
+use crate::compression::CompressionMethod;
+use crate::spec;
+use crate::result::{ZipResult, ZipError};
 use std::io;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use std::borrow::Cow;
 
 use podio::{ReadPodExt, LittleEndian};
-use types::{ZipFileData, System, DateTime};
-use cp437::FromCp437;
+use crate::types::{ZipFileData, System, DateTime};
+use crate::cp437::FromCp437;
 
 #[cfg(feature = "deflate")]
 use flate2;
@@ -64,11 +64,11 @@ pub struct ZipArchive<R: Read + io::Seek>
 
 enum ZipFileReader<'a> {
     NoReader,
-    Stored(Crc32Reader<io::Take<&'a mut Read>>),
+    Stored(Crc32Reader<io::Take<&'a mut dyn Read>>),
     #[cfg(feature = "deflate")]
-    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut Read>>>),
+    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut dyn Read>>>),
     #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut Read>>>),
+    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut dyn Read>>>),
 }
 
 /// A struct for reading a zip file
@@ -84,9 +84,9 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
 
 
 fn make_reader<'a>(
-    compression_method: ::compression::CompressionMethod,
+    compression_method: crate::compression::CompressionMethod,
     crc32: u32,
-    reader: io::Take<&'a mut io::Read>)
+    reader: io::Take<&'a mut dyn io::Read>)
         -> ZipResult<ZipFileReader<'a>> {
 
     match compression_method {
@@ -289,7 +289,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
 
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
-        let limit_reader = (self.reader.by_ref() as &mut Read).take(data.compressed_size);
+        let limit_reader = (self.reader.by_ref() as &mut dyn Read).take(data.compressed_size);
 
         Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
     }
@@ -414,20 +414,20 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
     Ok(())
 }
 
-fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut Read {
+fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut dyn Read {
     match *reader {
         ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
-        ZipFileReader::Stored(ref mut r) => r as &mut Read,
+        ZipFileReader::Stored(ref mut r) => r as &mut dyn Read,
         #[cfg(feature = "deflate")]
-        ZipFileReader::Deflated(ref mut r) => r as &mut Read,
+        ZipFileReader::Deflated(ref mut r) => r as &mut dyn Read,
         #[cfg(feature = "bzip2")]
-        ZipFileReader::Bzip2(ref mut r) => r as &mut Read,
+        ZipFileReader::Bzip2(ref mut r) => r as &mut dyn Read,
     }
 }
 
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
-    fn get_reader(&mut self) -> &mut Read {
+    fn get_reader(&mut self) -> &mut dyn Read {
         get_reader(&mut self.reader)
     }
     /// Get the version of the file
@@ -630,7 +630,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         return unsupported_zip_error("The file length is not available in the local header");
     }
 
-    let limit_reader = (reader as &'a mut io::Read).take(result.compressed_size as u64);
+    let limit_reader = (reader as &'a mut dyn io::Read).take(result.compressed_size as u64);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;

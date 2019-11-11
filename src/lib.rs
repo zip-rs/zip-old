@@ -11,10 +11,10 @@ extern crate podio;
 #[cfg(feature = "time")]
 extern crate time;
 
-pub use read::ZipArchive;
-pub use write::ZipWriter;
-pub use compression::CompressionMethod;
-pub use types::DateTime;
+pub use crate::read::ZipArchive;
+pub use crate::write::ZipWriter;
+pub use crate::compression::CompressionMethod;
+pub use crate::types::DateTime;
 
 mod spec;
 mod crc32;
