@@ -14,8 +14,6 @@ use crate::types::{ZipFileData, System, DateTime};
 use crate::cp437::FromCp437;
 
 #[cfg(feature = "deflate")]
-use flate2;
-#[cfg(feature = "deflate")]
 use flate2::read::DeflateDecoder;
 
 #[cfg(feature = "bzip2")]
@@ -414,7 +412,7 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
     Ok(())
 }
 
-fn get_reader<'a>(reader: &'a mut ZipFileReader) -> &'a mut dyn Read {
+fn get_reader<'a>(reader: &'a mut ZipFileReader<'_>) -> &'a mut dyn Read {
     match *reader {
         ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
         ZipFileReader::Stored(ref mut r) => r as &mut dyn Read,
@@ -563,7 +561,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile>> {
+pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
     let signature = reader.read_u32::<LittleEndian>()?;
 
     match signature {

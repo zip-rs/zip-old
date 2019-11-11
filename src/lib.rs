@@ -2,15 +2,6 @@
 
 #![warn(missing_docs)]
 
-#[cfg(feature = "bzip2")]
-extern crate bzip2;
-extern crate crc32fast;
-#[cfg(feature = "deflate")]
-extern crate flate2;
-extern crate podio;
-#[cfg(feature = "time")]
-extern crate time;
-
 pub use crate::read::ZipArchive;
 pub use crate::write::ZipWriter;
 pub use crate::compression::CompressionMethod;

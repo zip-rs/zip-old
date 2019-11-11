@@ -53,9 +53,6 @@
 // 22c400260  00 00 50 4b 05 06 00 00  00 00 03 00 03 00 27 01  |..PK..........'.|
 // 22c400270  00 00 ff ff ff ff 00 00                           |........|
 // 22c400278
-
-extern crate zip;
-
 use std::io::{self, Seek, SeekFrom, Read};
 
 const BLOCK1_LENGTH : u64 = 0x60;

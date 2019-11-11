@@ -9,17 +9,11 @@ use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
-#[cfg(feature = "time")]
-use time;
 use podio::{WritePodExt, LittleEndian};
 
 #[cfg(feature = "deflate")]
-use flate2;
-#[cfg(feature = "deflate")]
 use flate2::write::DeflateEncoder;
 
-#[cfg(feature = "bzip2")]
-use bzip2;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 

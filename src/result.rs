@@ -27,7 +27,7 @@ pub enum ZipError
 
 impl ZipError
 {
-    fn detail(&self) -> ::std::borrow::Cow<str>
+    fn detail(&self) -> ::std::borrow::Cow<'_, str>
     {
         use std::error::Error;
 
@@ -64,7 +64,7 @@ impl convert::From<ZipError> for io::Error
 
 impl fmt::Display for ZipError
 {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error>
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>
     {
         fmt.write_str(&*self.detail())
     }

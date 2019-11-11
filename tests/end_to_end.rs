@@ -1,5 +1,3 @@
-extern crate zip;
-
 use std::io::prelude::*;
 use zip::write::FileOptions;
 use std::io::Cursor;

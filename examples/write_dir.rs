@@ -1,5 +1,3 @@
-extern crate zip;
-extern crate walkdir;
 
 use std::io::prelude::*;
 use std::io::{Write, Seek};

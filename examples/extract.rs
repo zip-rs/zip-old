@@ -1,5 +1,3 @@
-extern crate zip;
-
 use std::io;
 use std::fs;
 
