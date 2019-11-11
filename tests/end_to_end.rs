@@ -1,6 +1,6 @@
 use std::io::prelude::*;
-use zip::write::FileOptions;
 use std::io::Cursor;
+use zip::write::FileOptions;
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.

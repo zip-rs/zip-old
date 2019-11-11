@@ -1,17 +1,17 @@
 //! Structs for reading a ZIP archive
 
-use crate::crc32::Crc32Reader;
 use crate::compression::CompressionMethod;
+use crate::crc32::Crc32Reader;
+use crate::result::{ZipError, ZipResult};
 use crate::spec;
-use crate::result::{ZipResult, ZipError};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io;
 use std::io::prelude::*;
-use std::collections::HashMap;
-use std::borrow::Cow;
 
-use podio::{ReadPodExt, LittleEndian};
-use crate::types::{ZipFileData, System, DateTime};
 use crate::cp437::FromCp437;
+use crate::types::{DateTime, System, ZipFileData};
+use podio::{LittleEndian, ReadPodExt};
 
 #[cfg(feature = "deflate")]
 use flate2::read::DeflateDecoder;
@@ -51,8 +51,7 @@ mod ffi {
 /// println!("Result: {:?}", doit());
 /// ```
 #[derive(Clone, Debug)]
-pub struct ZipArchive<R: Read + io::Seek>
-{
+pub struct ZipArchive<R: Read + io::Seek> {
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
@@ -75,70 +74,64 @@ pub struct ZipFile<'a> {
     reader: ZipFileReader<'a>,
 }
 
-fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T>
-{
+fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
-
 
 fn make_reader<'a>(
     compression_method: crate::compression::CompressionMethod,
     crc32: u32,
-    reader: io::Take<&'a mut dyn io::Read>)
-        -> ZipResult<ZipFileReader<'a>> {
-
+    reader: io::Take<&'a mut dyn io::Read>,
+) -> ZipResult<ZipFileReader<'a>> {
     match compression_method {
-        CompressionMethod::Stored =>
-        {
-            Ok(ZipFileReader::Stored(Crc32Reader::new(
-                reader,
-                crc32)))
-        },
+        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32))),
         #[cfg(feature = "deflate")]
-        CompressionMethod::Deflated =>
-        {
+        CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
                 deflate_reader,
-                crc32)))
-        },
+                crc32,
+            )))
+        }
         #[cfg(feature = "bzip2")]
-        CompressionMethod::Bzip2 =>
-        {
+        CompressionMethod::Bzip2 => {
             let bzip2_reader = BzDecoder::new(reader);
-            Ok(ZipFileReader::Bzip2(Crc32Reader::new(
-                bzip2_reader,
-                crc32)))
-        },
+            Ok(ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32)))
+        }
         _ => unsupported_zip_error("Compression method not supported"),
     }
 }
 
-impl<R: Read+io::Seek> ZipArchive<R>
-{
+impl<R: Read + io::Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    fn get_directory_counts(reader: &mut R,
-                            footer: &spec::CentralDirectoryEnd,
-                            cde_start_pos: u64) -> ZipResult<(u64, u64, usize)> {
+    fn get_directory_counts(
+        reader: &mut R,
+        footer: &spec::CentralDirectoryEnd,
+        cde_start_pos: u64,
+    ) -> ZipResult<(u64, u64, usize)> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
-        let zip64locator = if reader.seek(io::SeekFrom::End(-(20 + 22 + footer.zip_file_comment.len() as i64))).is_ok() {
+        let zip64locator = if reader
+            .seek(io::SeekFrom::End(
+                -(20 + 22 + footer.zip_file_comment.len() as i64),
+            ))
+            .is_ok()
+        {
             match spec::Zip64CentralDirectoryEndLocator::parse(reader) {
                 Ok(loc) => Some(loc),
                 Err(ZipError::InvalidArchive(_)) => {
                     // No ZIP64 header; that's actually fine. We're done here.
                     None
-                },
+                }
                 Err(e) => {
                     // Yikes, a real problem
                     return Err(e);
                 }
             }
-        }
-        else {
+        } else {
             // Empty Zip files will have nothing else so this error might be fine. If
             // not, we'll find out soon.
             None
@@ -150,19 +143,22 @@ impl<R: Read+io::Seek> ZipArchive<R>
                 // offsets all being too small. Get the amount of error by comparing
                 // the actual file position we found the CDE at with the offset
                 // recorded in the CDE.
-                let archive_offset = cde_start_pos.checked_sub(footer.central_directory_size as u64)
+                let archive_offset = cde_start_pos
+                    .checked_sub(footer.central_directory_size as u64)
                     .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
-                    .ok_or(ZipError::InvalidArchive("Invalid central directory size or offset"))?;
+                    .ok_or(ZipError::InvalidArchive(
+                        "Invalid central directory size or offset",
+                    ))?;
 
                 let directory_start = footer.central_directory_offset as u64 + archive_offset;
                 let number_of_files = footer.number_of_files_on_this_disk as usize;
                 return Ok((archive_offset, directory_start, number_of_files));
-            },
+            }
             Some(locator64) => {
                 // If we got here, this is indeed a ZIP64 file.
 
                 if footer.disk_number as u32 != locator64.disk_with_central_directory {
-                    return unsupported_zip_error("Support for multi-disk files is not implemented")
+                    return unsupported_zip_error("Support for multi-disk files is not implemented");
                 }
 
                 // We need to reassess `archive_offset`. We know where the ZIP64
@@ -175,19 +171,26 @@ impl<R: Read+io::Seek> ZipArchive<R>
 
                 let search_upper_bound = cde_start_pos
                     .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
-                    .ok_or(ZipError::InvalidArchive("File cannot contain ZIP64 central directory end"))?;
+                    .ok_or(ZipError::InvalidArchive(
+                        "File cannot contain ZIP64 central directory end",
+                    ))?;
                 let (footer, archive_offset) = spec::Zip64CentralDirectoryEnd::find_and_parse(
                     reader,
                     locator64.end_of_central_directory_offset,
-                    search_upper_bound)?;
+                    search_upper_bound,
+                )?;
 
                 if footer.disk_number != footer.disk_with_central_directory {
-                    return unsupported_zip_error("Support for multi-disk files is not implemented")
+                    return unsupported_zip_error("Support for multi-disk files is not implemented");
                 }
 
                 let directory_start = footer.central_directory_offset + archive_offset;
-                Ok((archive_offset, directory_start, footer.number_of_files as usize))
-            },
+                Ok((
+                    archive_offset,
+                    directory_start,
+                    footer.number_of_files as usize,
+                ))
+            }
         }
     }
 
@@ -195,9 +198,8 @@ impl<R: Read+io::Seek> ZipArchive<R>
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
-        if footer.disk_number != footer.disk_with_central_directory
-        {
-            return unsupported_zip_error("Support for multi-disk files is not implemented")
+        if footer.disk_number != footer.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
         let (archive_offset, directory_start, number_of_files) =
@@ -207,11 +209,12 @@ impl<R: Read+io::Seek> ZipArchive<R>
         let mut names_map = HashMap::new();
 
         if let Err(_) = reader.seek(io::SeekFrom::Start(directory_start)) {
-            return Err(ZipError::InvalidArchive("Could not seek to start of central directory"));
+            return Err(ZipError::InvalidArchive(
+                "Could not seek to start of central directory",
+            ));
         }
 
-        for _ in 0 .. number_of_files
-        {
+        for _ in 0..number_of_files {
             let file = central_header_to_zip_file(&mut reader, archive_offset)?;
             names_map.insert(file.file_name.clone(), files.len());
             files.push(file);
@@ -238,8 +241,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
     ///     }
     /// }
     /// ```
-    pub fn len(&self) -> usize
-    {
+    pub fn len(&self) -> usize {
         self.files.len()
     }
 
@@ -252,62 +254,66 @@ impl<R: Read+io::Seek> ZipArchive<R>
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>>
-    {
+    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
         let index = match self.names_map.get(name) {
             Some(index) => *index,
-            None => { return Err(ZipError::FileNotFound); },
+            None => {
+                return Err(ZipError::FileNotFound);
+            }
         };
         self.by_index(index)
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>>
-    {
-        if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
+    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+        if file_number >= self.files.len() {
+            return Err(ZipError::FileNotFound);
+        }
         let ref mut data = self.files[file_number];
 
-        if data.encrypted
-        {
-            return unsupported_zip_error("Encrypted files are not supported")
+        if data.encrypted {
+            return unsupported_zip_error("Encrypted files are not supported");
         }
 
         // Parse local header
         self.reader.seek(io::SeekFrom::Start(data.header_start))?;
         let signature = self.reader.read_u32::<LittleEndian>()?;
-        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE
-        {
-            return Err(ZipError::InvalidArchive("Invalid local file header"))
+        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid local file header"));
         }
 
         self.reader.seek(io::SeekFrom::Current(22))?;
         let file_name_length = self.reader.read_u16::<LittleEndian>()? as u64;
         let extra_field_length = self.reader.read_u16::<LittleEndian>()? as u64;
         let magic_and_header = 4 + 22 + 2 + 2;
-        data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+        data.data_start =
+            data.header_start + magic_and_header + file_name_length + extra_field_length;
 
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = (self.reader.by_ref() as &mut dyn Read).take(data.compressed_size);
 
-        Ok(ZipFile { reader: make_reader(data.compression_method, data.crc32, limit_reader)?, data: Cow::Borrowed(data) })
+        Ok(ZipFile {
+            reader: make_reader(data.compression_method, data.crc32, limit_reader)?,
+            data: Cow::Borrowed(data),
+        })
     }
 
     /// Unwrap and return the inner reader object
     ///
     /// The position of the reader is undefined.
-    pub fn into_inner(self) -> R
-    {
+    pub fn into_inner(self) -> R {
         self.reader
     }
 }
 
-fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: u64) -> ZipResult<ZipFileData>
-{
+fn central_header_to_zip_file<R: Read + io::Seek>(
+    reader: &mut R,
+    archive_offset: u64,
+) -> ZipResult<ZipFileData> {
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
-    if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE
-    {
-        return Err(ZipError::InvalidArchive("Invalid Central Directory header"))
+    if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+        return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
     }
 
     let version_made_by = reader.read_u16::<LittleEndian>()?;
@@ -330,22 +336,19 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     let offset = reader.read_u32::<LittleEndian>()? as u64;
     let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
     let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
-    let file_comment_raw  = ReadPodExt::read_exact(reader, file_comment_length)?;
+    let file_comment_raw = ReadPodExt::read_exact(reader, file_comment_length)?;
 
-    let file_name = match is_utf8
-    {
+    let file_name = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
         false => file_name_raw.clone().from_cp437(),
     };
-    let file_comment = match is_utf8
-    {
+    let file_comment = match is_utf8 {
         true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
         false => file_comment_raw.from_cp437(),
     };
 
     // Construct the result
-    let mut result = ZipFileData
-    {
+    let mut result = ZipFileData {
         system: System::from_u8((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
@@ -363,7 +366,7 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     };
 
     match parse_extra_field(&mut result, &*extra_field) {
-        Ok(..) | Err(ZipError::Io(..)) => {},
+        Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => Err(e)?,
     }
 
@@ -373,17 +376,14 @@ fn central_header_to_zip_file<R: Read+io::Seek>(reader: &mut R, archive_offset: 
     Ok(result)
 }
 
-fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
-{
+fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()> {
     let mut reader = io::Cursor::new(data);
 
-    while (reader.position() as usize) < data.len()
-    {
+    while (reader.position() as usize) < data.len() {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
         let mut len_left = len as i64;
-        match kind
-        {
+        match kind {
             // Zip64 extended information extra field
             0x0001 => {
                 if file.uncompressed_size == 0xFFFFFFFF {
@@ -400,8 +400,8 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()>
                 }
                 // Unparsed fields:
                 // u32: disk start number
-            },
-            _ => {},
+            }
+            _ => {}
         }
 
         // We could also check for < 0 to check for errors
@@ -430,7 +430,10 @@ impl<'a> ZipFile<'a> {
     }
     /// Get the version of the file
     pub fn version_made_by(&self) -> (u8, u8) {
-        (self.data.version_made_by / 10, self.data.version_made_by % 10)
+        (
+            self.data.version_made_by / 10,
+            self.data.version_made_by % 10,
+        )
     }
     /// Get the name of the file
     pub fn name(&self) -> &str {
@@ -467,7 +470,11 @@ impl<'a> ZipFile<'a> {
     }
     /// Returns whether the file is actually a directory
     pub fn is_dir(&self) -> bool {
-        self.name().chars().rev().next().map_or(false, |c| c == '/' || c == '\\')
+        self.name()
+            .chars()
+            .rev()
+            .next()
+            .map_or(false, |c| c == '/' || c == '\\')
     }
     /// Returns whether the file is a regular file
     pub fn is_file(&self) -> bool {
@@ -480,9 +487,7 @@ impl<'a> ZipFile<'a> {
         }
 
         match self.data.system {
-            System::Unix => {
-                Some(self.data.external_attributes >> 16)
-            },
+            System::Unix => Some(self.data.external_attributes >> 16),
             System::Dos => {
                 // Interpret MSDOS directory bit
                 let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
@@ -495,7 +500,7 @@ impl<'a> ZipFile<'a> {
                     mode &= 0o0555;
                 }
                 Some(mode)
-            },
+            }
             _ => None,
         }
     }
@@ -511,9 +516,9 @@ impl<'a> ZipFile<'a> {
 }
 
 impl<'a> Read for ZipFile<'a> {
-     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-         self.get_reader().read(buf)
-     }
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.get_reader().read(buf)
+    }
 }
 
 impl<'a> Drop for ZipFile<'a> {
@@ -521,7 +526,7 @@ impl<'a> Drop for ZipFile<'a> {
         // self.data is Owned, this reader is constructed by a streaming reader.
         // In this case, we want to exhaust the reader so that the next file is accessible.
         if let Cow::Owned(_) = self.data {
-            let mut buffer = [0; 1<<16];
+            let mut buffer = [0; 1 << 16];
 
             // Get the inner `Take` reader so all decompression and CRC calculation is skipped.
             let innerreader = ::std::mem::replace(&mut self.reader, ZipFileReader::NoReader);
@@ -538,7 +543,10 @@ impl<'a> Drop for ZipFile<'a> {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(_) => (),
-                    Err(e) => panic!("Could not consume all of the output of the current ZipFile: {:?}", e),
+                    Err(e) => panic!(
+                        "Could not consume all of the output of the current ZipFile: {:?}",
+                        e
+                    ),
                 }
             }
         }
@@ -561,7 +569,9 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
+pub fn read_zipfile_from_stream<'a, R: io::Read>(
+    reader: &'a mut R,
+) -> ZipResult<Option<ZipFile<'_>>> {
     let signature = reader.read_u32::<LittleEndian>()?;
 
     match signature {
@@ -587,14 +597,12 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
     let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
     let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
 
-    let file_name = match is_utf8
-    {
+    let file_name = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
         false => file_name_raw.clone().from_cp437(),
     };
 
-    let mut result = ZipFileData
-    {
+    let mut result = ZipFileData {
         system: System::from_u8((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
         encrypted: encrypted,
@@ -605,7 +613,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
         uncompressed_size: uncompressed_size as u64,
         file_name: file_name,
         file_name_raw: file_name_raw,
-        file_comment: String::new(),  // file comment is only available in the central directory
+        file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
         header_start: 0,
@@ -617,12 +625,12 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
     };
 
     match parse_extra_field(&mut result, &extra_field) {
-        Ok(..) | Err(ZipError::Io(..)) => {},
+        Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => Err(e)?,
     }
 
     if encrypted {
-        return unsupported_zip_error("Encrypted files are not supported")
+        return unsupported_zip_error("Encrypted files are not supported");
     }
     if using_data_descriptor {
         return unsupported_zip_error("The file length is not available in the local header");
@@ -634,7 +642,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
     let result_compression_method = result.compression_method;
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(result_compression_method, result_crc32, limit_reader)?
+        reader: make_reader(result_compression_method, result_crc32, limit_reader)?,
     }))
 }
 
@@ -642,8 +650,8 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(reader: &'a mut R) -> ZipResult
 mod test {
     #[test]
     fn invalid_offset() {
-        use std::io;
         use super::ZipArchive;
+        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset.zip"));
@@ -653,8 +661,8 @@ mod test {
 
     #[test]
     fn zip64_with_leading_junk() {
-        use std::io;
         use super::ZipArchive;
+        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
@@ -664,8 +672,8 @@ mod test {
 
     #[test]
     fn zip_comment() {
-        use std::io;
         use super::ZipArchive;
+        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -675,8 +683,8 @@ mod test {
 
     #[test]
     fn zip_read_streaming() {
-        use std::io;
         use super::read_zipfile_from_stream;
+        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -691,8 +699,8 @@ mod test {
 
     #[test]
     fn zip_clone() {
-        use std::io::{self, Read};
         use super::ZipArchive;
+        use std::io::{self, Read};
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -703,7 +711,17 @@ mod test {
         let mut file2 = reader2.by_index(0).unwrap();
 
         let t = file1.last_modified();
-        assert_eq!((t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second()), (1980, 1, 1, 0, 0, 0));
+        assert_eq!(
+            (
+                t.year(),
+                t.month(),
+                t.day(),
+                t.hour(),
+                t.minute(),
+                t.second()
+            ),
+            (1980, 1, 1, 0, 0, 0)
+        );
 
         let mut buf1 = [0; 5];
         let mut buf2 = [0; 5];

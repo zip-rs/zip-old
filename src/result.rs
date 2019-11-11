@@ -10,8 +10,7 @@ pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
 #[derive(Debug)]
-pub enum ZipError
-{
+pub enum ZipError {
     /// An Error caused by I/O
     Io(io::Error),
 
@@ -25,57 +24,43 @@ pub enum ZipError
     FileNotFound,
 }
 
-impl ZipError
-{
-    fn detail(&self) -> ::std::borrow::Cow<'_, str>
-    {
+impl ZipError {
+    fn detail(&self) -> ::std::borrow::Cow<'_, str> {
         use std::error::Error;
 
-        match *self
-        {
+        match *self {
             ZipError::Io(ref io_err) => {
                 ("Io Error: ".to_string() + (io_err as &dyn error::Error).description()).into()
-            },
+            }
             ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
                 (self.description().to_string() + ": " + msg).into()
-            },
-            ZipError::FileNotFound => {
-                self.description().into()
-            },
+            }
+            ZipError::FileNotFound => self.description().into(),
         }
     }
 }
 
-impl convert::From<io::Error> for ZipError
-{
-    fn from(err: io::Error) -> ZipError
-    {
+impl convert::From<io::Error> for ZipError {
+    fn from(err: io::Error) -> ZipError {
         ZipError::Io(err)
     }
 }
 
-impl convert::From<ZipError> for io::Error
-{
-    fn from(err: ZipError) -> io::Error
-    {
+impl convert::From<ZipError> for io::Error {
+    fn from(err: ZipError) -> io::Error {
         io::Error::new(io::ErrorKind::Other, err)
     }
 }
 
-impl fmt::Display for ZipError
-{
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>
-    {
+impl fmt::Display for ZipError {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt.write_str(&*self.detail())
     }
 }
 
-impl error::Error for ZipError
-{
-    fn description(&self) -> &str
-    {
-        match *self
-        {
+impl error::Error for ZipError {
+    fn description(&self) -> &str {
+        match *self {
             ZipError::Io(ref io_err) => (io_err as &dyn error::Error).description(),
             ZipError::InvalidArchive(..) => "Invalid Zip archive",
             ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
@@ -83,10 +68,8 @@ impl error::Error for ZipError
         }
     }
 
-    fn cause(&self) -> Option<&dyn error::Error>
-    {
-        match *self
-        {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        match *self {
             ZipError::Io(ref io_err) => Some(io_err as &dyn error::Error),
             _ => None,
         }
