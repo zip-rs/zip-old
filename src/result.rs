@@ -27,14 +27,14 @@ pub enum ZipError
 
 impl ZipError
 {
-    fn detail(&self) -> ::std::borrow::Cow<str>
+    fn detail(&self) -> ::std::borrow::Cow<'_, str>
     {
         use std::error::Error;
 
         match *self
         {
             ZipError::Io(ref io_err) => {
-                ("Io Error: ".to_string() + (io_err as &error::Error).description()).into()
+                ("Io Error: ".to_string() + (io_err as &dyn error::Error).description()).into()
             },
             ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
                 (self.description().to_string() + ": " + msg).into()
@@ -64,7 +64,7 @@ impl convert::From<ZipError> for io::Error
 
 impl fmt::Display for ZipError
 {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error>
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>
     {
         fmt.write_str(&*self.detail())
     }
@@ -76,18 +76,18 @@ impl error::Error for ZipError
     {
         match *self
         {
-            ZipError::Io(ref io_err) => (io_err as &error::Error).description(),
+            ZipError::Io(ref io_err) => (io_err as &dyn error::Error).description(),
             ZipError::InvalidArchive(..) => "Invalid Zip archive",
             ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
             ZipError::FileNotFound => "Specified file not found in archive",
         }
     }
 
-    fn cause(&self) -> Option<&error::Error>
+    fn cause(&self) -> Option<&dyn error::Error>
     {
         match *self
         {
-            ZipError::Io(ref io_err) => Some(io_err as &error::Error),
+            ZipError::Io(ref io_err) => Some(io_err as &dyn error::Error),
             _ => None,
         }
     }

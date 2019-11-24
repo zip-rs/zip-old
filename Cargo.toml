@@ -10,6 +10,7 @@ keywords = ["zip", "archive"]
 description = """
 Library to support the reading and writing of zip files.
 """
+edition = "2018"
 
 [dependencies]
 flate2 = { version = "1.0", default-features = false, optional = true }

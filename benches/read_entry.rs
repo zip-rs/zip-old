@@ -1,7 +1,4 @@
-#[macro_use]
-extern crate bencher;
-extern crate rand;
-extern crate zip;
+use bencher::{benchmark_group, benchmark_main};
 
 use std::io::{Cursor, Read, Write};
 

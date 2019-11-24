@@ -45,7 +45,7 @@ impl CompressionMethod {
 }
 
 impl fmt::Display for CompressionMethod {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Just duplicate what the Debug format looks like, i.e, the enum key:
         write!(f, "{:?}", self)
     }

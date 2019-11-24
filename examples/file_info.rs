@@ -1,5 +1,3 @@
-extern crate zip;
-
 use std::fs;
 use std::io::BufReader;
 
