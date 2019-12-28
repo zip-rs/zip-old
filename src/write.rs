@@ -81,7 +81,7 @@ impl FileOptions {
         FileOptions {
             #[cfg(feature = "deflate")]      compression_method: CompressionMethod::Deflated,
             #[cfg(not(feature = "deflate"))] compression_method: CompressionMethod::Stored,
-            #[cfg(feature = "time")]      last_modified_time: DateTime::from_time(time::now()).unwrap_or(DateTime::default()),
+            #[cfg(feature = "time")]      last_modified_time: DateTime::from_time(time::PrimitiveDateTime::now()).unwrap_or(DateTime::default()),
             #[cfg(not(feature = "time"))] last_modified_time: DateTime::default(),
             permissions: None,
         }

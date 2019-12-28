@@ -106,24 +106,24 @@ impl DateTime {
     }
 
     #[cfg(feature = "time")]
-    /// Converts a ::time::Tm object to a DateTime
+    /// Converts a ::time::PrimitiveDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    pub fn from_time(tm: ::time::Tm) -> Result<DateTime, ()> {
-        if tm.tm_year >= 80 && tm.tm_year <= 207
-            && tm.tm_mon >= 1 && tm.tm_mon <= 31
-            && tm.tm_mday >= 1 && tm.tm_mday <= 31
-            && tm.tm_hour >= 0 && tm.tm_hour <= 23
-            && tm.tm_min >= 0 && tm.tm_min <= 59
-            && tm.tm_sec >= 0 && tm.tm_sec <= 60
+    pub fn from_time(tm: ::time::PrimitiveDateTime) -> Result<DateTime, ()> {
+        if tm.year() >= 80 && tm.year() <= 207
+            && tm.month() >= 1 && tm.month() <= 31
+            && tm.day() >= 1 && tm.day() <= 31
+            && tm.hour() <= 23
+            && tm.minute() <= 59
+            && tm.second() <= 60
         {
             Ok(DateTime {
-                year: (tm.tm_year + 1900) as u16,
-                month: (tm.tm_mon + 1) as u8,
-                day: tm.tm_mday as u8,
-                hour: tm.tm_hour as u8,
-                minute: tm.tm_min as u8,
-                second: tm.tm_sec as u8,
+                year: (tm.year()) as u16,
+                month: (tm.month()) as u8,
+                day: tm.day() as u8,
+                hour: tm.hour() as u8,
+                minute: tm.minute() as u8,
+                second: tm.second() as u8,
             })
         }
         else {
@@ -142,20 +142,14 @@ impl DateTime {
     }
 
     #[cfg(feature = "time")]
-    /// Converts the datetime to a Tm structure
+    /// Converts the datetime to a PrimitiveDateTime structure
     ///
     /// The fields `tm_wday`, `tm_yday`, `tm_utcoff` and `tm_nsec` are set to their defaults.
-    pub fn to_time(&self) -> ::time::Tm {
-        ::time::Tm {
-            tm_sec: self.second as i32,
-            tm_min: self.minute as i32,
-            tm_hour: self.hour as i32,
-            tm_mday: self.day as i32,
-            tm_mon: self.month as i32 - 1,
-            tm_year: self.year as i32 - 1900,
-            tm_isdst: -1,
-            .. ::time::empty_tm()
-        }
+    pub fn to_time(&self) -> Result<::time::PrimitiveDateTime, ()> {
+        Ok(::time::PrimitiveDateTime::new(
+            ::time::Date::try_from_ymd(self.year as i32, self.month as u8, self.day).map_err(|_| ())?,
+            ::time::Time::try_from_hms(self.hour, self.minute, self.second).map_err(|_| ())?
+        ))
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -345,7 +339,7 @@ mod test {
         assert_eq!(dt.second(), 30);
 
         #[cfg(feature = "time")]
-        assert_eq!(format!("{}", dt.to_time().rfc3339()), "2018-11-17T10:38:30Z");
+        assert_eq!(format!("{}", dt.to_time().unwrap().format("%Y-%m-%dT%H:%M:%SZ")), "2018-11-17T10:38:30Z");
     }
 
     #[test]
@@ -360,7 +354,7 @@ mod test {
         assert_eq!(dt.second(), 62);
 
         #[cfg(feature = "time")]
-        assert_eq!(format!("{}", dt.to_time().rfc3339()), "2107-15-31T31:63:62Z");
+        assert!(dt.to_time().is_err());
 
         let dt = DateTime::from_msdos(0x0000, 0x0000);
         assert_eq!(dt.year(), 1980);
@@ -371,6 +365,6 @@ mod test {
         assert_eq!(dt.second(), 0);
 
         #[cfg(feature = "time")]
-        assert_eq!(format!("{}", dt.to_time().rfc3339()), "1980-00-00T00:00:00Z");
+        assert!(dt.to_time().is_err());
     }
 }
