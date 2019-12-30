@@ -251,6 +251,11 @@ impl<R: Read+io::Seek> ZipArchive<R>
         self.offset
     }
 
+    /// Get the comment of the zip archive.
+    pub fn comment(&self) -> &[u8] {
+        &self.comment
+    }
+
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>>
     {
@@ -670,7 +675,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment == b"zip-rs");
+        assert!(reader.comment() == b"zip-rs");
     }
 
     #[test]
