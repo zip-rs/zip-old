@@ -111,7 +111,7 @@ impl DateTime {
     /// Returns `Err` when this object is out of bounds
     pub fn from_time(tm: ::time::Tm) -> Result<DateTime, ()> {
         if tm.tm_year >= 80 && tm.tm_year <= 207
-            && tm.tm_mon >= 1 && tm.tm_mon <= 31
+            && tm.tm_mon >= 0 && tm.tm_mon <= 11
             && tm.tm_mday >= 1 && tm.tm_mday <= 31
             && tm.tm_hour >= 0 && tm.tm_hour <= 23
             && tm.tm_min >= 0 && tm.tm_min <= 59
