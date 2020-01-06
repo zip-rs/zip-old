@@ -111,7 +111,7 @@ impl DateTime {
     /// Returns `Err` when this object is out of bounds
     pub fn from_time(tm: ::time::Tm) -> Result<DateTime, ()> {
         if tm.tm_year >= 80 && tm.tm_year <= 207
-            && tm.tm_mon >= 1 && tm.tm_mon <= 31
+            && tm.tm_mon >= 0 && tm.tm_mon <= 11
             && tm.tm_mday >= 1 && tm.tm_mday <= 31
             && tm.tm_hour >= 0 && tm.tm_hour <= 23
             && tm.tm_min >= 0 && tm.tm_min <= 59
@@ -372,5 +372,16 @@ mod test {
 
         #[cfg(feature = "time")]
         assert_eq!(format!("{}", dt.to_time().rfc3339()), "1980-00-00T00:00:00Z");
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn time_at_january() {
+        use super::DateTime;
+
+        // 2020-01-01 00:00:00
+        let clock = ::time::Timespec::new(1577836800, 0);
+        let tm = ::time::at_utc(clock);
+        assert!(DateTime::from_time(tm).is_ok());
     }
 }
