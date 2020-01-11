@@ -57,6 +57,7 @@ pub struct ZipWriter<W: Write + io::Seek>
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
+    comment: String,
 }
 
 #[derive(Default)]
@@ -174,7 +175,13 @@ impl<W: Write+io::Seek> ZipWriter<W>
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
+            comment: "zip-rs".into(),
         }
+    }
+
+    /// Set ZIP archive comment. Defaults to 'zip-rs' if not set.
+    pub fn set_comment<S>(&mut self, comment: S) where S: Into<String> {
+        self.comment = comment.into();
     }
 
     /// Start a new file for with the requested options.
@@ -333,7 +340,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 number_of_files: self.files.len() as u16,
                 central_directory_size: central_size as u32,
                 central_directory_offset: central_start as u32,
-                zip_file_comment: b"zip-rs".to_vec(),
+                zip_file_comment: self.comment.as_bytes().to_vec(),
             };
 
             footer.write(writer)?;
@@ -564,9 +571,10 @@ mod test {
     #[test]
     fn write_empty_zip() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.set_comment("ZIP");
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 28);
-        assert_eq!(*result.get_ref(), [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115]);
+        assert_eq!(result.get_ref().len(), 25);
+        assert_eq!(*result.get_ref(), [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 90, 73, 80]);
     }
 
     #[test]
