@@ -333,6 +333,60 @@ mod test {
         assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
     }
 
+    #[cfg(feature = "time")]
+    #[test]
+    fn datetime_from_time_bounds() {
+        use super::DateTime;
+
+        // 1979-12-31 23:59:59
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 59,
+            tm_min: 59,
+            tm_hour: 23,
+            tm_mday: 31,
+            tm_mon: 11,  // tm_mon has number range [0, 11]
+            tm_year: 79, // 1979 - 1900 = 79
+            ..::time::empty_tm()
+        })
+        .is_err());
+
+        // 1980-01-01 00:00:00
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 1,
+            tm_mon: 0,   // tm_mon has number range [0, 11]
+            tm_year: 80, // 1980 - 1900 = 80
+            ..::time::empty_tm()
+        })
+        .is_ok());
+
+        // 2107-12-31 23:59:59
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 59,
+            tm_min: 59,
+            tm_hour: 23,
+            tm_mday: 31,
+            tm_mon: 11,   // tm_mon has number range [0, 11]
+            tm_year: 207, // 2107 - 1900 = 207
+            ..::time::empty_tm()
+        })
+        .is_ok());
+
+        // 2108-01-01 00:00:00
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 1,
+            tm_mon: 0,    // tm_mon has number range [0, 11]
+            tm_year: 208, // 2108 - 1900 = 208
+            ..::time::empty_tm()
+        })
+        .is_err());
+    }
+
     #[test]
     fn time_conversion() {
         use super::DateTime;
