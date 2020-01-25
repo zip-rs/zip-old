@@ -256,6 +256,11 @@ impl<R: Read+io::Seek> ZipArchive<R>
         &self.comment
     }
 
+    /// Returns an iterator over all the file and directory names in this archive.
+    pub fn file_names(&self) -> impl Iterator<Item = &str> {
+        self.names_map.keys().map(|s| s.as_str())
+    }
+
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>>
     {
