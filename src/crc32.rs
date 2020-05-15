@@ -50,3 +50,40 @@ impl<R: Read> Read for Crc32Reader<R>
         Ok(count)
     }
 }
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use std::io::Read;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_empty_reader()
+    {
+        let data: &[u8] = b"";
+        let mut buf = [0; 1];
+
+        let mut reader = Crc32Reader::new(data, 0);
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+
+        let mut reader = Crc32Reader::new(data, 1);
+        assert!(reader.read(&mut buf).unwrap_err().to_string().contains("Invalid checksum"));
+    }
+
+    #[test]
+    fn test_byte_by_byte()
+    {
+        let data: &[u8] = b"1234";
+        let mut buf = [0; 1];
+
+        let mut reader = Crc32Reader::new(data, 0x9be3e0a3);
+        assert_eq!(reader.read(&mut buf).unwrap(), 1);
+        assert_eq!(reader.read(&mut buf).unwrap(), 1);
+        assert_eq!(reader.read(&mut buf).unwrap(), 1);
+        assert_eq!(reader.read(&mut buf).unwrap(), 1);
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+        // Can keep reading 0 bytes after the end
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+    }
+}
