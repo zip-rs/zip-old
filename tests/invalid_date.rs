@@ -1,5 +1,3 @@
-extern crate zip;
-
 use zip::read::ZipArchive;
 use std::io::Cursor;
 

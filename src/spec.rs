@@ -1,6 +1,6 @@
 use std::io;
 use std::io::prelude::*;
-use result::{ZipResult, ZipError};
+use crate::result::{ZipResult, ZipError};
 use podio::{ReadPodExt, WritePodExt, LittleEndian};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE : u32 = 0x04034b50;

@@ -111,7 +111,7 @@ impl DateTime {
     /// Returns `Err` when this object is out of bounds
     pub fn from_time(tm: ::time::Tm) -> Result<DateTime, ()> {
         if tm.tm_year >= 80 && tm.tm_year <= 207
-            && tm.tm_mon >= 1 && tm.tm_mon <= 31
+            && tm.tm_mon >= 0 && tm.tm_mon <= 11
             && tm.tm_mday >= 1 && tm.tm_mday <= 31
             && tm.tm_hour >= 0 && tm.tm_hour <= 23
             && tm.tm_min >= 0 && tm.tm_min <= 59
@@ -202,7 +202,7 @@ pub struct ZipFileData
     /// True if the file is encrypted.
     pub encrypted: bool,
     /// Compression method used to store the file
-    pub compression_method: ::compression::CompressionMethod,
+    pub compression_method: crate::compression::CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: DateTime,
     /// CRC32 checksum
@@ -258,7 +258,7 @@ impl ZipFileData {
     pub fn version_needed(&self) -> u16 {
         match self.compression_method {
             #[cfg(feature = "bzip2")]
-            ::compression::CompressionMethod::Bzip2 => 46,
+            crate::compression::CompressionMethod::Bzip2 => 46,
             _ => 20,
         }
     }
@@ -283,7 +283,7 @@ mod test {
             system: System::Dos,
             version_made_by: 0,
             encrypted: false,
-            compression_method: ::compression::CompressionMethod::Stored,
+            compression_method: crate::compression::CompressionMethod::Stored,
             last_modified_time: DateTime::default(),
             crc32: 0,
             compressed_size: 0,
@@ -333,6 +333,60 @@ mod test {
         assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
     }
 
+    #[cfg(feature = "time")]
+    #[test]
+    fn datetime_from_time_bounds() {
+        use super::DateTime;
+
+        // 1979-12-31 23:59:59
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 59,
+            tm_min: 59,
+            tm_hour: 23,
+            tm_mday: 31,
+            tm_mon: 11,  // tm_mon has number range [0, 11]
+            tm_year: 79, // 1979 - 1900 = 79
+            ..::time::empty_tm()
+        })
+        .is_err());
+
+        // 1980-01-01 00:00:00
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 1,
+            tm_mon: 0,   // tm_mon has number range [0, 11]
+            tm_year: 80, // 1980 - 1900 = 80
+            ..::time::empty_tm()
+        })
+        .is_ok());
+
+        // 2107-12-31 23:59:59
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 59,
+            tm_min: 59,
+            tm_hour: 23,
+            tm_mday: 31,
+            tm_mon: 11,   // tm_mon has number range [0, 11]
+            tm_year: 207, // 2107 - 1900 = 207
+            ..::time::empty_tm()
+        })
+        .is_ok());
+
+        // 2108-01-01 00:00:00
+        assert!(DateTime::from_time(::time::Tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 1,
+            tm_mon: 0,    // tm_mon has number range [0, 11]
+            tm_year: 208, // 2108 - 1900 = 208
+            ..::time::empty_tm()
+        })
+        .is_err());
+    }
+
     #[test]
     fn time_conversion() {
         use super::DateTime;
@@ -372,5 +426,16 @@ mod test {
 
         #[cfg(feature = "time")]
         assert_eq!(format!("{}", dt.to_time().rfc3339()), "1980-00-00T00:00:00Z");
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn time_at_january() {
+        use super::DateTime;
+
+        // 2020-01-01 00:00:00
+        let clock = ::time::Timespec::new(1577836800, 0);
+        let tm = ::time::at_utc(clock);
+        assert!(DateTime::from_time(tm).is_ok());
     }
 }

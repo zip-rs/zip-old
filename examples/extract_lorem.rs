@@ -1,7 +1,5 @@
 use std::io::prelude::*;
 
-extern crate zip;
-
 fn main()
 {
     std::process::exit(real_main());

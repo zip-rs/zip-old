@@ -41,7 +41,7 @@ fn to_char(input: u8) -> char
 {
     let output = match input
     {
-        0x00 ... 0x7f => input as u32,
+        0x00 ..= 0x7f => input as u32,
         0x80 => 0x00c7,
         0x81 => 0x00fc,
         0x82 => 0x00e9,

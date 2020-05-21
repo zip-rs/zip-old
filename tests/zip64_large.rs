@@ -53,9 +53,6 @@
 // 22c400260  00 00 50 4b 05 06 00 00  00 00 03 00 03 00 27 01  |..PK..........'.|
 // 22c400270  00 00 ff ff ff ff 00 00                           |........|
 // 22c400278
-
-extern crate zip;
-
 use std::io::{self, Seek, SeekFrom, Read};
 
 const BLOCK1_LENGTH : u64 = 0x60;
@@ -167,16 +164,16 @@ impl Read for Zip64File {
             return Ok(0);
         }
         match self.pointer {
-            BLOCK1_START ... BLOCK1_END => {
+            BLOCK1_START ..= BLOCK1_END => {
                 buf[0] = BLOCK1[(self.pointer - BLOCK1_START) as usize];
             },
-            BLOCK2_START ... BLOCK2_END => {
+            BLOCK2_START ..= BLOCK2_END => {
                 buf[0] = BLOCK2[(self.pointer - BLOCK2_START) as usize];
             },
-            BLOCK3_START ... BLOCK3_END => {
+            BLOCK3_START ..= BLOCK3_END => {
                 buf[0] = BLOCK3[(self.pointer - BLOCK3_START) as usize];
             },
-            BLOCK4_START ... BLOCK4_END => {
+            BLOCK4_START ..= BLOCK4_END => {
                 buf[0] = BLOCK4[(self.pointer - BLOCK4_START) as usize];
             },
             _ => {

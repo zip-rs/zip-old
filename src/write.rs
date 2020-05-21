@@ -1,25 +1,19 @@
 //! Structs for creating a new zip archive
 
-use compression::CompressionMethod;
-use types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
-use spec;
+use crate::compression::CompressionMethod;
+use crate::types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
+use crate::spec;
 use crc32fast::Hasher;
-use result::{ZipResult, ZipError};
+use crate::result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
-#[cfg(feature = "time")]
-use time;
 use podio::{WritePodExt, LittleEndian};
 
 #[cfg(feature = "deflate")]
-use flate2;
-#[cfg(feature = "deflate")]
 use flate2::write::DeflateEncoder;
 
-#[cfg(feature = "bzip2")]
-use bzip2;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
@@ -63,6 +57,7 @@ pub struct ZipWriter<W: Write + io::Seek>
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
+    comment: String,
 }
 
 #[derive(Default)]
@@ -180,7 +175,13 @@ impl<W: Write+io::Seek> ZipWriter<W>
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
+            comment: "zip-rs".into(),
         }
+    }
+
+    /// Set ZIP archive comment. Defaults to 'zip-rs' if not set.
+    pub fn set_comment<S>(&mut self, comment: S) where S: Into<String> {
+        self.comment = comment.into();
     }
 
     /// Start a new file for with the requested options.
@@ -339,7 +340,7 @@ impl<W: Write+io::Seek> ZipWriter<W>
                 number_of_files: self.files.len() as u16,
                 central_directory_size: central_size as u32,
                 central_directory_offset: central_start as u32,
-                zip_file_comment: b"zip-rs".to_vec(),
+                zip_file_comment: self.comment.as_bytes().to_vec(),
             };
 
             footer.write(writer)?;
@@ -395,13 +396,13 @@ impl<W: Write+io::Seek> GenericZipWriter<W>
         Ok(())
     }
 
-    fn ref_mut(&mut self) -> Option<&mut Write> {
+    fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match *self {
-            GenericZipWriter::Storer(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate")]
-            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut Write),
+            GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             GenericZipWriter::Closed => None,
         }
     }
@@ -563,16 +564,17 @@ fn path_to_string(path: &std::path::Path) -> String {
 mod test {
     use std::io;
     use std::io::Write;
-    use types::DateTime;
+    use crate::types::DateTime;
     use super::{FileOptions, ZipWriter};
-    use compression::CompressionMethod;
+    use crate::compression::CompressionMethod;
 
     #[test]
     fn write_empty_zip() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.set_comment("ZIP");
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 28);
-        assert_eq!(*result.get_ref(), [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115]);
+        assert_eq!(result.get_ref().len(), 25);
+        assert_eq!(*result.get_ref(), [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 90, 73, 80]);
     }
 
     #[test]
