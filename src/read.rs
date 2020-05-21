@@ -144,11 +144,11 @@ fn make_reader<'a>(
     reader: io::Take<&'a mut dyn io::Read>,
     password: Option<&[u8]>)
         -> ZipResult<ZipFileReader<'a>> {
-    
+
     let reader = match password
     {
         None => CryptoReader::Plaintext(reader),
-        Some(password) => 
+        Some(password) =>
         {
             match ZipCryptoReader::new(reader, password).validate(crc32)?
             {
@@ -157,7 +157,7 @@ fn make_reader<'a>(
             }
         }
     };
-    
+
     match compression_method
     {
         CompressionMethod::Stored =>
@@ -353,7 +353,7 @@ impl<R: Read+io::Seek> ZipArchive<R>
         };
         self.by_index_internal(index, password)
     }
-    
+
     /// Get a contained file by index, decrypt with given password
     pub fn by_index_decrypt<'a>(&'a mut self, file_number: usize, password: &[u8]) -> ZipResult<ZipFile<'a>>
     {
@@ -365,12 +365,12 @@ impl<R: Read+io::Seek> ZipArchive<R>
     {
         self.by_index_internal(file_number, None)
     }
-    
+
     fn by_index_internal<'a>(&'a mut self, file_number: usize, mut password: Option<&[u8]>) -> ZipResult<ZipFile<'a>>
     {
         if file_number >= self.files.len() { return Err(ZipError::FileNotFound); }
         let ref mut data = self.files[file_number];
-        
+
         if password == None
         {
             if data.encrypted
@@ -623,7 +623,7 @@ impl<'a> Drop for ZipFile<'a> {
 
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
             let innerreader = ::std::mem::replace(&mut self.reader, ZipFileReader::NoReader);
-            let mut reader : std::io::Take<&mut dyn std::io::Read> = 
+            let mut reader : std::io::Take<&mut dyn std::io::Read> =
                 innerreader.into_inner();
 
             loop {

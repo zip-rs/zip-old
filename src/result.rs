@@ -23,10 +23,10 @@ pub enum ZipError
 
     /// The requested file could not be found in the archive
     FileNotFound,
-    
+
     /// No password was given but the data is encrypted
     PasswordRequired,
-    
+
     /// The given password is wrong
     InvalidPassword,
 }
