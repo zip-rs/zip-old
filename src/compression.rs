@@ -8,8 +8,12 @@ pub enum CompressionMethod
 {
     /// The file is stored (no compression)
     Stored,
-    /// Deflate in pure rust
-    #[cfg(feature = "deflate")]
+    /// Deflate using any flate2 backend
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
     Deflated,
     /// File is compressed using BZIP2 algorithm
     #[cfg(feature = "bzip2")]
@@ -23,7 +27,11 @@ impl CompressionMethod {
     pub fn from_u16(val: u16) -> CompressionMethod {
         match val {
             0 => CompressionMethod::Stored,
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
@@ -35,7 +43,11 @@ impl CompressionMethod {
     pub fn to_u16(self) -> u16 {
         match self {
             CompressionMethod::Stored => 0,
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
@@ -68,7 +80,12 @@ mod test {
     fn methods() -> Vec<CompressionMethod> {
         let mut methods = Vec::new();
         methods.push(CompressionMethod::Stored);
-        #[cfg(feature="deflate")] methods.push(CompressionMethod::Deflated);
+        #[cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib"
+        ))]
+        methods.push(CompressionMethod::Deflated);
         #[cfg(feature="bzip2")] methods.push(CompressionMethod::Bzip2);
         methods
     }
