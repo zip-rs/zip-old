@@ -56,7 +56,6 @@ mod test
 {
     use super::*;
     use std::io::Read;
-    use std::io::Cursor;
 
     #[test]
     fn test_empty_reader()
