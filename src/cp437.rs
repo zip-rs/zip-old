@@ -29,7 +29,7 @@ impl FromCp437 for Vec<u8> {
         if self.iter().all(|c| *c < 0x80) {
             String::from_utf8(self).unwrap()
         } else {
-            self.into_iter().map(|c| to_char(c)).collect()
+            self.into_iter().map(to_char).collect()
         }
     }
 }

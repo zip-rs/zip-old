@@ -35,13 +35,13 @@ impl CentralDirectoryEnd {
         let zip_file_comment = ReadPodExt::read_exact(reader, zip_file_comment_length)?;
 
         Ok(CentralDirectoryEnd {
-            disk_number: disk_number,
-            disk_with_central_directory: disk_with_central_directory,
-            number_of_files_on_this_disk: number_of_files_on_this_disk,
-            number_of_files: number_of_files,
-            central_directory_size: central_directory_size,
-            central_directory_offset: central_directory_offset,
-            zip_file_comment: zip_file_comment,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment,
         })
     }
 
@@ -52,9 +52,7 @@ impl CentralDirectoryEnd {
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = file_length
-            .checked_sub(HEADER_SIZE + ::std::u16::MAX as u64)
-            .unwrap_or(0);
+        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + ::std::u16::MAX as u64);
 
         if file_length < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
@@ -116,9 +114,9 @@ impl Zip64CentralDirectoryEndLocator {
         let number_of_disks = reader.read_u32::<LittleEndian>()?;
 
         Ok(Zip64CentralDirectoryEndLocator {
-            disk_with_central_directory: disk_with_central_directory,
-            end_of_central_directory_offset: end_of_central_directory_offset,
-            number_of_disks: number_of_disks,
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
         })
     }
 }
@@ -163,14 +161,14 @@ impl Zip64CentralDirectoryEnd {
 
                 return Ok((
                     Zip64CentralDirectoryEnd {
-                        version_made_by: version_made_by,
-                        version_needed_to_extract: version_needed_to_extract,
-                        disk_number: disk_number,
-                        disk_with_central_directory: disk_with_central_directory,
-                        number_of_files_on_this_disk: number_of_files_on_this_disk,
-                        number_of_files: number_of_files,
-                        central_directory_size: central_directory_size,
-                        central_directory_offset: central_directory_offset,
+                        version_made_by,
+                        version_needed_to_extract,
+                        disk_number,
+                        disk_with_central_directory,
+                        number_of_files_on_this_disk,
+                        number_of_files,
+                        central_directory_size,
+                        central_directory_offset,
                     },
                     archive_offset,
                 ));

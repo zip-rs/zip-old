@@ -1,12 +1,11 @@
 //! Types that specify what is contained in a ZIP.
 
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System {
     Dos = 0,
     Unix = 3,
     Unknown,
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl System {
@@ -100,12 +99,12 @@ impl DateTime {
             && second <= 60
         {
             Ok(DateTime {
-                year: year,
-                month: month,
-                day: day,
-                hour: hour,
-                minute: minute,
-                second: second,
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
             })
         } else {
             Err(())
@@ -250,7 +249,7 @@ impl ZipFileData {
         let separator = ::std::path::MAIN_SEPARATOR;
         let opposite_separator = match separator {
             '/' => '\\',
-            '\\' | _ => '/',
+            _ => '/',
         };
         let filename =
             no_null_filename.replace(&opposite_separator.to_string(), &separator.to_string());

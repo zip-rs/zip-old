@@ -16,7 +16,7 @@ impl<R> Crc32Reader<R> {
     /// Get a new Crc32Reader which check the inner reader against checksum.
     pub fn new(inner: R, checksum: u32) -> Crc32Reader<R> {
         Crc32Reader {
-            inner: inner,
+            inner,
             hasher: Hasher::new(),
             check: checksum,
         }

@@ -82,7 +82,7 @@ impl FileOptions {
             #[cfg(not(feature = "deflate"))]
             compression_method: CompressionMethod::Stored,
             #[cfg(feature = "time")]
-            last_modified_time: DateTime::from_time(time::now()).unwrap_or(DateTime::default()),
+            last_modified_time: DateTime::from_time(time::now()).unwrap_or_default(),
             #[cfg(not(feature = "time"))]
             last_modified_time: DateTime::default(),
             permissions: None,
@@ -211,10 +211,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: file_name,
-                file_name_raw: file_name_raw,
+                file_name,
+                file_name_raw,
                 file_comment: String::new(),
-                header_start: header_start,
+                header_start,
                 data_start: 0,
                 external_attributes: permissions << 16,
             };
@@ -316,7 +316,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         path: &std::path::Path,
         options: FileOptions,
     ) -> ZipResult<()> {
-        self.add_directory(path_to_string(path.into()), options)
+        self.add_directory(path_to_string(path), options)
     }
 
     /// Finish the last file and write all other zip-structures
@@ -372,10 +372,13 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
     fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()> {
         match self.current_compression() {
             Some(method) if method == compression => return Ok(()),
-            None => Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "ZipWriter was already closed",
-            ))?,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "ZipWriter was already closed",
+                )
+                .into())
+            }
             _ => {}
         }
 
@@ -385,10 +388,13 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
-            GenericZipWriter::Closed => Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "ZipWriter was already closed",
-            ))?,
+            GenericZipWriter::Closed => {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "ZipWriter was already closed",
+                )
+                .into())
+            }
         };
 
         *self = match compression {
@@ -562,14 +568,11 @@ fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>> {
 fn path_to_string(path: &std::path::Path) -> String {
     let mut path_str = String::new();
     for component in path.components() {
-        match component {
-            std::path::Component::Normal(os_str) => {
-                if path_str.len() != 0 {
-                    path_str.push('/');
-                }
-                path_str.push_str(&*os_str.to_string_lossy());
+        if let std::path::Component::Normal(os_str) = component {
+            if !path_str.is_empty() {
+                path_str.push('/');
             }
-            _ => (),
+            path_str.push_str(&*os_str.to_string_lossy());
         }
     }
     path_str
