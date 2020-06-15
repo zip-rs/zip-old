@@ -2,16 +2,16 @@
 
 #![warn(missing_docs)]
 
-pub use crate::read::ZipArchive;
-pub use crate::write::ZipWriter;
 pub use crate::compression::CompressionMethod;
+pub use crate::read::ZipArchive;
 pub use crate::types::DateTime;
+pub use crate::write::ZipWriter;
 
-mod spec;
-mod crc32;
-mod types;
-pub mod read;
 mod compression;
-pub mod write;
 mod cp437;
+mod crc32;
+pub mod read;
 pub mod result;
+mod spec;
+mod types;
+pub mod write;
