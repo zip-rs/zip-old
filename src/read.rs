@@ -11,7 +11,7 @@ use std::io::prelude::*;
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
-use podio::{LittleEndian, ReadPodExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 
 #[cfg(feature = "deflate")]
 use flate2::read::DeflateDecoder;
@@ -341,9 +341,12 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
     let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
     let external_file_attributes = reader.read_u32::<LittleEndian>()?;
     let offset = reader.read_u32::<LittleEndian>()? as u64;
-    let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
-    let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
-    let file_comment_raw = ReadPodExt::read_exact(reader, file_comment_length)?;
+    let mut file_name_raw = vec![0; file_name_length];
+    reader.read_exact(&mut file_name_raw)?;
+    let mut extra_field = vec![0; extra_field_length];
+    reader.read_exact(&mut extra_field)?;
+    let mut file_comment_raw = vec![0; file_comment_length];
+    reader.read_exact(&mut file_comment_raw)?;
 
     let file_name = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
@@ -621,8 +624,10 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
     let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
 
-    let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
-    let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
+    let mut file_name_raw = vec![0; file_name_length];
+    reader.read_exact(&mut file_name_raw)?;
+    let mut extra_field = vec![0; extra_field_length];
+    reader.read_exact(&mut extra_field)?;
 
     let file_name = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
