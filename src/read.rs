@@ -26,10 +26,9 @@ mod ffi {
 
 /// Wrapper for reading the contents of a ZIP file.
 ///
-/// ```
-/// fn doit() -> zip::result::ZipResult<()>
-/// {
-///     use std::io::prelude::*;
+/// ```no_run
+/// use std::io::prelude::*;
+/// fn main() -> zip::result::ZipResult<()> {
 ///
 ///     // For demonstration purposes we read from an empty buffer.
 ///     // Normally a File object would be used.
@@ -38,8 +37,7 @@ mod ffi {
 ///
 ///     let mut zip = zip::ZipArchive::new(reader)?;
 ///
-///     for i in 0..zip.len()
-///     {
+///     for i in 0..zip.len() {
 ///         let mut file = zip.by_index(i).unwrap();
 ///         println!("Filename: {}", file.name());
 ///         let first_byte = file.bytes().next().unwrap()?;
@@ -47,8 +45,6 @@ mod ffi {
 ///     }
 ///     Ok(())
 /// }
-///
-/// println!("Result: {:?}", doit());
 /// ```
 #[derive(Clone, Debug)]
 pub struct ZipArchive<R: Read + io::Seek> {
@@ -57,49 +53,6 @@ pub struct ZipArchive<R: Read + io::Seek> {
     names_map: HashMap<String, usize>,
     offset: u64,
     comment: Vec<u8>,
-}
-
-enum ZipFileReader<'a> {
-    NoReader,
-    Stored(Crc32Reader<io::Take<&'a mut dyn Read>>),
-    #[cfg(feature = "deflate")]
-    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut dyn Read>>>),
-    #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut dyn Read>>>),
-}
-
-/// A struct for reading a zip file
-pub struct ZipFile<'a> {
-    data: Cow<'a, ZipFileData>,
-    reader: ZipFileReader<'a>,
-}
-
-fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
-    Err(ZipError::UnsupportedArchive(detail))
-}
-
-fn make_reader<'a>(
-    compression_method: crate::compression::CompressionMethod,
-    crc32: u32,
-    reader: io::Take<&'a mut dyn io::Read>,
-) -> ZipResult<ZipFileReader<'a>> {
-    match compression_method {
-        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32))),
-        #[cfg(feature = "deflate")]
-        CompressionMethod::Deflated => {
-            let deflate_reader = DeflateDecoder::new(reader);
-            Ok(ZipFileReader::Deflated(Crc32Reader::new(
-                deflate_reader,
-                crc32,
-            )))
-        }
-        #[cfg(feature = "bzip2")]
-        CompressionMethod::Bzip2 => {
-            let bzip2_reader = BzDecoder::new(reader);
-            Ok(ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32)))
-        }
-        _ => unsupported_zip_error("Compression method not supported"),
-    }
 }
 
 impl<R: Read + io::Seek> ZipArchive<R> {
@@ -235,14 +188,12 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
     /// Number of files contained in this zip.
     ///
-    /// ```
-    /// fn iter() {
-    ///     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
+    /// ```no_run
+    /// let mut zip = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
     ///
-    ///     for i in 0..zip.len() {
-    ///         let mut file = zip.by_index(i).unwrap();
-    ///         // Do something with file i
-    ///     }
+    /// for i in 0..zip.len() {
+    ///     let mut file = zip.by_index(i).unwrap();
+    ///     // Do something with file i
     /// }
     /// ```
     pub fn len(&self) -> usize {
@@ -322,6 +273,43 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// The position of the reader is undefined.
     pub fn into_inner(self) -> R {
         self.reader
+    }
+}
+
+enum ZipFileReader<'a> {
+    NoReader,
+    Stored(Crc32Reader<io::Take<&'a mut dyn Read>>),
+    #[cfg(feature = "deflate")]
+    Deflated(Crc32Reader<flate2::read::DeflateDecoder<io::Take<&'a mut dyn Read>>>),
+    #[cfg(feature = "bzip2")]
+    Bzip2(Crc32Reader<BzDecoder<io::Take<&'a mut dyn Read>>>),
+}
+
+fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
+    Err(ZipError::UnsupportedArchive(detail))
+}
+
+fn make_reader<'a>(
+    compression_method: crate::compression::CompressionMethod,
+    crc32: u32,
+    reader: io::Take<&'a mut dyn io::Read>,
+) -> ZipResult<ZipFileReader<'a>> {
+    match compression_method {
+        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32))),
+        #[cfg(feature = "deflate")]
+        CompressionMethod::Deflated => {
+            let deflate_reader = DeflateDecoder::new(reader);
+            Ok(ZipFileReader::Deflated(Crc32Reader::new(
+                deflate_reader,
+                crc32,
+            )))
+        }
+        #[cfg(feature = "bzip2")]
+        CompressionMethod::Bzip2 => {
+            let bzip2_reader = BzDecoder::new(reader);
+            Ok(ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32)))
+        }
+        _ => unsupported_zip_error("Compression method not supported"),
     }
 }
 
@@ -439,11 +427,18 @@ fn get_reader<'a>(reader: &'a mut ZipFileReader<'_>) -> &'a mut dyn Read {
     }
 }
 
+/// A struct for reading a zip file
+pub struct ZipFile<'a> {
+    data: Cow<'a, ZipFileData>,
+    reader: ZipFileReader<'a>,
+}
+
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> &mut dyn Read {
         get_reader(&mut self.reader)
     }
+
     /// Get the version of the file
     pub fn version_made_by(&self) -> (u8, u8) {
         (
@@ -451,35 +446,43 @@ impl<'a> ZipFile<'a> {
             self.data.version_made_by % 10,
         )
     }
+
     /// Get the name of the file
     pub fn name(&self) -> &str {
-        &*self.data.file_name
+        &self.data.file_name
     }
+
     /// Get the name of the file, in the raw (internal) byte representation.
     pub fn name_raw(&self) -> &[u8] {
-        &*self.data.file_name_raw
+        &self.data.file_name_raw
     }
+
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
     /// removes a leading '/' and removes '..' parts.
     pub fn sanitized_name(&self) -> ::std::path::PathBuf {
         self.data.file_name_sanitized()
     }
+
     /// Get the comment of the file
     pub fn comment(&self) -> &str {
-        &*self.data.file_comment
+        &self.data.file_comment
     }
+
     /// Get the compression method used to store the file
     pub fn compression(&self) -> CompressionMethod {
         self.data.compression_method
     }
+
     /// Get the size of the file in the archive
     pub fn compressed_size(&self) -> u64 {
         self.data.compressed_size
     }
+
     /// Get the size of the file when uncompressed
     pub fn size(&self) -> u64 {
         self.data.uncompressed_size
     }
+
     /// Get the time the file was last modified
     pub fn last_modified(&self) -> DateTime {
         self.data.last_modified_time
@@ -492,10 +495,12 @@ impl<'a> ZipFile<'a> {
             .next()
             .map_or(false, |c| c == '/' || c == '\\')
     }
+
     /// Returns whether the file is a regular file
     pub fn is_file(&self) -> bool {
         !self.is_dir()
     }
+
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
         if self.data.external_attributes == 0 {
@@ -520,6 +525,7 @@ impl<'a> ZipFile<'a> {
             _ => None,
         }
     }
+
     /// Get the CRC32 hash of the original file
     pub fn crc32(&self) -> u32 {
         self.data.crc32
