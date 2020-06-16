@@ -6,8 +6,8 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::{self, prelude::*};
 use std::fs;
+use std::io::{self, prelude::*};
 use std::path::Path;
 
 use crate::cp437::FromCp437;
