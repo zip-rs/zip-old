@@ -14,11 +14,19 @@ pub enum CompressionMethod {
     #[cfg(feature = "bzip2")]
     Bzip2,
     /// Unsupported compression method
+    #[deprecated(
+        since = "0.5.7",
+        note = "implementation details are being removed from the public API"
+    )]
     Unsupported(u16),
 }
 
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
+    #[deprecated(
+        since = "0.5.7",
+        note = "implementation details are being removed from the public API"
+    )]
     pub fn from_u16(val: u16) -> CompressionMethod {
         match val {
             0 => CompressionMethod::Stored,
@@ -31,6 +39,10 @@ impl CompressionMethod {
     }
 
     /// Converts a CompressionMethod to a u16
+    #[deprecated(
+        since = "0.5.7",
+        note = "implementation details are being removed from the public API"
+    )]
     pub fn to_u16(self) -> u16 {
         match self {
             CompressionMethod::Stored => 0,
