@@ -34,6 +34,7 @@ impl CompressionMethod {
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
+            #[allow(deprecated)]
             v => CompressionMethod::Unsupported(v),
         }
     }
@@ -50,6 +51,7 @@ impl CompressionMethod {
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
+            #[allow(deprecated)]
             CompressionMethod::Unsupported(v) => v,
         }
     }
@@ -69,7 +71,9 @@ mod test {
     #[test]
     fn from_eq_to() {
         for v in 0..(::std::u16::MAX as u32 + 1) {
+            #[allow(deprecated)]
             let from = CompressionMethod::from_u16(v as u16);
+            #[allow(deprecated)]
             let to = from.to_u16() as u32;
             assert_eq!(v, to);
         }
@@ -88,8 +92,11 @@ mod test {
     #[test]
     fn to_eq_from() {
         fn check_match(method: CompressionMethod) {
+            #[allow(deprecated)]
             let to = method.to_u16();
+            #[allow(deprecated)]
             let from = CompressionMethod::from_u16(to);
+            #[allow(deprecated)]
             let back = from.to_u16();
             assert_eq!(to, back);
         }
