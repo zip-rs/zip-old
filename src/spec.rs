@@ -1,5 +1,5 @@
 use crate::result::{ZipError, ZipResult};
-use podio::{LittleEndian, ReadPodExt, WritePodExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
 use std::io::prelude::*;
 
@@ -32,7 +32,8 @@ impl CentralDirectoryEnd {
         let central_directory_size = reader.read_u32::<LittleEndian>()?;
         let central_directory_offset = reader.read_u32::<LittleEndian>()?;
         let zip_file_comment_length = reader.read_u16::<LittleEndian>()? as usize;
-        let zip_file_comment = ReadPodExt::read_exact(reader, zip_file_comment_length)?;
+        let mut zip_file_comment = vec![0; zip_file_comment_length];
+        reader.read_exact(&mut zip_file_comment)?;
 
         Ok(CentralDirectoryEnd {
             disk_number,
