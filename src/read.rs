@@ -338,7 +338,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
     let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
     let file_comment_length = reader.read_u16::<LittleEndian>()? as usize;
     let _disk_number = reader.read_u16::<LittleEndian>()?;
-    let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
+    let internal_file_attributes = reader.read_u16::<LittleEndian>()?;
     let external_file_attributes = reader.read_u32::<LittleEndian>()?;
     let offset = reader.read_u32::<LittleEndian>()? as u64;
     let mut file_name_raw = vec![0; file_name_length];
@@ -372,6 +372,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         file_comment,
         header_start: offset,
         data_start: 0,
+        internal_attributes: internal_file_attributes,
         external_attributes: external_file_attributes,
     };
 
@@ -650,9 +651,10 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // not available.
         header_start: 0,
         data_start: 0,
-        // The external_attributes field is only available in the central directory.
+        // The internal and external_attributes field is only available in the central directory.
         // We set this to zero, which should be valid as the docs state 'If input came
         // from standard input, this field is set to zero.'
+        internal_attributes: 0,
         external_attributes: 0,
     };
 

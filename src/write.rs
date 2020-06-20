@@ -63,6 +63,7 @@ struct ZipWriterStats {
     hasher: Hasher,
     start: u64,
     bytes_written: u64,
+    is_text: bool,
 }
 
 /// Metadata for a file to be written
@@ -132,6 +133,13 @@ impl<W: Write + io::Seek> Write for ZipWriter<W> {
                 io::ErrorKind::Other,
                 "No file has been started",
             ));
+        }
+
+        // Check if the buffer is text (UTF8) or contains binary data. Note that if an UTF8
+        // character is split between to calls to write, this will falsly mark it as binary.
+        // For ASCII characters, this is always correct.
+        if self.stats.is_text == true && std::str::from_utf8(buf).is_err() {
+            self.stats.is_text = false;
         }
         match self.inner.ref_mut() {
             Some(ref mut w) => {
@@ -216,6 +224,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 file_comment: String::new(),
                 header_start,
                 data_start: 0,
+                internal_attributes: 0,
                 external_attributes: permissions << 16,
             };
             write_local_file_header(writer, &file)?;
@@ -226,6 +235,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
+            self.stats.is_text = true;
 
             self.files.push(file);
         }
@@ -248,6 +258,9 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
         let file_end = writer.seek(io::SeekFrom::Current(0))?;
         file.compressed_size = file_end - self.stats.start;
+        if self.stats.is_text && file.uncompressed_size > 0 {
+            file.internal_attributes |= 1;
+        }
 
         update_local_file_header(writer, file)?;
         writer.seek(io::SeekFrom::Start(file_end))?;
@@ -544,7 +557,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // disk number start
     writer.write_u16::<LittleEndian>(0)?;
     // internal file attribytes
-    writer.write_u16::<LittleEndian>(0)?;
+    writer.write_u16::<LittleEndian>(file.internal_attributes)?;
     // external file attributes
     writer.write_u32::<LittleEndian>(file.external_attributes)?;
     // relative offset of local header
