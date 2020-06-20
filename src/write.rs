@@ -408,6 +408,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             CompressionMethod::Bzip2 => {
                 GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
             }
+            #[allow(deprecated)]
             CompressionMethod::Unsupported(..) => {
                 return Err(ZipError::UnsupportedArchive("Unsupported compression"))
             }
@@ -473,6 +474,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     };
     writer.write_u16::<LittleEndian>(flag)?;
     // Compression method
+    #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time and last mod file date
     writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
@@ -524,6 +526,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     };
     writer.write_u16::<LittleEndian>(flag)?;
     // compression method
+    #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time + date
     writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;

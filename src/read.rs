@@ -362,7 +362,10 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         system: System::from_u8((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
         encrypted,
-        compression_method: CompressionMethod::from_u16(compression_method),
+        compression_method: {
+            #[allow(deprecated)]
+            CompressionMethod::from_u16(compression_method)
+        },
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32,
         compressed_size: compressed_size as u64,
@@ -615,6 +618,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
+    #[allow(deprecated)]
     let compression_method = CompressionMethod::from_u16(reader.read_u16::<LittleEndian>()?);
     let last_mod_time = reader.read_u16::<LittleEndian>()?;
     let last_mod_date = reader.read_u16::<LittleEndian>()?;
