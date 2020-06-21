@@ -27,10 +27,10 @@ pub enum ZipError {
     FileNotFound,
 
     /// No password was given but the data is encrypted
-	#[error("missing password, file in archive is encrypted")]
+    #[error("missing password, file in archive is encrypted")]
     PasswordRequired,
 
     /// The given password is wrong
-	#[error("invalid password for file in archive")]
+    #[error("invalid password for file in archive")]
     InvalidPassword,
 }

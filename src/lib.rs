@@ -12,7 +12,7 @@ mod cp437;
 mod crc32;
 pub mod read;
 pub mod result;
-mod zipcrypto;
 mod spec;
 mod types;
 pub mod write;
+mod zipcrypto;
