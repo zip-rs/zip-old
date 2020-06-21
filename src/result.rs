@@ -1,102 +1,36 @@
 //! Error types that can be emitted from this library
 
-use std::convert;
-use std::error;
-use std::fmt;
 use std::io;
+
+use thiserror::Error;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
-#[derive(Debug)]
-pub enum ZipError
-{
+#[derive(Debug, Error)]
+pub enum ZipError {
     /// An Error caused by I/O
-    Io(io::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 
     /// This file is probably not a zip archive
+    #[error("invalid Zip archive")]
     InvalidArchive(&'static str),
 
     /// This archive is not supported
+    #[error("unsupported Zip archive")]
     UnsupportedArchive(&'static str),
 
     /// The requested file could not be found in the archive
+    #[error("specified file not found in archive")]
     FileNotFound,
 
     /// No password was given but the data is encrypted
+	#[error("missing password, file in archive is encrypted")]
     PasswordRequired,
 
     /// The given password is wrong
+	#[error("invalid password for file in archive")]
     InvalidPassword,
-}
-
-impl ZipError
-{
-    fn detail(&self) -> ::std::borrow::Cow<'_, str>
-    {
-        use std::error::Error;
-
-        match *self
-        {
-            ZipError::Io(ref io_err) => {
-                ("Io Error: ".to_string() + (io_err as &dyn error::Error).description()).into()
-            },
-            ZipError::InvalidArchive(msg) | ZipError::UnsupportedArchive(msg) => {
-                (self.description().to_string() + ": " + msg).into()
-            },
-            ZipError::FileNotFound | ZipError::PasswordRequired | ZipError::InvalidPassword => {
-                self.description().into()
-            },
-        }
-    }
-}
-
-impl convert::From<io::Error> for ZipError
-{
-    fn from(err: io::Error) -> ZipError
-    {
-        ZipError::Io(err)
-    }
-}
-
-impl convert::From<ZipError> for io::Error
-{
-    fn from(err: ZipError) -> io::Error
-    {
-        io::Error::new(io::ErrorKind::Other, err)
-    }
-}
-
-impl fmt::Display for ZipError
-{
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>
-    {
-        fmt.write_str(&*self.detail())
-    }
-}
-
-impl error::Error for ZipError
-{
-    fn description(&self) -> &str
-    {
-        match *self
-        {
-            ZipError::Io(ref io_err) => (io_err as &dyn error::Error).description(),
-            ZipError::InvalidArchive(..) => "Invalid Zip archive",
-            ZipError::UnsupportedArchive(..) => "Unsupported Zip archive",
-            ZipError::FileNotFound => "Specified file not found in archive",
-            ZipError::PasswordRequired => "Missing password, file in archive is encrypted",
-            ZipError::InvalidPassword => "Invalid password for file in archive",
-        }
-    }
-
-    fn cause(&self) -> Option<&dyn error::Error>
-    {
-        match *self
-        {
-            ZipError::Io(ref io_err) => Some(io_err as &dyn error::Error),
-            _ => None,
-        }
-    }
 }
