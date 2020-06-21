@@ -176,7 +176,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: "".into(),
+            comment: String::new(),
         }
     }
 
@@ -616,7 +616,7 @@ mod test {
             .write(b"writing to a directory is not allowed, and will not write any data")
             .is_err());
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 114);
+        assert_eq!(result.get_ref().len(), 108);
         assert_eq!(
             *result.get_ref(),
             &[
@@ -624,7 +624,7 @@ mod test {
                 0, 0, 5, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 1, 2, 46, 3, 20, 0, 0, 0, 0, 0,
                 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 237, 65, 0, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 5, 6, 0, 0, 0, 0, 1, 0,
-                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115
+                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 0, 0,
             ] as &[u8]
         );
     }
@@ -642,7 +642,8 @@ mod test {
             .write(b"application/vnd.oasis.opendocument.text")
             .unwrap();
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 159);
+
+        assert_eq!(result.get_ref().len(), 153);
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         assert_eq!(result.get_ref(), &v);
