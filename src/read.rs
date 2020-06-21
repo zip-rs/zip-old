@@ -714,7 +714,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment() == b"zip-rs");
+        assert!(reader.comment() == b"");
     }
 
     #[test]
