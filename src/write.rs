@@ -176,7 +176,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: "zip-rs".into(),
+            comment: "".into(),
         }
     }
 
