@@ -1,5 +1,11 @@
+//! Implementation of the ZipCrypto algorithm
+//!
+//! The following paper was used to implement the ZipCrypto algorithm:
+//! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
+
 use std::num::Wrapping;
 
+/// A container to hold the current key state
 struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
     key_1: Wrapping<u32>,
@@ -7,9 +13,6 @@ struct ZipCryptoKeys {
 }
 
 impl ZipCryptoKeys {
-    // Used this paper to implement ZipCrypto algo
-    // https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf
-
     fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
             key_0: Wrapping(0x12345678),
@@ -48,26 +51,26 @@ impl ZipCryptoKeys {
     }
 }
 
+/// A ZipCrypto reader with unverified password
 pub struct ZipCryptoReader<R> {
     file: R,
     keys: ZipCryptoKeys,
 }
 
 impl<R: std::io::Read> ZipCryptoReader<R> {
+    /// Note: The password is `&[u8]` and not `&str` because the
+    /// [zip specification](https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT)
+    /// does not specify password encoding (see function `update_keys` in the specification).
+    /// Therefore, if `&str` was used, the password would be UTF-8 and it
+    /// would be impossible to decrypt files that were encrypted with a
+    /// password byte sequence that is unrepresentable in UTF-8.
     pub fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
-        // Note: The password is &[u8] and not &str because the documentation
-        // https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT
-        // does not specify password encoding (see function update_keys)
-        // Therefore, if &str was used, the password would be UTF-8 and it
-        // would be impossible to decrypt files that were encrypted with a
-        // password byte sequence that is unrepresentable in UTF-8.
-
         let mut result = ZipCryptoReader {
             file: file,
             keys: ZipCryptoKeys::new(),
         };
 
-        // Key the cipher by updating the keys with the password
+        // Key the cipher by updating the keys with the password.
         for byte in password.iter() {
             result.keys.update(*byte);
         }
@@ -75,7 +78,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         result
     }
 
-    /// Read the ZipCrypto header bytes and validate the password
+    /// Read the ZipCrypto header bytes and validate the password.
     pub fn validate(
         mut self,
         crc32_plaintext: u32,
@@ -98,6 +101,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     }
 }
 
+/// A ZipCrypto reader with verified password
 pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
