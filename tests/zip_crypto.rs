@@ -46,30 +46,24 @@ fn encrypted_file() {
     {
         // No password
         let file = archive.by_index(0);
-        assert!(file.is_err());
-        if let Err(error) = file {
-            match error {
-                zip::result::ZipError::PasswordRequired => (),
-                _ => panic!(
-                    "Expected PasswordRequired error when opening encrypted file without password"
-                ),
-            }
-        } else {
-            panic!("Error: Successfully opened encrypted file without password?!");
+        match file {
+            Err(zip::result::ZipError::PasswordRequired) => (),
+            Err(_) => panic!(
+                "Expected PasswordRequired error when opening encrypted file without password"
+            ),
+            Ok(_) => panic!("Error: Successfully opened encrypted file without password?!"),
         }
     }
 
     {
         // Wrong password
         let file = archive.by_index_decrypt(0, b"wrong password");
-        assert!(file.is_err());
-        if let Err(error) = file {
-            match error {
-                zip::result::ZipError::InvalidPassword => (),
-                _ => panic!("Expected InvalidPassword error when opening encrypted file with wrong password"),
-            }
-        } else {
-            panic!("Error: Successfully opened encrypted file with wrong password?!");
+        match file {
+            Err(zip::result::ZipError::InvalidPassword) => (),
+            Err(_) => panic!(
+                "Expected InvalidPassword error when opening encrypted file with wrong password"
+            ),
+            Ok(_) => panic!("Error: Successfully opened encrypted file with wrong password?!"),
         }
     }
 
