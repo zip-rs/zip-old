@@ -238,6 +238,8 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     ///
     /// Paths are sanitized so that they cannot escape the given directory.
     ///
+    /// This bails on the first error and does not attempt cleanup.
+    ///
     /// # Platform-specific behaviour
     ///
     /// On unix systems permissions from the zip file are preserved, if they exist.
