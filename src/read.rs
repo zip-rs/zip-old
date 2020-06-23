@@ -350,15 +350,15 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         name: &str,
         password: &[u8],
     ) -> ZipResult<ZipFile<'a>> {
-        self.by_name_internal(name, Some(password))
+        self.by_name_with_optional_password(name, Some(password))
     }
 
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
-        self.by_name_internal(name, None)
+        self.by_name_with_optional_password(name, None)
     }
 
-    fn by_name_internal<'a>(
+    fn by_name_with_optional_password<'a>(
         &'a mut self,
         name: &str,
         password: Option<&[u8]>,
@@ -369,7 +369,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                 return Err(ZipError::FileNotFound);
             }
         };
-        self.by_index_internal(index, password)
+        self.by_index_with_optional_password(index, password)
     }
 
     /// Get a contained file by index, decrypt with given password
@@ -378,15 +378,15 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         file_number: usize,
         password: &[u8],
     ) -> ZipResult<ZipFile<'a>> {
-        self.by_index_internal(file_number, Some(password))
+        self.by_index_with_optional_password(file_number, Some(password))
     }
 
     /// Get a contained file by index
     pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
-        self.by_index_internal(file_number, None)
+        self.by_index_with_optional_password(file_number, None)
     }
 
-    fn by_index_internal<'a>(
+    fn by_index_with_optional_password<'a>(
         &'a mut self,
         file_number: usize,
         mut password: Option<&[u8]>,
