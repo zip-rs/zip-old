@@ -50,10 +50,12 @@ fn encrypted_file() {
         if let Err(error) = file {
             match error {
                 zip::result::ZipError::PasswordRequired => (),
-                _ => panic!(),
+                _ => panic!(
+                    "Expected PasswordRequired error when opening encrypted file without password"
+                ),
             }
         } else {
-            panic!();
+            panic!("Error: Successfully opened encrypted file without password?!");
         }
     }
 
@@ -64,10 +66,10 @@ fn encrypted_file() {
         if let Err(error) = file {
             match error {
                 zip::result::ZipError::InvalidPassword => (),
-                _ => panic!(),
+                _ => panic!("Expected InvalidPassword error when opening encrypted file with wrong password"),
             }
         } else {
-            panic!();
+            panic!("Error: Successfully opened encrypted file with wrong password?!");
         }
     }
 
