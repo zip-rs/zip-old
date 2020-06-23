@@ -7,8 +7,8 @@ struct ZipCryptoKeys {
 }
 
 impl ZipCryptoKeys {
-    //Used this paper to implement ZipCrypto algo
-    //https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf
+    // Used this paper to implement ZipCrypto algo
+    // https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf
 
     fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
@@ -55,19 +55,19 @@ pub struct ZipCryptoReader<R> {
 
 impl<R: std::io::Read> ZipCryptoReader<R> {
     pub fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
-        //Note: The password is &[u8] and not &str because the documentation
-        //https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT
-        //does not specify password encoding (see function update_keys)
-        //Therefore, if &str was used, the password would be UTF-8 and it
-        //would be impossible to decrypt files that were encrypted with a
-        //password byte sequence that is unrepresentable in UTF-8.
+        // Note: The password is &[u8] and not &str because the documentation
+        // https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT
+        // does not specify password encoding (see function update_keys)
+        // Therefore, if &str was used, the password would be UTF-8 and it
+        // would be impossible to decrypt files that were encrypted with a
+        // password byte sequence that is unrepresentable in UTF-8.
 
         let mut result = ZipCryptoReader {
             file: file,
             keys: ZipCryptoKeys::new(),
         };
 
-        //Key the cipher by updating the keys with the password
+        // Key the cipher by updating the keys with the password
         for byte in password.iter() {
             result.keys.update(*byte);
         }
@@ -75,12 +75,12 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         result
     }
 
-    ///Read the ZipCrypto header bytes and validate the password
+    /// Read the ZipCrypto header bytes and validate the password
     pub fn validate(
         mut self,
         crc32_plaintext: u32,
     ) -> Result<Option<ZipCryptoReaderValid<R>>, std::io::Error> {
-        //ZipCrypto prefixes a file with a 12 byte header
+        // ZipCrypto prefixes a file with a 12 byte header
         let mut header_buf = [0u8; 12];
         self.file.read_exact(&mut header_buf)?;
         for byte in header_buf.iter_mut() {
@@ -92,7 +92,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         // We also use 1 byte CRC.
 
         if (crc32_plaintext >> 24) as u8 != header_buf[11] {
-            return Ok(None); //Wrong password
+            return Ok(None); // Wrong password
         }
         Ok(Some(ZipCryptoReaderValid { reader: self }))
     }
@@ -104,8 +104,8 @@ pub struct ZipCryptoReaderValid<R> {
 
 impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
     fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
-        //Note: There might be potential for optimization. Inspiration can be found at:
-        //https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
+        // Note: There might be potential for optimization. Inspiration can be found at:
+        // https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
 
         let result = self.reader.file.read(&mut buf);
         for byte in buf.iter_mut() {
