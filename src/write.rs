@@ -421,11 +421,11 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             #[allow(deprecated)]
             match compression {
                 CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            ))]
+                #[cfg(any(
+                    feature = "deflate",
+                    feature = "deflate-miniz",
+                    feature = "deflate-zlib"
+                ))]
                 CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
                     bare,
                     flate2::Compression::default(),
