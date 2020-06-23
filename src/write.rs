@@ -397,20 +397,22 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             }
         };
 
-        *self = match compression {
-            CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            #[cfg(feature = "deflate")]
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
-                bare,
-                flate2::Compression::default(),
-            )),
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => {
-                GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
-            }
+        *self = {
             #[allow(deprecated)]
-            CompressionMethod::Unsupported(..) => {
-                return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+            match compression {
+                CompressionMethod::Stored => GenericZipWriter::Storer(bare),
+                #[cfg(feature = "deflate")]
+                CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
+                    bare,
+                    flate2::Compression::default(),
+                )),
+                #[cfg(feature = "bzip2")]
+                CompressionMethod::Bzip2 => {
+                    GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
+                }
+                CompressionMethod::Unsupported(..) => {
+                    return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+                }
             }
         };
 

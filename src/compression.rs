@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+#[allow(deprecated)]
 /// Compression methods for the contents of a ZIP file.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CompressionMethod {
@@ -28,13 +29,14 @@ impl CompressionMethod {
         note = "implementation details are being removed from the public API"
     )]
     pub fn from_u16(val: u16) -> CompressionMethod {
+        #[allow(deprecated)]
         match val {
             0 => CompressionMethod::Stored,
             #[cfg(feature = "deflate")]
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
-            #[allow(deprecated)]
+
             v => CompressionMethod::Unsupported(v),
         }
     }
@@ -45,13 +47,13 @@ impl CompressionMethod {
         note = "implementation details are being removed from the public API"
     )]
     pub fn to_u16(self) -> u16 {
+        #[allow(deprecated)]
         match self {
             CompressionMethod::Stored => 0,
             #[cfg(feature = "deflate")]
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
-            #[allow(deprecated)]
             CompressionMethod::Unsupported(v) => v,
         }
     }
