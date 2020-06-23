@@ -394,7 +394,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         if file_number >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
-        let ref mut data = self.files[file_number];
+        let data = &mut self.files[file_number];
 
         if password == None {
             if data.encrypted {
