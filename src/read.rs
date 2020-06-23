@@ -11,7 +11,7 @@ use std::io::prelude::*;
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
-use podio::{LittleEndian, ReadPodExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 
 #[cfg(any(
     feature = "deflate",
@@ -353,9 +353,12 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
     let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
     let external_file_attributes = reader.read_u32::<LittleEndian>()?;
     let offset = reader.read_u32::<LittleEndian>()? as u64;
-    let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
-    let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
-    let file_comment_raw = ReadPodExt::read_exact(reader, file_comment_length)?;
+    let mut file_name_raw = vec![0; file_name_length];
+    reader.read_exact(&mut file_name_raw)?;
+    let mut extra_field = vec![0; extra_field_length];
+    reader.read_exact(&mut extra_field)?;
+    let mut file_comment_raw = vec![0; file_comment_length];
+    reader.read_exact(&mut file_comment_raw)?;
 
     let file_name = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
@@ -371,7 +374,10 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         system: System::from_u8((version_made_by >> 8) as u8),
         version_made_by: version_made_by as u8,
         encrypted,
-        compression_method: CompressionMethod::from_u16(compression_method),
+        compression_method: {
+            #[allow(deprecated)]
+            CompressionMethod::from_u16(compression_method)
+        },
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32,
         compressed_size: compressed_size as u64,
@@ -632,6 +638,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
+    #[allow(deprecated)]
     let compression_method = CompressionMethod::from_u16(reader.read_u16::<LittleEndian>()?);
     let last_mod_time = reader.read_u16::<LittleEndian>()?;
     let last_mod_date = reader.read_u16::<LittleEndian>()?;
@@ -641,8 +648,10 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
     let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
 
-    let file_name_raw = ReadPodExt::read_exact(reader, file_name_length)?;
-    let extra_field = ReadPodExt::read_exact(reader, extra_field_length)?;
+    let mut file_name_raw = vec![0; file_name_length];
+    reader.read_exact(&mut file_name_raw)?;
+    let mut extra_field = vec![0; extra_field_length];
+    reader.read_exact(&mut extra_field)?;
 
     let file_name = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
@@ -725,7 +734,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment() == b"zip-rs");
+        assert!(reader.comment() == b"");
     }
 
     #[test]

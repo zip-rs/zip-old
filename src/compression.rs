@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+#[allow(deprecated)]
 /// Compression methods for the contents of a ZIP file.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CompressionMethod {
@@ -18,12 +19,21 @@ pub enum CompressionMethod {
     #[cfg(feature = "bzip2")]
     Bzip2,
     /// Unsupported compression method
+    #[deprecated(
+        since = "0.5.7",
+        note = "implementation details are being removed from the public API"
+    )]
     Unsupported(u16),
 }
 
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
+    #[deprecated(
+        since = "0.5.7",
+        note = "implementation details are being removed from the public API"
+    )]
     pub fn from_u16(val: u16) -> CompressionMethod {
+        #[allow(deprecated)]
         match val {
             0 => CompressionMethod::Stored,
             #[cfg(any(
@@ -34,12 +44,18 @@ impl CompressionMethod {
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
+
             v => CompressionMethod::Unsupported(v),
         }
     }
 
     /// Converts a CompressionMethod to a u16
+    #[deprecated(
+        since = "0.5.7",
+        note = "implementation details are being removed from the public API"
+    )]
     pub fn to_u16(self) -> u16 {
+        #[allow(deprecated)]
         match self {
             CompressionMethod::Stored => 0,
             #[cfg(any(
@@ -69,7 +85,9 @@ mod test {
     #[test]
     fn from_eq_to() {
         for v in 0..(::std::u16::MAX as u32 + 1) {
+            #[allow(deprecated)]
             let from = CompressionMethod::from_u16(v as u16);
+            #[allow(deprecated)]
             let to = from.to_u16() as u32;
             assert_eq!(v, to);
         }
@@ -92,8 +110,11 @@ mod test {
     #[test]
     fn to_eq_from() {
         fn check_match(method: CompressionMethod) {
+            #[allow(deprecated)]
             let to = method.to_u16();
+            #[allow(deprecated)]
             let from = CompressionMethod::from_u16(to);
+            #[allow(deprecated)]
             let back = from.to_u16();
             assert_eq!(to, back);
         }

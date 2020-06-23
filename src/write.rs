@@ -4,8 +4,8 @@ use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{DateTime, System, ZipFileData, DEFAULT_VERSION};
+use byteorder::{LittleEndian, WriteBytesExt};
 use crc32fast::Hasher;
-use podio::{LittleEndian, WritePodExt};
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -192,7 +192,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: "zip-rs".into(),
+            comment: String::new(),
         }
     }
 
@@ -417,23 +417,26 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             }
         };
 
-        *self = match compression {
-            CompressionMethod::Stored => GenericZipWriter::Storer(bare),
+        *self = {
+            #[allow(deprecated)]
+            match compression {
+                CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
                 feature = "deflate-zlib"
             ))]
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
-                bare,
-                flate2::Compression::default(),
-            )),
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => {
-                GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
-            }
-            CompressionMethod::Unsupported(..) => {
-                return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+                CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
+                    bare,
+                    flate2::Compression::default(),
+                )),
+                #[cfg(feature = "bzip2")]
+                CompressionMethod::Bzip2 => {
+                    GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
+                }
+                CompressionMethod::Unsupported(..) => {
+                    return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+                }
             }
         };
 
@@ -505,6 +508,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     };
     writer.write_u16::<LittleEndian>(flag)?;
     // Compression method
+    #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time and last mod file date
     writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
@@ -556,6 +560,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     };
     writer.write_u16::<LittleEndian>(flag)?;
     // compression method
+    #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time + date
     writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
@@ -645,7 +650,7 @@ mod test {
             .write(b"writing to a directory is not allowed, and will not write any data")
             .is_err());
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 114);
+        assert_eq!(result.get_ref().len(), 108);
         assert_eq!(
             *result.get_ref(),
             &[
@@ -653,7 +658,7 @@ mod test {
                 0, 0, 5, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 1, 2, 46, 3, 20, 0, 0, 0, 0, 0,
                 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 237, 65, 0, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 5, 6, 0, 0, 0, 0, 1, 0,
-                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115
+                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 0, 0,
             ] as &[u8]
         );
     }
@@ -671,7 +676,8 @@ mod test {
             .write(b"application/vnd.oasis.opendocument.text")
             .unwrap();
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 159);
+
+        assert_eq!(result.get_ref().len(), 153);
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         assert_eq!(result.get_ref(), &v);
