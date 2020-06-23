@@ -396,11 +396,11 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         }
         let data = &mut self.files[file_number];
 
-		match (password, data.encrypted) {
-		  (None, true) => return Err(ZipError::PasswordRequired),
-		  (Some(_), false) => password = None, //Password supplied, but none needed! Discard.
-		  _ => {}
-		}
+        match (password, data.encrypted) {
+            (None, true) => return Err(ZipError::PasswordRequired),
+            (Some(_), false) => password = None, //Password supplied, but none needed! Discard.
+            _ => {}
+        }
 
         // Parse local header
         self.reader.seek(io::SeekFrom::Start(data.header_start))?;
