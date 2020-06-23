@@ -59,7 +59,7 @@ fn encrypted_file() {
 
     {
         // Wrong password
-        let file = archive.by_index_decrypt(0, "wrong password".as_bytes());
+        let file = archive.by_index_decrypt(0, b"wrong password");
         assert!(file.is_err());
         if let Err(error) = file {
             match error {
