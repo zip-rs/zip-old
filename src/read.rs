@@ -103,11 +103,11 @@ impl<'a> Read for ZipFileReader<'a> {
         match self {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Stored(r) => r.read(buf),
-			#[cfg(any(
-				feature = "deflate",
-				feature = "deflate-miniz",
-				feature = "deflate-zlib"
-			))]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             ZipFileReader::Deflated(r) => r.read(buf),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.read(buf),
@@ -122,10 +122,10 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
             #[cfg(any(
-				feature = "deflate",
-				feature = "deflate-miniz",
-				feature = "deflate-zlib"
-			))]
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             ZipFileReader::Deflated(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
@@ -156,10 +156,10 @@ fn make_reader<'a>(
     match compression_method {
         CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32))),
         #[cfg(any(
-			feature = "deflate",
-			feature = "deflate-miniz",
-			feature = "deflate-zlib"
-		))]
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib"
+        ))]
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
