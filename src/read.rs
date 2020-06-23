@@ -15,7 +15,11 @@ use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
 use byteorder::{LittleEndian, ReadBytesExt};
 
-#[cfg(feature = "deflate")]
+#[cfg(any(
+    feature = "deflate",
+    feature = "deflate-miniz",
+    feature = "deflate-zlib"
+))]
 use flate2::read::DeflateDecoder;
 
 #[cfg(feature = "bzip2")]
@@ -84,7 +88,11 @@ impl<'a> CryptoReader<'a> {
 enum ZipFileReader<'a> {
     NoReader,
     Stored(Crc32Reader<CryptoReader<'a>>),
-    #[cfg(feature = "deflate")]
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
@@ -95,7 +103,11 @@ impl<'a> Read for ZipFileReader<'a> {
         match self {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Stored(r) => r.read(buf),
-            #[cfg(feature = "deflate")]
+			#[cfg(any(
+				feature = "deflate",
+				feature = "deflate-miniz",
+				feature = "deflate-zlib"
+			))]
             ZipFileReader::Deflated(r) => r.read(buf),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.read(buf),
@@ -109,7 +121,11 @@ impl<'a> ZipFileReader<'a> {
         match self {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+				feature = "deflate",
+				feature = "deflate-miniz",
+				feature = "deflate-zlib"
+			))]
             ZipFileReader::Deflated(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
@@ -139,7 +155,11 @@ fn make_reader<'a>(
 
     match compression_method {
         CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32))),
-        #[cfg(feature = "deflate")]
+        #[cfg(any(
+			feature = "deflate",
+			feature = "deflate-miniz",
+			feature = "deflate-zlib"
+		))]
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
             Ok(ZipFileReader::Deflated(Crc32Reader::new(
@@ -793,7 +813,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment() == b"zip-rs");
+        assert!(reader.comment() == b"");
     }
 
     #[test]

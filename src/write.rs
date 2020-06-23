@@ -11,7 +11,11 @@ use std::io;
 use std::io::prelude::*;
 use std::mem;
 
-#[cfg(feature = "deflate")]
+#[cfg(any(
+    feature = "deflate",
+    feature = "deflate-miniz",
+    feature = "deflate-zlib"
+))]
 use flate2::write::DeflateEncoder;
 
 #[cfg(feature = "bzip2")]
@@ -20,7 +24,11 @@ use bzip2::write::BzEncoder;
 enum GenericZipWriter<W: Write + io::Seek> {
     Closed,
     Storer(W),
-    #[cfg(feature = "deflate")]
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
     Deflater(DeflateEncoder<W>),
     #[cfg(feature = "bzip2")]
     Bzip2(BzEncoder<W>),
@@ -77,9 +85,17 @@ impl FileOptions {
     /// Construct a new FileOptions object
     pub fn default() -> FileOptions {
         FileOptions {
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             compression_method: CompressionMethod::Deflated,
-            #[cfg(not(feature = "deflate"))]
+            #[cfg(not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            )))]
             compression_method: CompressionMethod::Stored,
             #[cfg(feature = "time")]
             last_modified_time: DateTime::from_time(time::now()).unwrap_or_default(),
@@ -176,7 +192,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: "zip-rs".into(),
+            comment: String::new(),
         }
     }
 
@@ -384,7 +400,11 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
 
         let bare = match mem::replace(self, GenericZipWriter::Closed) {
             GenericZipWriter::Storer(w) => w,
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
@@ -397,20 +417,26 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             }
         };
 
-        *self = match compression {
-            CompressionMethod::Stored => GenericZipWriter::Storer(bare),
-            #[cfg(feature = "deflate")]
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
-                bare,
-                flate2::Compression::default(),
-            )),
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => {
-                GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
-            }
+        *self = {
             #[allow(deprecated)]
-            CompressionMethod::Unsupported(..) => {
-                return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+            match compression {
+                CompressionMethod::Stored => GenericZipWriter::Storer(bare),
+                #[cfg(any(
+                    feature = "deflate",
+                    feature = "deflate-miniz",
+                    feature = "deflate-zlib"
+                ))]
+                CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
+                    bare,
+                    flate2::Compression::default(),
+                )),
+                #[cfg(feature = "bzip2")]
+                CompressionMethod::Bzip2 => {
+                    GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
+                }
+                CompressionMethod::Unsupported(..) => {
+                    return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+                }
             }
         };
 
@@ -420,7 +446,11 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
     fn ref_mut(&mut self) -> Option<&mut dyn Write> {
         match *self {
             GenericZipWriter::Storer(ref mut w) => Some(w as &mut dyn Write),
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
@@ -445,7 +475,11 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
     fn current_compression(&self) -> Option<CompressionMethod> {
         match *self {
             GenericZipWriter::Storer(..) => Some(CompressionMethod::Stored),
-            #[cfg(feature = "deflate")]
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
             GenericZipWriter::Deflater(..) => Some(CompressionMethod::Deflated),
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(..) => Some(CompressionMethod::Bzip2),
@@ -616,7 +650,7 @@ mod test {
             .write(b"writing to a directory is not allowed, and will not write any data")
             .is_err());
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 114);
+        assert_eq!(result.get_ref().len(), 108);
         assert_eq!(
             *result.get_ref(),
             &[
@@ -624,7 +658,7 @@ mod test {
                 0, 0, 5, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 1, 2, 46, 3, 20, 0, 0, 0, 0, 0,
                 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 237, 65, 0, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 5, 6, 0, 0, 0, 0, 1, 0,
-                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115
+                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 0, 0,
             ] as &[u8]
         );
     }
@@ -642,7 +676,8 @@ mod test {
             .write(b"application/vnd.oasis.opendocument.text")
             .unwrap();
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 159);
+
+        assert_eq!(result.get_ref().len(), 153);
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         assert_eq!(result.get_ref(), &v);
