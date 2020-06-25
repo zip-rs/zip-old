@@ -243,7 +243,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// # Platform-specific behaviour
     ///
     /// On unix systems permissions from the zip file are preserved, if they exist.
-    pub fn extract(&mut self, directory: &dyn AsRef<Path>) -> ZipResult<()> {
+    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file.sanitized_name();
