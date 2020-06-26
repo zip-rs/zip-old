@@ -8,8 +8,9 @@ use crate::zipcrypto::ZipCryptoReader;
 use crate::zipcrypto::ZipCryptoReaderValid;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io;
-use std::io::prelude::*;
+use std::fs;
+use std::io::{self, prelude::*};
+use std::path::Path;
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
@@ -305,6 +306,48 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             offset: archive_offset,
             comment: footer.zip_file_comment,
         })
+    }
+
+    /// Extract a Zip archive into a directory.
+    ///
+    /// Paths are sanitized so that they cannot escape the given directory.
+    ///
+    /// This bails on the first error and does not attempt cleanup.
+    ///
+    /// # Platform-specific behaviour
+    ///
+    /// On unix systems permissions from the zip file are preserved, if they exist.
+    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+        for i in 0..self.len() {
+            let mut file = self.by_index(i)?;
+            let filepath = file.sanitized_name();
+
+            let outpath = directory.as_ref().join(filepath);
+
+            if (file.name()).ends_with('/') {
+                fs::create_dir_all(&outpath)?;
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        fs::create_dir_all(&p)?;
+                    }
+                }
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
+            }
+
+            // Get and Set permissions
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                if let Some(mode) = file.unix_mode() {
+                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Number of files contained in this zip.
