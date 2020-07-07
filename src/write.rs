@@ -185,7 +185,7 @@ impl <W:Write> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: "zip-rs".into(),
+            comment: String::new(),
         }
     }
 
@@ -206,7 +206,7 @@ impl <W:Write> ZipWriter<W> {
         }
     }
 
-    /// Set ZIP archive comment. Defaults to 'zip-rs' if not set.
+    /// Set ZIP archive comment. Defaults to an empty string if not set.
     pub fn set_comment<S>(&mut self, comment: S)
     where
         S: Into<String>,
