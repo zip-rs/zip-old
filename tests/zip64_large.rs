@@ -53,13 +53,10 @@
 // 22c400260  00 00 50 4b 05 06 00 00  00 00 03 00 03 00 27 01  |..PK..........'.|
 // 22c400270  00 00 ff ff ff ff 00 00                           |........|
 // 22c400278
+use std::io::{self, Read, Seek, SeekFrom};
 
-extern crate zip;
-
-use std::io::{self, Seek, SeekFrom, Read};
-
-const BLOCK1_LENGTH : u64 = 0x60;
-const BLOCK1 : [u8; BLOCK1_LENGTH as usize] = [
+const BLOCK1_LENGTH: u64 = 0x60;
+const BLOCK1: [u8; BLOCK1_LENGTH as usize] = [
     0x50, 0x4b, 0x03, 0x04, 0x2d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1b, 0x6e, 0x51, 0x4d, 0x66, 0x82,
     0x13, 0xda, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x08, 0x00, 0x30, 0x00, 0x7a, 0x65,
     0x72, 0x6f, 0x34, 0x34, 0x30, 0x30, 0x55, 0x54, 0x09, 0x00, 0x03, 0xa5, 0x21, 0xc7, 0x5b, 0xdb,
@@ -68,8 +65,8 @@ const BLOCK1 : [u8; BLOCK1_LENGTH as usize] = [
     0x00, 0x13, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-const BLOCK2_LENGTH : u64 = 0x50;
-const BLOCK2 : [u8; BLOCK2_LENGTH as usize] = [
+const BLOCK2_LENGTH: u64 = 0x50;
+const BLOCK2: [u8; BLOCK2_LENGTH as usize] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x4b, 0x03, 0x04, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x2b, 0x6e, 0x51, 0x4d, 0x98, 0x23, 0x28, 0x4b, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00, 0x40, 0x06,
     0x07, 0x00, 0x1c, 0x00, 0x7a, 0x65, 0x72, 0x6f, 0x31, 0x30, 0x30, 0x55, 0x54, 0x09, 0x00, 0x03,
@@ -77,8 +74,8 @@ const BLOCK2 : [u8; BLOCK2_LENGTH as usize] = [
     0x00, 0x00, 0x04, 0xe8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-const BLOCK3_LENGTH : u64 = 0x60;
-const BLOCK3 : [u8; BLOCK3_LENGTH as usize] = [
+const BLOCK3_LENGTH: u64 = 0x60;
+const BLOCK3: [u8; BLOCK3_LENGTH as usize] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x4b, 0x03, 0x04, 0x2d, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x3b, 0x6e, 0x51, 0x4d, 0x66, 0x82, 0x13, 0xda, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0x0a, 0x00, 0x30, 0x00, 0x7a, 0x65, 0x72, 0x6f, 0x34, 0x34, 0x30, 0x30, 0x5f, 0x32, 0x55,
@@ -87,8 +84,8 @@ const BLOCK3 : [u8; BLOCK3_LENGTH as usize] = [
     0x00, 0x00, 0x13, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x01, 0x00, 0x00, 0x00, 0x00,
 ];
 
-const BLOCK4_LENGTH : u64 = 0x198;
-const BLOCK4 : [u8; BLOCK4_LENGTH as usize] = [
+const BLOCK4_LENGTH: u64 = 0x198;
+const BLOCK4: [u8; BLOCK4_LENGTH as usize] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50,
     0x4b, 0x01, 0x02, 0x1e, 0x03, 0x2d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1b, 0x6e, 0x51, 0x4d, 0x66,
     0x82, 0x13, 0xda, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x08, 0x00, 0x2c, 0x00, 0x00,
@@ -117,17 +114,17 @@ const BLOCK4 : [u8; BLOCK4_LENGTH as usize] = [
     0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
 ];
 
-const BLOCK1_START : u64 = 0x000000000;
-const BLOCK2_START : u64 = 0x113000050;
-const BLOCK3_START : u64 = 0x119400090;
-const BLOCK4_START : u64 = 0x22c4000e0;
+const BLOCK1_START: u64 = 0x000000000;
+const BLOCK2_START: u64 = 0x113000050;
+const BLOCK3_START: u64 = 0x119400090;
+const BLOCK4_START: u64 = 0x22c4000e0;
 
-const BLOCK1_END : u64 = BLOCK1_START + BLOCK1_LENGTH - 1;
-const BLOCK2_END : u64 = BLOCK2_START + BLOCK2_LENGTH - 1;
-const BLOCK3_END : u64 = BLOCK3_START + BLOCK3_LENGTH - 1;
-const BLOCK4_END : u64 = BLOCK4_START + BLOCK4_LENGTH - 1;
+const BLOCK1_END: u64 = BLOCK1_START + BLOCK1_LENGTH - 1;
+const BLOCK2_END: u64 = BLOCK2_START + BLOCK2_LENGTH - 1;
+const BLOCK3_END: u64 = BLOCK3_START + BLOCK3_LENGTH - 1;
+const BLOCK4_END: u64 = BLOCK4_START + BLOCK4_LENGTH - 1;
 
-const TOTAL_LENGTH : u64 = BLOCK4_START + BLOCK4_LENGTH;
+const TOTAL_LENGTH: u64 = BLOCK4_START + BLOCK4_LENGTH;
 
 struct Zip64File {
     pointer: u64,
@@ -142,20 +139,22 @@ impl Zip64File {
 impl Seek for Zip64File {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
-            SeekFrom::Start(offset) => { self.pointer = offset; },
+            SeekFrom::Start(offset) => {
+                self.pointer = offset;
+            }
             SeekFrom::End(offset) => {
                 if offset > 0 || offset < -(TOTAL_LENGTH as i64) {
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid seek offset"));
                 }
                 self.pointer = (TOTAL_LENGTH as i64 + offset) as u64;
-            },
+            }
             SeekFrom::Current(offset) => {
                 let seekpos = self.pointer as i64 + offset;
                 if seekpos < 0 || seekpos as u64 > TOTAL_LENGTH {
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid seek offset"));
                 }
                 self.pointer = seekpos as u64;
-            },
+            }
         }
         Ok(self.pointer)
     }
@@ -167,21 +166,21 @@ impl Read for Zip64File {
             return Ok(0);
         }
         match self.pointer {
-            BLOCK1_START ... BLOCK1_END => {
+            BLOCK1_START..=BLOCK1_END => {
                 buf[0] = BLOCK1[(self.pointer - BLOCK1_START) as usize];
-            },
-            BLOCK2_START ... BLOCK2_END => {
+            }
+            BLOCK2_START..=BLOCK2_END => {
                 buf[0] = BLOCK2[(self.pointer - BLOCK2_START) as usize];
-            },
-            BLOCK3_START ... BLOCK3_END => {
+            }
+            BLOCK3_START..=BLOCK3_END => {
                 buf[0] = BLOCK3[(self.pointer - BLOCK3_START) as usize];
-            },
-            BLOCK4_START ... BLOCK4_END => {
+            }
+            BLOCK4_START..=BLOCK4_END => {
                 buf[0] = BLOCK4[(self.pointer - BLOCK4_START) as usize];
-            },
+            }
             _ => {
                 buf[0] = 0;
-            },
+            }
         }
         self.pointer += 1;
         Ok(1)
@@ -197,7 +196,12 @@ fn zip64_large() {
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).unwrap();
         let outpath = file.sanitized_name();
-        println!("Entry {} has name \"{}\" ({} bytes)", i, outpath.as_path().display(), file.size());
+        println!(
+            "Entry {} has name \"{}\" ({} bytes)",
+            i,
+            outpath.as_path().display(),
+            file.size()
+        );
 
         match file.read_exact(&mut buf) {
             Ok(()) => println!("The first {} bytes are: {:?}", buf.len(), buf),

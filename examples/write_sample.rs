@@ -1,15 +1,11 @@
 use std::io::prelude::*;
 use zip::write::FileOptions;
 
-extern crate zip;
-
-fn main()
-{
+fn main() {
     std::process::exit(real_main());
 }
 
-fn real_main() -> i32
-{
+fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         println!("Usage: {} <filename>", args[0]);
@@ -17,8 +13,7 @@ fn real_main() -> i32
     }
 
     let filename = &*args[1];
-    match doit(filename)
-    {
+    match doit(filename) {
         Ok(_) => println!("File written to {}", filename),
         Err(e) => println!("Error: {:?}", e),
     }
@@ -26,8 +21,7 @@ fn real_main() -> i32
     return 0;
 }
 
-fn doit(filename: &str) -> zip::result::ZipResult<()>
-{
+fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let path = std::path::Path::new(filename);
     let file = std::fs::File::create(&path).unwrap();
 
@@ -35,7 +29,9 @@ fn doit(filename: &str) -> zip::result::ZipResult<()>
 
     zip.add_directory("test/", Default::default())?;
 
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored).unix_permissions(0o755);
+    let options = FileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .unix_permissions(0o755);
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 

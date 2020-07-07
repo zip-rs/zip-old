@@ -1,25 +1,19 @@
 //! Structs for creating a new zip archive
 
-use compression::CompressionMethod;
-use types::{ZipFileData, System, DEFAULT_VERSION, DateTime};
-use spec;
+use crate::compression::CompressionMethod;
+use crate::result::{ZipError, ZipResult};
+use crate::spec;
+use crate::types::{DateTime, System, ZipFileData, DEFAULT_VERSION};
+use byteorder::{LittleEndian, WriteBytesExt};
 use crc32fast::Hasher;
-use result::{ZipResult, ZipError};
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
-#[cfg(feature = "time")]
-use time;
-use podio::{WritePodExt, LittleEndian};
 
-#[cfg(feature = "deflate")]
-use flate2;
 #[cfg(feature = "deflate")]
 use flate2::write::DeflateEncoder;
 
-#[cfg(feature = "bzip2")]
-use bzip2;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
@@ -63,11 +57,11 @@ pub struct ZipWriter<W: Write>
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
+    comment: String,
 }
 
 #[derive(Default)]
-struct ZipWriterStats
-{
+struct ZipWriterStats {
     hasher: Hasher,
     start: u64,
     bytes_written: u64,
@@ -85,10 +79,14 @@ impl FileOptions {
     /// Construct a new FileOptions object
     pub fn default() -> FileOptions {
         FileOptions {
-            #[cfg(feature = "deflate")]      compression_method: CompressionMethod::Deflated,
-            #[cfg(not(feature = "deflate"))] compression_method: CompressionMethod::Stored,
-            #[cfg(feature = "time")]      last_modified_time: DateTime::from_time(time::now()).unwrap_or(DateTime::default()),
-            #[cfg(not(feature = "time"))] last_modified_time: DateTime::default(),
+            #[cfg(feature = "deflate")]
+            compression_method: CompressionMethod::Deflated,
+            #[cfg(not(feature = "deflate"))]
+            compression_method: CompressionMethod::Stored,
+            #[cfg(feature = "time")]
+            last_modified_time: DateTime::from_time(time::now()).unwrap_or_default(),
+            #[cfg(not(feature = "time"))]
+            last_modified_time: DateTime::default(),
             permissions: None,
         }
     }
@@ -145,16 +143,13 @@ impl<W:Write> Write for ZipWriter<W>
         
     }
 
-    fn flush(&mut self) -> io::Result<()>
-    {
+    fn flush(&mut self) -> io::Result<()> {
         self.inner.ref_mut()?.flush()
     }
 }
 
-impl ZipWriterStats
-{
-    fn update(&mut self, buf: &[u8])
-    {
+impl ZipWriterStats {
+    fn update(&mut self, buf: &[u8]) {
         self.hasher.update(buf);
         self.bytes_written += buf.len() as u64;
     }
@@ -174,6 +169,7 @@ impl <W:Write> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
+            comment: "zip-rs".into(),
         }
     }
 
@@ -190,12 +186,22 @@ impl <W:Write> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
+            comment: "zip-rs".into(),
         }
+    }
+
+    /// Set ZIP archive comment. Defaults to 'zip-rs' if not set.
+    pub fn set_comment<S>(&mut self, comment: S)
+    where
+        S: Into<String>,
+    {
+        self.comment = comment.into();
     }
 
     /// Start a new file for with the requested options.
     fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
-        where S: Into<String>
+    where
+        S: Into<String>,
     {
         self.finish_file()?;
 
@@ -206,8 +212,7 @@ impl <W:Write> ZipWriter<W> {
             let permissions = options.permissions.unwrap_or(0o100644);
             let file_name = name.into();
             let file_name_raw = file_name.clone().into_bytes();
-            let mut file = ZipFileData
-            {
+            let mut file = ZipFileData {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
                 encrypted: false,
@@ -216,10 +221,10 @@ impl <W:Write> ZipWriter<W> {
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
-                file_name: file_name,
-                file_name_raw: file_name_raw,
+                file_name,
+                file_name_raw,
                 file_comment: String::new(),
-                header_start: header_start,
+                header_start,
                 data_start: 0,
                 external_attributes: permissions << 16,
                 streaming: ! writer.can_seek()
@@ -241,13 +246,11 @@ impl <W:Write> ZipWriter<W> {
         Ok(())
     }
 
-    fn finish_file(&mut self) -> ZipResult<()>
-    {
+    fn finish_file(&mut self) -> ZipResult<()> {
         self.inner.switch_to(CompressionMethod::Stored)?;
         let writer = self.inner.get_plain();
 
-        let file = match self.files.last_mut()
-        {
+        let file = match self.files.last_mut() {
             None => return Ok(()),
             Some(f) => f,
         };
@@ -270,7 +273,8 @@ impl <W:Write> ZipWriter<W> {
 
     /// Starts a file.
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
-        where S: Into<String>
+    where
+        S: Into<String>,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o644);
@@ -285,7 +289,11 @@ impl <W:Write> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
-    pub fn start_file_from_path(&mut self, path: &std::path::Path, options: FileOptions) -> ZipResult<()> {
+    pub fn start_file_from_path(
+        &mut self,
+        path: &std::path::Path,
+        options: FileOptions,
+    ) -> ZipResult<()> {
         self.start_file(path_to_string(path), options)
     }
 
@@ -293,7 +301,8 @@ impl <W:Write> ZipWriter<W> {
     ///
     /// You can't write data to the file afterwards.
     pub fn add_directory<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
-        where S: Into<String>
+    where
+        S: Into<String>,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o755);
@@ -317,12 +326,15 @@ impl <W:Write> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
-    pub fn add_directory_from_path(&mut self, path: &std::path::Path, options: FileOptions) -> ZipResult<()> {
-        self.add_directory(path_to_string(path.into()), options)
+    pub fn add_directory_from_path(
+        &mut self,
+        path: &std::path::Path,
+        options: FileOptions,
+    ) -> ZipResult<()> {
+        self.add_directory(path_to_string(path), options)
     }
 
-    fn finalize(&mut self) -> ZipResult<()>
-    {
+    fn finalize(&mut self) -> ZipResult<()> {
         self.finish_file()?;
 
         {
@@ -335,15 +347,14 @@ impl <W:Write> ZipWriter<W> {
             }
             let central_size = writer.current_position()? - central_start;
 
-            let footer = spec::CentralDirectoryEnd
-            {
+            let footer = spec::CentralDirectoryEnd {
                 disk_number: 0,
                 disk_with_central_directory: 0,
                 number_of_files_on_this_disk: self.files.len() as u16,
                 number_of_files: self.files.len() as u16,
                 central_directory_size: central_size as u32,
                 central_directory_offset: central_start as u32,
-                zip_file_comment: b"zip-rs".to_vec(),
+                zip_file_comment: self.comment.as_bytes().to_vec(),
             };
 
             footer.write(writer)?;
@@ -393,48 +404,64 @@ impl<W: Write> GenericZipWriter<W>
     {
         match self.current_compression() {
             Some(method) if method == compression => return Ok(()),
-            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed"))?,
-            _ => {},
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "ZipWriter was already closed",
+                )
+                .into())
+            }
+            _ => {}
         }
 
-        let bare = match mem::replace(self, GenericZipWriter::Closed)
-        {
+        let bare = match mem::replace(self, GenericZipWriter::Closed) {
             GenericZipWriter::Storer(w) => w,
             #[cfg(feature = "deflate")]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
-            GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed"))?,
+            GenericZipWriter::Closed => {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "ZipWriter was already closed",
+                )
+                .into())
+            }
         };
 
-        *self = match compression
-        {
+        *self = match compression {
             CompressionMethod::Stored => GenericZipWriter::Storer(bare),
             #[cfg(feature = "deflate")]
-            CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(bare, flate2::Compression::default())),
+            CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
+                bare,
+                flate2::Compression::default(),
+            )),
             #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default)),
-            CompressionMethod::Unsupported(..) => return Err(ZipError::UnsupportedArchive("Unsupported compression")),
+            CompressionMethod::Bzip2 => {
+                GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
+            }
+            #[allow(deprecated)]
+            CompressionMethod::Unsupported(..) => {
+                return Err(ZipError::UnsupportedArchive("Unsupported compression"))
+            }
         };
 
         Ok(())
     }
 
-    fn ref_mut(&mut self) -> io::Result<&mut Write> {
+    fn ref_mut(&mut self) -> io::Result<&mut dyn Write> {
         match *self {
-            GenericZipWriter::Storer(ref mut w) => Ok(w as &mut Write),
+            GenericZipWriter::Storer(ref mut w) => Ok(w as &mut dyn Write),
             #[cfg(feature = "deflate")]
-            GenericZipWriter::Deflater(ref mut w) => Ok(w as &mut Write),
+            GenericZipWriter::Deflater(ref mut w) => Ok(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
-            GenericZipWriter::Bzip2(ref mut w) => Ok(w as &mut Write),
+            GenericZipWriter::Bzip2(ref mut w) => Ok(w as &mut dyn Write),
             GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed")),
         }
     }
 
-    fn get_plain(&mut self) -> &mut W
-    {
-        match *self
-        {
+    fn get_plain(&mut self) -> &mut W {
+        match *self {
             GenericZipWriter::Storer(ref mut w) => w,
             _ => panic!("Should have switched to stored beforehand"),
         }
@@ -451,10 +478,8 @@ impl<W: Write> GenericZipWriter<W>
         }
     }
 
-    fn unwrap(self) -> W
-    {
-        match self
-        {
+    fn unwrap(self) -> W {
+        match self {
             GenericZipWriter::Storer(w) => w,
             _ => panic!("Should have switched to stored beforehand"),
         }
@@ -476,6 +501,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     // general purpose bit flag
     writer.write_u16::<LittleEndian>(calc_generic_flags(file))?;
     // Compression method
+    #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time and last mod file date
     writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
@@ -509,8 +535,7 @@ fn update_local_file_header<W:Write>(writer: &mut WriterWrapper<W>, file: &ZipFi
     Ok(())
 }
 
-fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
-{
+fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // central file header signature
     writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
     // version made by
@@ -521,6 +546,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // general puprose bit flag
     writer.write_u16::<LittleEndian>(calc_generic_flags(file))?;
     // compression method
+    #[allow(deprecated)]
     writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
     // last mod file time + date
     writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
@@ -580,14 +606,11 @@ fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>>
 fn path_to_string(path: &std::path::Path) -> String {
     let mut path_str = String::new();
     for component in path.components() {
-        match component {
-            std::path::Component::Normal(os_str) => {
-                if path_str.len() != 0 {
-                    path_str.push('/');
-                }
-                path_str.push_str(&*os_str.to_string_lossy());
+        if let std::path::Component::Normal(os_str) = component {
+            if !path_str.is_empty() {
+                path_str.push('/');
             }
-            _ => (),
+            path_str.push_str(&*os_str.to_string_lossy());
         }
     }
     path_str
@@ -673,35 +696,51 @@ impl <W:Write> Write for WriterWrapper<W> {
 
 #[cfg(test)]
 mod test {
+    use super::{FileOptions, ZipWriter};
+    use crate::compression::CompressionMethod;
+    use crate::types::DateTime;
     use std::io;
     use std::io::Write;
-    use types::DateTime;
-    use super::{FileOptions, ZipWriter};
-    use compression::CompressionMethod;
+    use byteorder::{LittleEndian, ReadBytesExt};
 
     #[test]
     fn write_empty_zip() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.set_comment("ZIP");
         let result = writer.finish().unwrap();
-        assert_eq!(result.get_ref().len(), 28);
-        assert_eq!(*result.get_ref(), [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115]);
+        assert_eq!(result.get_ref().len(), 25);
+        assert_eq!(
+            *result.get_ref(),
+            [80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 90, 73, 80]
+        );
     }
 
     #[test]
     fn write_zip_dir() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer.add_directory("test", FileOptions::default().last_modified_time(
-            DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap()
-        )).unwrap();
-        assert!(writer.write(b"writing to a directory is not allowed, and will not write any data").is_err());
+        writer
+            .add_directory(
+                "test",
+                FileOptions::default().last_modified_time(
+                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                ),
+            )
+            .unwrap();
+        assert!(writer
+            .write(b"writing to a directory is not allowed, and will not write any data")
+            .is_err());
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 114);
-        assert_eq!(*result.get_ref(), &[
-            80u8, 75, 3, 4, 20, 0, 0, 0, 0, 0, 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 116,
-            101, 115, 116, 47, 80, 75, 1, 2, 46, 3, 20, 0, 0, 0, 0, 0, 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 237, 65, 0, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 5, 6,
-            0, 0, 0, 0, 1, 0, 1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115
-        ] as &[u8]);
+        assert_eq!(
+            *result.get_ref(),
+            &[
+                80u8, 75, 3, 4, 20, 0, 0, 0, 0, 0, 163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 5, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 1, 2, 46, 3, 20, 0, 0, 0, 0, 0,
+                163, 165, 15, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 237, 65, 0, 0, 0, 0, 116, 101, 115, 116, 47, 80, 75, 5, 6, 0, 0, 0, 0, 1, 0,
+                1, 0, 51, 0, 0, 0, 35, 0, 0, 0, 6, 0, 122, 105, 112, 45, 114, 115
+            ] as &[u8]
+        );
     }
 
     #[test]
@@ -713,7 +752,9 @@ mod test {
             permissions: Some(33188),
         };
         writer.start_file("mimetype", options).unwrap();
-        writer.write(b"application/vnd.oasis.opendocument.text").unwrap();
+        writer
+            .write(b"application/vnd.oasis.opendocument.text")
+            .unwrap();
         let result = writer.finish().unwrap();
         assert_eq!(result.get_ref().len(), 159);
         let mut v = Vec::new();
@@ -724,8 +765,10 @@ mod test {
     #[test]
     fn path_to_string() {
         let mut path = std::path::PathBuf::new();
-        #[cfg(windows)] path.push(r"C:\");
-        #[cfg(unix)] path.push("/");
+        #[cfg(windows)]
+        path.push(r"C:\");
+        #[cfg(unix)]
+        path.push("/");
         path.push("windows");
         path.push("..");
         path.push(".");
@@ -736,7 +779,6 @@ mod test {
 
         #[test]
     fn write_to_noseekable_stream() {
-        use podio::{ReadPodExt, LittleEndian};
         let w = Vec::new();
         let mut zip = ZipWriter::new_streaming(w);
         let stored_opts = FileOptions::default().compression_method(CompressionMethod::Stored);

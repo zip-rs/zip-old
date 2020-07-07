@@ -1,8 +1,8 @@
-extern crate zip;
-
+use std::collections::HashSet;
 use std::io::prelude::*;
-use zip::write::FileOptions;
 use std::io::Cursor;
+use std::iter::FromIterator;
+use zip::write::FileOptions;
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
@@ -48,6 +48,11 @@ fn write_to_zip_file<W:Write>(mut zip:  zip::ZipWriter<W>) -> zip::result::ZipRe
 
 fn read_zip_file(zip_file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<String> {
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();
+
+    let expected_file_names = ["test/", "test/☃.txt", "test/lorem_ipsum.txt"];
+    let expected_file_names = HashSet::from_iter(expected_file_names.iter().copied());
+    let file_names = archive.file_names().collect::<HashSet<_>>();
+    assert_eq!(file_names, expected_file_names);
 
     let mut file = archive.by_name("test/lorem_ipsum.txt")?;
 

@@ -13,12 +13,10 @@ pub trait FromCp437 {
 impl<'a> FromCp437 for &'a [u8] {
     type Target = ::std::borrow::Cow<'a, str>;
 
-    fn from_cp437(self) -> Self::Target
-    {
+    fn from_cp437(self) -> Self::Target {
         if self.iter().all(|c| *c < 0x80) {
             ::std::str::from_utf8(self).unwrap().into()
-        }
-        else {
+        } else {
             self.iter().map(|c| to_char(*c)).collect::<String>().into()
         }
     }
@@ -30,18 +28,15 @@ impl FromCp437 for Vec<u8> {
     fn from_cp437(self) -> Self::Target {
         if self.iter().all(|c| *c < 0x80) {
             String::from_utf8(self).unwrap()
-        }
-        else {
-            self.into_iter().map(|c| to_char(c)).collect()
+        } else {
+            self.into_iter().map(to_char).collect()
         }
     }
 }
 
-fn to_char(input: u8) -> char
-{
-    let output = match input
-    {
-        0x00 ... 0x7f => input as u32,
+fn to_char(input: u8) -> char {
+    let output = match input {
+        0x00..=0x7f => input as u32,
         0x80 => 0x00c7,
         0x81 => 0x00fc,
         0x82 => 0x00e9,
@@ -175,20 +170,17 @@ fn to_char(input: u8) -> char
 }
 
 #[cfg(test)]
-mod test
-{
+mod test {
     #[test]
-    fn to_char_valid()
-    {
-        for i in 0x00_u32 .. 0x100
-        {
+    fn to_char_valid() {
+        for i in 0x00_u32..0x100 {
             super::to_char(i as u8);
         }
     }
 
     #[test]
     fn ascii() {
-        for i in 0x00 .. 0x80 {
+        for i in 0x00..0x80 {
             assert_eq!(super::to_char(i), i as char);
         }
     }

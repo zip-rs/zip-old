@@ -1,44 +1,45 @@
-extern crate zip;
-extern crate walkdir;
-
 use std::io::prelude::*;
-use std::io::{Write, Seek};
+use std::io::{Seek, Write};
 use std::iter::Iterator;
-use zip::write::FileOptions;
 use zip::result::ZipError;
+use zip::write::FileOptions;
 
-use walkdir::{WalkDir, DirEntry};
-use std::path::Path;
 use std::fs::File;
+use std::path::Path;
+use walkdir::{DirEntry, WalkDir};
 
 fn main() {
     std::process::exit(real_main());
 }
 
-const METHOD_STORED : Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
+const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
 
 #[cfg(feature = "deflate")]
-const METHOD_DEFLATED : Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
+const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
 #[cfg(not(feature = "deflate"))]
-const METHOD_DEFLATED : Option<zip::CompressionMethod> = None;
+const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
 
 #[cfg(feature = "bzip2")]
-const METHOD_BZIP2 : Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
+const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
 #[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2 : Option<zip::CompressionMethod> = None;
+const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
 
 fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
-        println!("Usage: {} <source_directory> <destination_zipfile>",
-                 args[0]);
+        println!(
+            "Usage: {} <source_directory> <destination_zipfile>",
+            args[0]
+        );
         return 1;
     }
 
     let src_dir = &*args[1];
     let dst_file = &*args[2];
     for &method in [METHOD_STORED, METHOD_DEFLATED, METHOD_BZIP2].iter() {
-        if method.is_none() { continue }
+        if method.is_none() {
+            continue;
+        }
         match doit(src_dir, dst_file, method.unwrap()) {
             Ok(_) => println!("done: {} written to {}", src_dir, dst_file),
             Err(e) => println!("Error: {:?}", e),
@@ -48,9 +49,14 @@ fn real_main() -> i32 {
     return 0;
 }
 
-fn zip_dir<T>(it: &mut Iterator<Item=DirEntry>, prefix: &str, writer: T, method: zip::CompressionMethod)
-              -> zip::result::ZipResult<()>
-    where T: Write+Seek
+fn zip_dir<T>(
+    it: &mut dyn Iterator<Item = DirEntry>,
+    prefix: &str,
+    writer: T,
+    method: zip::CompressionMethod,
+) -> zip::result::ZipResult<()>
+where
+    T: Write + Seek,
 {
     let mut zip = zip::ZipWriter::new(writer);
     let options = FileOptions::default()
@@ -83,7 +89,11 @@ fn zip_dir<T>(it: &mut Iterator<Item=DirEntry>, prefix: &str, writer: T, method:
     Result::Ok(())
 }
 
-fn doit(src_dir: &str, dst_file: &str, method: zip::CompressionMethod) -> zip::result::ZipResult<()> {
+fn doit(
+    src_dir: &str,
+    dst_file: &str,
+    method: zip::CompressionMethod,
+) -> zip::result::ZipResult<()> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound);
     }

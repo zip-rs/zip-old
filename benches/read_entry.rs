@@ -1,7 +1,4 @@
-#[macro_use]
-extern crate bencher;
-extern crate rand;
-extern crate zip;
+use bencher::{benchmark_group, benchmark_main};
 
 use std::io::{Cursor, Read, Write};
 
@@ -12,8 +9,8 @@ use zip::{ZipArchive, ZipWriter};
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
-    let options = zip::write::FileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored);
+    let options =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     writer.start_file("random.dat", options).unwrap();
     let mut bytes = vec![0u8; size];

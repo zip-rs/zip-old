@@ -7,6 +7,7 @@ zip-rs
 
 [Documentation](http://mvdnes.github.io/rust-docs/zip-rs/zip/index.html)
 
+
 Info
 ----
 
