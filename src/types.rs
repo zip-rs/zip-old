@@ -233,7 +233,7 @@ pub struct ZipFileData {
     /// External file attributes
     pub external_attributes: u32,
     /// True if file size it not known in local header
-    pub streaming: bool
+    pub streaming: bool,
 }
 
 impl ZipFileData {
@@ -306,7 +306,7 @@ mod test {
             header_start: 0,
             data_start: 0,
             external_attributes: 0,
-            streaming: false
+            streaming: false,
         };
         assert_eq!(
             data.file_name_sanitized(),

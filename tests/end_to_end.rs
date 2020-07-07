@@ -19,7 +19,7 @@ fn end_to_end() {
 
 #[test]
 fn end_to_end_streaming_write() {
-    let mut file =Vec::new();
+    let mut file = Vec::new();
 
     write_to_zip_file(zip::ZipWriter::new_streaming(&mut file)).expect("file written");
 
@@ -29,8 +29,7 @@ fn end_to_end_streaming_write() {
     assert!(file_contents.as_bytes() == LOREM_IPSUM);
 }
 
-fn write_to_zip_file<W:Write>(mut zip:  zip::ZipWriter<W>) -> zip::result::ZipResult<()> {
-
+fn write_to_zip_file<W: Write>(mut zip: zip::ZipWriter<W>) -> zip::result::ZipResult<()> {
     zip.add_directory("test/", Default::default())?;
 
     let options = FileOptions::default()

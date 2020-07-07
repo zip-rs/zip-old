@@ -21,8 +21,7 @@ use flate2::write::DeflateEncoder;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
-enum GenericZipWriter<W: Write>
-{
+enum GenericZipWriter<W: Write> {
     Closed,
     Storer(W),
     #[cfg(any(
@@ -59,8 +58,7 @@ enum GenericZipWriter<W: Write>
 ///
 /// println!("Result: {:?}", doit().unwrap());
 /// ```
-pub struct ZipWriter<W: Write>
-{
+pub struct ZipWriter<W: Write> {
     inner: GenericZipWriter<WriterWrapper<W>>,
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
@@ -143,20 +141,20 @@ impl Default for FileOptions {
     }
 }
 
-impl<W:Write> Write for ZipWriter<W>
-{
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize>
-    {
-        if !self.writing_to_file { return Err(io::Error::new(io::ErrorKind::Other, "No file has been started")) }
-       
+impl<W: Write> Write for ZipWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if !self.writing_to_file {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "No file has been started",
+            ));
+        }
+
         let write_result = self.inner.ref_mut()?.write(buf);
         if let Ok(count) = write_result {
             self.stats.update(&buf[0..count]);
         }
         write_result
-
-
-        
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -171,16 +169,15 @@ impl ZipWriterStats {
     }
 }
 
-impl <W:Write> ZipWriter<W> {
-
+impl<W: Write> ZipWriter<W> {
     /// Initializes the ZipWriter.
     ///
     /// Before writing to this object, the start_file command should be called.
     pub fn new(inner: W) -> ZipWriter<W>
-    where W: Seek
+    where
+        W: Seek,
     {
-        ZipWriter
-        {
+        ZipWriter {
             inner: GenericZipWriter::Storer(WriterWrapper::new(inner)),
             files: Vec::new(),
             stats: Default::default(),
@@ -190,14 +187,12 @@ impl <W:Write> ZipWriter<W> {
     }
 
     /// Initializes ZipWriter in streamming mode
-    /// 
+    ///
     /// It means that output stream may not be seekable (like stdout, pipe, socket ...).
-    /// Zip format still supports this mode, local file header will contain 0 for file length and CRC32 
+    /// Zip format still supports this mode, local file header will contain 0 for file length and CRC32
     /// and data descriptor record is added after file data containing actual CRC32 and file length
-    pub fn new_streaming(inner: W) -> ZipWriter<W>
-    {
-        ZipWriter
-        {
+    pub fn new_streaming(inner: W) -> ZipWriter<W> {
+        ZipWriter {
             inner: GenericZipWriter::Storer(WriterWrapper::new_unseekable(inner)),
             files: Vec::new(),
             stats: Default::default(),
@@ -243,7 +238,7 @@ impl <W:Write> ZipWriter<W> {
                 header_start,
                 data_start: 0,
                 external_attributes: permissions << 16,
-                streaming: ! writer.can_seek()
+                streaming: !writer.can_seek(),
             };
             write_local_file_header(writer, &file)?;
 
@@ -357,8 +352,7 @@ impl <W:Write> ZipWriter<W> {
             let writer = self.inner.get_plain();
 
             let central_start = writer.current_position()?;
-            for file in self.files.iter()
-            {
+            for file in self.files.iter() {
                 write_central_directory_header(writer, file)?;
             }
             let central_size = writer.current_position()? - central_start;
@@ -383,20 +377,16 @@ impl <W:Write> ZipWriter<W> {
     ///
     /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
-    pub fn finish(&mut self) -> ZipResult<W>
-    {
+    pub fn finish(&mut self) -> ZipResult<W> {
         self.finalize()?;
         let inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
         Ok(inner.unwrap().unwrap())
     }
 }
 
-impl<W:Write> Drop for ZipWriter<W>
-{
-    fn drop(&mut self)
-    {
-        if !self.inner.is_closed()
-        {
+impl<W: Write> Drop for ZipWriter<W> {
+    fn drop(&mut self) {
+        if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
                 let _ = write!(&mut io::stderr(), "ZipWriter drop failed: {:?}", e);
             }
@@ -404,20 +394,15 @@ impl<W:Write> Drop for ZipWriter<W>
     }
 }
 
-impl<W: Write> GenericZipWriter<W>
-{
-    fn is_closed(&self) -> bool
-    {
-        match *self
-        {
+impl<W: Write> GenericZipWriter<W> {
+    fn is_closed(&self) -> bool {
+        match *self {
             GenericZipWriter::Closed => true,
             _ => false,
         }
     }
 
-
-    fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()>
-    {
+    fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()> {
         match self.current_compression() {
             Some(method) if method == compression => return Ok(()),
             None => {
@@ -486,7 +471,10 @@ impl<W: Write> GenericZipWriter<W>
             GenericZipWriter::Deflater(ref mut w) => Ok(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(ref mut w) => Ok(w as &mut dyn Write),
-            GenericZipWriter::Closed => Err(io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed")),
+            GenericZipWriter::Closed => Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "ZipWriter was already closed",
+            )),
         }
     }
 
@@ -521,13 +509,18 @@ impl<W: Write> GenericZipWriter<W>
 }
 
 fn calc_generic_flags(file: &ZipFileData) -> u16 {
-    let mut flag = if !file.file_name.is_ascii() { 1u16 << 11 } else { 0 };
-    if file.streaming { flag |= 0x08 }
+    let mut flag = if !file.file_name.is_ascii() {
+        1u16 << 11
+    } else {
+        0
+    };
+    if file.streaming {
+        flag |= 0x08
+    }
     flag
 }
 
-fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
-{
+fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // local file header signature
     writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
     // version needed to extract
@@ -559,9 +552,11 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     Ok(())
 }
 
-fn update_local_file_header<W:Write>(writer: &mut WriterWrapper<W>, file: &ZipFileData) -> ZipResult<()>
-{
-    const CRC32_OFFSET : u64 = 14;
+fn update_local_file_header<W: Write>(
+    writer: &mut WriterWrapper<W>,
+    file: &ZipFileData,
+) -> ZipResult<()> {
+    const CRC32_OFFSET: u64 = 14;
     writer.seek_position(file.header_start + CRC32_OFFSET)?;
     writer.write_u32::<LittleEndian>(file.crc32)?;
     writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
@@ -616,8 +611,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn add_data_descriptor_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()>
-{
+fn add_data_descriptor_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     // data_descriptor header signature
     writer.write_u32::<LittleEndian>(spec::DATA_DESCRIPTOR_SIGNATURE)?;
     // crc-32
@@ -630,8 +624,7 @@ fn add_data_descriptor_header<T: Write>(writer: &mut T, file: &ZipFileData) -> Z
     Ok(())
 }
 
-fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>>
-{
+fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>> {
     let writer = Vec::new();
     // Future work
     Ok(writer)
@@ -650,62 +643,60 @@ fn path_to_string(path: &std::path::Path) -> String {
     path_str
 }
 
-// Here are types for making ZipWriter work with non-seekable streams 
+// Here are types for making ZipWriter work with non-seekable streams
 
-type SeekFn<W> =  for<'a> fn(&'a mut W, io::SeekFrom)->io::Result<u64>;
+type SeekFn<W> = for<'a> fn(&'a mut W, io::SeekFrom) -> io::Result<u64>;
 
 enum WriterFlavour<W> {
-    CanSeek{
-        seek: SeekFn<W>
-    },
-    CannotSeek {
-        pos: u64
-    }
+    CanSeek { seek: SeekFn<W> },
+    CannotSeek { pos: u64 },
 }
 
 struct WriterWrapper<W> {
     inner: W,
-    flavour: WriterFlavour<W>
+    flavour: WriterFlavour<W>,
 }
 
-
-impl <W:Write> WriterWrapper<W> {
+impl<W: Write> WriterWrapper<W> {
     pub fn new_unseekable(inner: W) -> Self {
-        WriterWrapper{
+        WriterWrapper {
             inner,
-            flavour: WriterFlavour::CannotSeek{ pos: 0}
+            flavour: WriterFlavour::CannotSeek { pos: 0 },
         }
     }
 
-    pub fn new(inner: W) -> Self 
-    where W:Seek
+    pub fn new(inner: W) -> Self
+    where
+        W: Seek,
     {
-        WriterWrapper{
+        WriterWrapper {
             inner,
-            flavour: WriterFlavour::CanSeek{ seek: Seek::seek}
+            flavour: WriterFlavour::CanSeek { seek: Seek::seek },
         }
     }
 
     fn can_seek(&self) -> bool {
         match self.flavour {
-            WriterFlavour::CannotSeek{..} => false,
-            WriterFlavour::CanSeek{..} => true
+            WriterFlavour::CannotSeek { .. } => false,
+            WriterFlavour::CanSeek { .. } => true,
         }
     }
 
     fn current_position(&mut self) -> io::Result<u64> {
         match self.flavour {
-            WriterFlavour::CannotSeek{pos} => Ok(pos),
-            WriterFlavour::CanSeek{seek} => seek(&mut self.inner, io::SeekFrom::Current(0))
+            WriterFlavour::CannotSeek { pos } => Ok(pos),
+            WriterFlavour::CanSeek { seek } => seek(&mut self.inner, io::SeekFrom::Current(0)),
         }
     }
 
     fn seek_position(&mut self, pos: u64) -> io::Result<u64> {
         match self.flavour {
-            WriterFlavour::CannotSeek{..} => Err(io::Error::new(io::ErrorKind::Other, "Unsupported operation")),
-            WriterFlavour::CanSeek{seek} => seek(&mut self.inner, io::SeekFrom::Start(pos))
+            WriterFlavour::CannotSeek { .. } => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Unsupported operation",
+            )),
+            WriterFlavour::CanSeek { seek } => seek(&mut self.inner, io::SeekFrom::Start(pos)),
         }
-        
     }
 
     fn unwrap(self) -> W {
@@ -713,11 +704,10 @@ impl <W:Write> WriterWrapper<W> {
     }
 }
 
-impl <W:Write> Write for WriterWrapper<W> {
-
+impl<W: Write> Write for WriterWrapper<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let n = self.inner.write(buf)?;
-        if let WriterFlavour::CannotSeek{ref mut pos} = &mut self.flavour  {
+        if let WriterFlavour::CannotSeek { ref mut pos } = &mut self.flavour {
             *pos += n as u64
         };
         Ok(n)
@@ -733,9 +723,9 @@ mod test {
     use super::{FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::types::DateTime;
+    use byteorder::{LittleEndian, ReadBytesExt};
     use std::io;
     use std::io::Write;
-    use byteorder::{LittleEndian, ReadBytesExt};
 
     #[test]
     fn write_empty_zip() {
@@ -812,7 +802,7 @@ mod test {
         assert_eq!(path_str, "windows/system32");
     }
 
-        #[test]
+    #[test]
     fn write_to_noseekable_stream() {
         let w = Vec::new();
         let mut zip = ZipWriter::new_streaming(w);
@@ -820,34 +810,30 @@ mod test {
         zip.start_file("my_test", stored_opts).unwrap();
         zip.write("Sedm lumpu slohlo pumpu".as_bytes()).unwrap();
         zip.start_file("my_second_test", stored_opts).unwrap();
-        zip.write("Usak suak susak kulisak je na vesak".as_bytes()).unwrap();
+        zip.write("Usak suak susak kulisak je na vesak".as_bytes())
+            .unwrap();
         let res = zip.finish().unwrap();
-        assert!(res.len()>100);
-        let read_u32 = |idx| {
-             (&res[idx..]).read_u32::<LittleEndian>().unwrap()
-        };
-        let test_flag = |idx| {
-            (&res[idx..]).read_u16::<LittleEndian>().unwrap() & 0x8 > 0
-        };
+        assert!(res.len() > 100);
+        let read_u32 = |idx| (&res[idx..]).read_u32::<LittleEndian>().unwrap();
+        let test_flag = |idx| (&res[idx..]).read_u16::<LittleEndian>().unwrap() & 0x8 > 0;
         // has flag 3
         assert!(test_flag(6));
         // local file header lengths are empty
         assert_eq!(0, read_u32(18));
         assert_eq!(0, read_u32(22));
-        // but there is data descriptor after file 
-        let dd_start = 30+7+23;
+        // but there is data descriptor after file
+        let dd_start = 30 + 7 + 23;
         assert_eq!(crate::spec::DATA_DESCRIPTOR_SIGNATURE, read_u32(dd_start));
-        assert!(read_u32(dd_start+4) != 0);
-        assert_eq!(23, read_u32(dd_start+8));
-        assert_eq!(23, read_u32(dd_start+12));
+        assert!(read_u32(dd_start + 4) != 0);
+        assert_eq!(23, read_u32(dd_start + 8));
+        assert_eq!(23, read_u32(dd_start + 12));
 
         // and correct data are also in files dictionary
         let fd_start = 171;
-        assert!(test_flag(fd_start+8));
-        assert_eq!(23, read_u32(fd_start+20));
-        assert_eq!(23, read_u32(fd_start+24));
+        assert!(test_flag(fd_start + 8));
+        assert_eq!(23, read_u32(fd_start + 20));
+        assert_eq!(23, read_u32(fd_start + 24));
         // let mut f = std::fs::File::create("/tmp/my_zip_test.zip").unwrap();
         // f.write_all(&res).unwrap();
-
-}
+    }
 }

@@ -543,7 +543,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         header_start: offset,
         data_start: 0,
         external_attributes: external_file_attributes,
-        streaming: false
+        streaming: false,
     };
 
     match parse_extra_field(&mut result, &*extra_field) {
@@ -798,7 +798,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // We set this to zero, which should be valid as the docs state 'If input came
         // from standard input, this field is set to zero.'
         external_attributes: 0,
-        streaming: false
+        streaming: false,
     };
 
     match parse_extra_field(&mut result, &extra_field) {
