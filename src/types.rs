@@ -1,6 +1,5 @@
 //! Types that specify what is contained in a ZIP.
 
-#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System {
     Dos = 0,

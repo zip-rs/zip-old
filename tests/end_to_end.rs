@@ -50,7 +50,7 @@ fn read_zip_file(zip_file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<Strin
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
     let expected_file_names = ["test/", "test/☃.txt", "test/lorem_ipsum.txt"];
-    let expected_file_names = HashSet::from_iter(expected_file_names.iter().copied());
+    let expected_file_names = HashSet::from_iter(expected_file_names.iter().map(|&v| v));
     let file_names = archive.file_names().collect::<HashSet<_>>();
     assert_eq!(file_names, expected_file_names);
 

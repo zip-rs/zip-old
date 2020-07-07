@@ -15,3 +15,4 @@ pub mod result;
 mod spec;
 mod types;
 pub mod write;
+mod zipcrypto;
