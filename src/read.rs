@@ -263,7 +263,13 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                     );
                 }
 
-                let directory_start = footer.central_directory_offset + archive_offset;
+                let directory_start = footer
+                    .central_directory_offset
+                    .checked_add(archive_offset)
+                    .ok_or_else(|| {
+                        ZipError::InvalidArchive("Invalid central directory size or offset")
+                    })?;
+
                 Ok((
                     archive_offset,
                     directory_start,
@@ -830,6 +836,17 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset.zip"));
+        let reader = ZipArchive::new(io::Cursor::new(v));
+        assert!(reader.is_err());
+    }
+
+    #[test]
+    fn invalid_offset2() {
+        use super::ZipArchive;
+        use std::io;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/invalid_offset2.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v));
         assert!(reader.is_err());
     }
