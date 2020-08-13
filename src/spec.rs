@@ -66,7 +66,6 @@ impl CentralDirectoryEnd {
                 reader.seek(io::SeekFrom::Current(
                     BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
                 ))?;
-                
                 let cde_start_pos = reader.seek(io::SeekFrom::Start(pos as u64))?;
                 return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
             }
