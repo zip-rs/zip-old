@@ -242,6 +242,8 @@ pub struct ZipFileData {
     pub data_start: u64,
     /// External file attributes
     pub external_attributes: u32,
+    /// Extra field usually used for storage expansion
+    pub extra_field: Vec<u8>, // TODO: make Option
 }
 
 impl ZipFileData {
@@ -315,6 +317,7 @@ mod test {
             data_start: 0,
             central_header_start: 0,
             external_attributes: 0,
+            extra_field: vec![],
         };
         assert_eq!(
             data.file_name_sanitized(),

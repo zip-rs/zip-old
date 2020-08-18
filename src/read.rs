@@ -507,9 +507,10 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         central_header_start,
         data_start: 0,
         external_attributes: external_file_attributes,
+        extra_field,
     };
 
-    match parse_extra_field(&mut result, &*extra_field) {
+    match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
@@ -520,10 +521,10 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
     Ok(result)
 }
 
-fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(data);
+fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+    let mut reader = io::Cursor::new(&file.extra_field);
 
-    while (reader.position() as usize) < data.len() {
+    while (reader.position() as usize) < file.extra_field.len() {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
         let mut len_left = len as i64;
@@ -771,9 +772,10 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // We set this to zero, which should be valid as the docs state 'If input came
         // from standard input, this field is set to zero.'
         external_attributes: 0,
+        extra_field,
     };
 
-    match parse_extra_field(&mut result, &extra_field) {
+    match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }

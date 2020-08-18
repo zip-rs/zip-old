@@ -209,7 +209,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
+    fn start_entry<S>(&mut self, name: S, options: FileOptions, extra_data: Option<&[u8]>) -> ZipResult<()>
     where
         S: Into<String>,
     {
@@ -238,6 +238,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 data_start: 0,
                 central_header_start: 0,
                 external_attributes: permissions << 16,
+                extra_field: extra_data.unwrap_or_default().to_vec(),
             };
             write_local_file_header(writer, &file)?;
 
@@ -288,7 +289,21 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options)?;
+        self.start_entry(name, options, Option::None)?;
+        self.writing_to_file = true;
+        Ok(())
+    }
+
+    /// Starts a file with extra data.
+    pub fn start_file_with_extra_data<S>(&mut self, name: S, mut options: FileOptions, extra_data: &[u8]) -> ZipResult<()>
+        where
+            S: Into<String>,
+    {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o644);
+        }
+        *options.permissions.as_mut().unwrap() |= 0o100000;
+        self.start_entry(name, options, Option::from(extra_data))?;
         self.writing_to_file = true;
         Ok(())
     }
@@ -307,6 +322,19 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         options: FileOptions,
     ) -> ZipResult<()> {
         self.start_file(path_to_string(path), options)
+    }
+
+    /// Starts a file with extra data, taking a Path as argument.
+    ///
+    /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
+    /// Components, such as a starting '/' or '..' and '.'.
+    pub fn start_file_from_path_with_extra_data(
+        &mut self,
+        path: &std::path::Path,
+        options: FileOptions,
+        extra_data: &[u8],
+    ) -> ZipResult<()> {
+        self.start_file_with_extra_data(path_to_string(path), options, extra_data)
     }
 
     /// Add a directory entry.
@@ -329,7 +357,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options)?;
+        self.start_entry(name_with_slash, options, Option::None)?;
         self.writing_to_file = false;
         Ok(())
     }
@@ -611,9 +639,9 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>> {
-    let writer = Vec::new();
-    // Future work
+fn build_extra_field(file: &ZipFileData) -> ZipResult<Vec<u8>> {
+    let mut writer = Vec::new();
+    writer.write_all(&file.extra_field[..])?;
     Ok(writer)
 }
 
