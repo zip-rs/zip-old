@@ -607,6 +607,11 @@ impl<'a> ZipFile<'a> {
 
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
     /// removes a leading '/' and removes '..' parts.
+    #[deprecated(
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change.
+                You must use a sanitization strategy that's appropriate for your input"
+    )]
     pub fn sanitized_name(&self) -> ::std::path::PathBuf {
         self.data.file_name_sanitized()
     }
