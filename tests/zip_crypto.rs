@@ -70,6 +70,7 @@ fn encrypted_file() {
     {
         // Correct password, read contents
         let mut file = archive.by_index_decrypt(0, "test".as_bytes()).unwrap();
+        #[allow(deprecated)]
         let file_name = file.sanitized_name();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
