@@ -40,26 +40,27 @@ enum GenericZipWriter<W: Write + io::Seek> {
 /// API to edit its contents.
 ///
 /// ```
-/// fn doit() -> zip::result::ZipResult<()>
-/// {
-///     use std::io::Write;
+/// # fn doit() -> zip::result::ZipResult<()>
+/// # {
+/// # use zip::ZipWriter;
+/// use std::io::Write;
+/// use zip::write::FileOptions;
 ///
-///     // For this example we write to a buffer, but normally you should use a File
-///     let mut buf: &mut [u8] = &mut [0u8; 65536];
-///     let mut w = std::io::Cursor::new(buf);
-///     let mut zip = zip::ZipWriter::new(w);
+/// // We use a buffer here, though you'd normally use a `File`
+/// let mut buf = [0; 65536];
+/// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
 ///
-///     let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-///     zip.start_file("hello_world.txt", options)?;
-///     zip.write(b"Hello, World!")?;
+/// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+/// zip.start_file("hello_world.txt", options)?;
+/// zip.write(b"Hello, World!")?;
 ///
-///     // Optionally finish the zip. (this is also done on drop)
-///     zip.finish()?;
+/// // Apply the changes you've made.
+/// // Dropping the `ZipWriter` will have the same effect, but may silently fail
+/// zip.finish()?;
 ///
-///     Ok(())
-/// }
-///
-/// println!("Result: {:?}", doit().unwrap());
+/// # Ok(())
+/// # }
+/// # doit().unwrap();
 /// ```
 pub struct ZipWriter<W: Write + io::Seek> {
     inner: GenericZipWriter<W>,
