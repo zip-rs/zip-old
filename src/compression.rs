@@ -3,19 +3,25 @@
 use std::fmt;
 
 #[allow(deprecated)]
-/// Compression methods for the contents of a ZIP file.
+/// Identifies the storage format used to compress a file within a ZIP archive.
+///
+/// Each file's compression method is stored alongside it, allowing the
+/// contents to be read without context.
+///
+/// When creating ZIP files, you may choose the method to use with
+/// [`zip::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CompressionMethod {
-    /// The file is stored (no compression)
+    /// Store the file as is
     Stored,
-    /// Deflate using any flate2 backend
+    /// Compress the file using Deflate
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     ))]
     Deflated,
-    /// File is compressed using BZIP2 algorithm
+    /// Compress the file using BZIP2
     #[cfg(feature = "bzip2")]
     Bzip2,
     /// Unsupported compression method
