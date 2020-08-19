@@ -26,6 +26,12 @@ impl System {
 /// When constructed manually from a date and time, it will also check if the input is sensible
 /// (e.g. months are from [1, 12]), but when read from a zip some parts may be out of their normal
 /// bounds (e.g. month 0, or hour 31).
+///
+/// # Warning
+///
+/// Some utilities use alternative timestamps to improve the accuracy of their
+/// ZIPs, but we don't parse them yet. [We're working on this](https://github.com/mvdnes/zip-rs/issues/156#issuecomment-652981904),
+/// however this API shouldn't be considered complete.
 #[derive(Debug, Clone, Copy)]
 pub struct DateTime {
     year: u16,
