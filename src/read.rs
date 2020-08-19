@@ -322,10 +322,14 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// # Platform-specific behaviour
     ///
     /// On unix systems permissions from the zip file are preserved, if they exist.
-    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+    // FIXME: Implement path sanitization to allow this to be public API.
+    //        This probably means failing on paths that would escape the directory
+    #[allow(dead_code)]
+    fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
-            let filepath = file.sanitized_name();
+            let filepath: std::path::PathBuf =
+                (|| unimplemented!("the sanitized path of {}", file.name()))();
 
             let outpath = directory.as_ref().join(filepath);
 
@@ -936,6 +940,7 @@ mod test {
 
         for i in 0..zip.len() {
             let zip_file = zip.by_index(i).unwrap();
+            #[allow(deprecated)]
             let full_name = zip_file.sanitized_name();
             let file_name = full_name.file_name().unwrap().to_str().unwrap();
             assert!(
