@@ -290,6 +290,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
+    #[deprecated(
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change. Use `start_file` instead."
+    )]
     pub fn start_file_from_path(
         &mut self,
         path: &std::path::Path,
@@ -327,6 +331,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
+    #[deprecated(
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change. Use `add_directory` instead."
+    )]
     pub fn add_directory_from_path(
         &mut self,
         path: &std::path::Path,
