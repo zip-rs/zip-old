@@ -48,7 +48,7 @@ enum GenericZipWriter<W: Write + io::Seek> {
 ///
 /// // We use a buffer here, though you'd normally use a `File`
 /// let mut buf = [0; 65536];
-/// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+/// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
 ///
 /// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 /// zip.start_file("hello_world.txt", options)?;
