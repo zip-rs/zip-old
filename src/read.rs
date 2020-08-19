@@ -34,24 +34,21 @@ mod ffi {
 /// Wrapper for reading the contents of a ZIP file.
 ///
 /// ```no_run
-/// use std::io::prelude::*;
-/// fn main() -> zip::result::ZipResult<()> {
+/// # use std::io::prelude::*;
+/// # fn main() -> zip::result::ZipResult<()> {
+/// # let buf: &[u8] = &[0u8; 128];
+/// # let mut reader = std::io::Cursor::new(buf);
+/// # let mut stdout = std::io::stdout();
+/// # let mut stdout = stdout.lock();
+/// let mut zip = zip::ZipArchive::new(reader)?;
 ///
-///     // For demonstration purposes we read from an empty buffer.
-///     // Normally a File object would be used.
-///     let buf: &[u8] = &[0u8; 128];
-///     let mut reader = std::io::Cursor::new(buf);
-///
-///     let mut zip = zip::ZipArchive::new(reader)?;
-///
-///     for i in 0..zip.len() {
-///         let mut file = zip.by_index(i).unwrap();
-///         println!("Filename: {}", file.name());
-///         let first_byte = file.bytes().next().unwrap()?;
-///         println!("{}", first_byte);
-///     }
-///     Ok(())
+/// for i in 0..zip.len() {
+///     let mut file = zip.by_index(i)?;
+///     println!("Filename: {}", file.name());
+///     std::io::copy(&mut file, &mut stdout);
 /// }
+/// #    Ok(())
+/// # }
 /// ```
 #[derive(Clone, Debug)]
 pub struct ZipArchive<R: Read + io::Seek> {
