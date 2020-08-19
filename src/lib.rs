@@ -1,4 +1,7 @@
-//! A basic ZipReader/Writer crate
+//! An ergonomic API for reading and writing ZIP files.
+//!
+//! The current implementation is based on [PKWARE's APPNOTE.TXT v6.3.9](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)
+// TODO: Decide on the crate's bias: Do we prioritise permissiveness/correctness/speed/ergonomics?
 
 #![warn(missing_docs)]
 
