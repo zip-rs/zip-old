@@ -1,4 +1,4 @@
-//! Structs for creating a new zip archive
+//! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
@@ -34,7 +34,10 @@ enum GenericZipWriter<W: Write + io::Seek> {
     Bzip2(BzEncoder<W>),
 }
 
-/// Generator for ZIP files.
+/// ZIP archive generator
+///
+/// Handles the bookkeeping involved in building an archive, and provides an
+/// API to edit its contents.
 ///
 /// ```
 /// fn doit() -> zip::result::ZipResult<()>
@@ -183,9 +186,9 @@ impl ZipWriterStats {
 }
 
 impl<W: Write + io::Seek> ZipWriter<W> {
-    /// Initializes the ZipWriter.
+    /// Initializes the archive.
     ///
-    /// Before writing to this object, the start_file command should be called.
+    /// Before writing to this object, the [`ZipWriter::start_file`] function should be called.
     pub fn new(inner: W) -> ZipWriter<W> {
         ZipWriter {
             inner: GenericZipWriter::Storer(inner),
@@ -272,7 +275,9 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Starts a file.
+    /// Create a file in the archive and start writing its' contents.
+    ///
+    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
     where
         S: Into<String>,
