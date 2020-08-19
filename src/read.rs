@@ -1,4 +1,4 @@
-//! Structs for reading a ZIP archive
+//! Types for reading ZIP archives
 
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
@@ -31,7 +31,7 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-/// Wrapper for reading the contents of a ZIP file.
+/// ZIP archive reader
 ///
 /// ```no_run
 /// # use std::io::prelude::*;
@@ -276,7 +276,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         }
     }
 
-    /// Opens a Zip archive and parses the central directory
+    /// Read a ZIP archive, collecting the files it contains
+    ///
+    /// This uses the central directory record of the ZIP file, and ignores local file headers
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
