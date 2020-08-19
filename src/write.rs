@@ -196,7 +196,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
     }
 
-    /// Set ZIP archive comment. Defaults to 'zip-rs' if not set.
+    /// Set ZIP archive comment.
     pub fn set_comment<S>(&mut self, comment: S)
     where
         S: Into<String>,
