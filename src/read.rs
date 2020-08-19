@@ -356,15 +356,6 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Number of files contained in this zip.
-    ///
-    /// ```no_run
-    /// let mut zip = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
-    ///
-    /// for i in 0..zip.len() {
-    ///     let mut file = zip.by_index(i).unwrap();
-    ///     // Do something with file i
-    /// }
-    /// ```
     pub fn len(&self) -> usize {
         self.files.len()
     }
