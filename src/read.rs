@@ -32,21 +32,18 @@ mod ffi {
 /// ZIP archive reader
 ///
 /// ```no_run
-/// # use std::io::prelude::*;
-/// # fn main() -> zip::result::ZipResult<()> {
-/// # let buf: &[u8] = &[0u8; 128];
-/// # let mut reader = std::io::Cursor::new(buf);
-/// # let mut stdout = std::io::stdout();
-/// # let mut stdout = stdout.lock();
-/// let mut zip = zip::ZipArchive::new(reader)?;
+/// use std::io::prelude::*;
+/// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
+///     let mut zip = zip::ZipArchive::new(reader)?;
 ///
-/// for i in 0..zip.len() {
-///     let mut file = zip.by_index(i)?;
-///     println!("Filename: {}", file.name());
-///     std::io::copy(&mut file, &mut stdout);
+///     for i in 0..zip.len() {
+///         let mut file = zip.by_index(i)?;
+///         println!("Filename: {}", file.name());
+///         std::io::copy(&mut file, &mut std::io::stdout());
+///     }
+///
+///     Ok(())
 /// }
-/// #    Ok(())
-/// # }
 /// ```
 #[derive(Clone, Debug)]
 pub struct ZipArchive<R: Read + io::Seek> {
