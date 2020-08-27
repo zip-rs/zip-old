@@ -3,29 +3,38 @@
 //!
 //! The ZIP format was published by PKWARE in 1989, and its age shows. It wasn't
 //! designed for the modern internet, with no global timestamps or reliable
-//! streaming support. However, time has given it the chance to grow into a
-//! standard used in every corner of computing.
+//! streaming support. However, time has given it the chance to creep innto
+//! every corner of computing.
 //!
 //! It's implemented for [just][zipfile] [about][ZipFile] [every][util.zip]
 //! [environment][miniz]. It's been extended into JAR, Open Office XML, and
-//! [EPUB]. Their support in the major consumer OS' make them perfect for file
-//! distribution: chances are you've downloaded one yourself.
+//! [EPUB]. Due to consumer OS support for ZIP files, it's also perfect for
+//! file distribution: chances are you've downloaded one yourself.
 //!
 //! # Purpose
 //!
 //! This library focuses on providing an ergonomic API for manipulating ZIP
-//! archives. It has reasonable defaults for using archives to store files,
-//! and attempts to be flexible enough to implement a more complex format with.
+//! archives. It makes it easy to create archives, and is flexible enough to
+//! implement a more complex format.
 //!
-//! ...which is a rather high bar to reach. The ZIP format is messy, and
-//! sometimes tradeoffs have to be made. In those cases, the library will favor
-//! the ergonomic API first, and then make the code as fast as possible.
+// 1. Ergonomics
+//! - Ease of use comes first. The library will sacrifice some performance for
+//!   the sake of an intuitive interface.
+// 2. Correctness
+//! - Archives won't be interpreted in any way that deviates from the spec. Any
+//!   ambiguities in the metadata must be resolved by the user.
+// 3. Speed
+//! - Parsing should be as competitive with other popular implementations. [See
+//!   the benchmarks](#)
+// 4. Permissiveness
+//! - Invalid archives may be read if validation is not required, allowing more
+//!   ZIP-like files to be used.
 //!
 //! # The Format
 //!
 //! ## Compression
 //!
-//! File compression is a way of reducing the size of your files by reducing
+//! File compression is a way of reducing the size of your files by removing
 //! redundant data. ZIP uses a set of "lossless" compression algorithms to
 //! make archives as small as possible
 //!

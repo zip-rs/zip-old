@@ -28,16 +28,16 @@ impl<'a> Iterator for Fields<'a> {
                         self.extra_fields = &rest[len..];
                         (id, data)
                     })
-                    .ok_or(BadBlock)
+                    .ok_or(BadBlock(()))
             }),
             [] => None,
-            [..] => Some(Err(BadBlock)),
+            [..] => Some(Err(BadBlock(()))),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct BadBlock;
+pub struct BadBlock(());
 impl fmt::Display for BadBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("a data block in this file's metadata was invalid")
