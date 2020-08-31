@@ -662,9 +662,15 @@ impl<'a> ZipFile<'a> {
     pub fn header_start(&self) -> u64 {
         self.data.header_start
     }
+
     /// Get the starting offset of the zip header in the central directory for this file
     pub fn central_header_start(&self) -> u64 {
         self.data.central_header_start
+    }
+
+    /// Get the extra data of the zip header for this file
+    pub fn extra_data(&self) -> &[u8] {
+        self.data.extra_field.as_slice()
     }
 }
 
