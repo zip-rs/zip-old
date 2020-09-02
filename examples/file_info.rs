@@ -19,6 +19,7 @@ fn real_main() -> i32 {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i).unwrap();
+        #[allow(deprecated)]
         let outpath = file.sanitized_name();
 
         {

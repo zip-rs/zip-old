@@ -1,4 +1,4 @@
-//! Structs for reading a ZIP archive
+//! Types for reading ZIP archives
 
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
@@ -8,9 +8,7 @@ use crate::zipcrypto::ZipCryptoReader;
 use crate::zipcrypto::ZipCryptoReaderValid;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs;
 use std::io::{self, prelude::*};
-use std::path::Path;
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
@@ -31,25 +29,19 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-/// Wrapper for reading the contents of a ZIP file.
+/// ZIP archive reader
 ///
 /// ```no_run
 /// use std::io::prelude::*;
-/// fn main() -> zip::result::ZipResult<()> {
-///
-///     // For demonstration purposes we read from an empty buffer.
-///     // Normally a File object would be used.
-///     let buf: &[u8] = &[0u8; 128];
-///     let mut reader = std::io::Cursor::new(buf);
-///
+/// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
 ///     let mut zip = zip::ZipArchive::new(reader)?;
 ///
 ///     for i in 0..zip.len() {
-///         let mut file = zip.by_index(i).unwrap();
+///         let mut file = zip.by_index(i)?;
 ///         println!("Filename: {}", file.name());
-///         let first_byte = file.bytes().next().unwrap()?;
-///         println!("{}", first_byte);
+///         std::io::copy(&mut file, &mut std::io::stdout());
 ///     }
+///
 ///     Ok(())
 /// }
 /// ```
@@ -279,7 +271,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         }
     }
 
-    /// Opens a Zip archive and parses the central directory
+    /// Read a ZIP archive, collecting the files it contains
+    ///
+    /// This uses the central directory record of the ZIP file, and ignores local file headers
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
@@ -314,58 +308,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         })
     }
 
-    /// Extract a Zip archive into a directory.
-    ///
-    /// Paths are sanitized so that they cannot escape the given directory.
-    ///
-    /// This bails on the first error and does not attempt cleanup.
-    ///
-    /// # Platform-specific behaviour
-    ///
-    /// On unix systems permissions from the zip file are preserved, if they exist.
-    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
-        for i in 0..self.len() {
-            let mut file = self.by_index(i)?;
-            let filepath = file.sanitized_name();
-
-            let outpath = directory.as_ref().join(filepath);
-
-            if (file.name()).ends_with('/') {
-                fs::create_dir_all(&outpath)?;
-            } else {
-                if let Some(p) = outpath.parent() {
-                    if !p.exists() {
-                        fs::create_dir_all(&p)?;
-                    }
-                }
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
-            }
-
-            // Get and Set permissions
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-
-                if let Some(mode) = file.unix_mode() {
-                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Number of files contained in this zip.
-    ///
-    /// ```no_run
-    /// let mut zip = zip::ZipArchive::new(std::io::Cursor::new(vec![])).unwrap();
-    ///
-    /// for i in 0..zip.len() {
-    ///     let mut file = zip.by_index(i).unwrap();
-    ///     // Do something with file i
-    /// }
-    /// ```
     pub fn len(&self) -> usize {
         self.files.len()
     }
@@ -617,6 +560,11 @@ impl<'a> ZipFile<'a> {
 
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
     /// removes a leading '/' and removes '..' parts.
+    #[deprecated(
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change.
+                You must use a sanitization strategy that's appropriate for your input"
+    )]
     pub fn sanitized_name(&self) -> ::std::path::PathBuf {
         self.data.file_name_sanitized()
     }
@@ -941,6 +889,7 @@ mod test {
 
         for i in 0..zip.len() {
             let zip_file = zip.by_index(i).unwrap();
+            #[allow(deprecated)]
             let full_name = zip_file.sanitized_name();
             let file_name = full_name.file_name().unwrap().to_str().unwrap();
             assert!(

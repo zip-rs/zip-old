@@ -1,4 +1,4 @@
-//! Structs for creating a new zip archive
+//! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
@@ -34,29 +34,33 @@ enum GenericZipWriter<W: Write + io::Seek> {
     Bzip2(BzEncoder<W>),
 }
 
-/// Generator for ZIP files.
+/// ZIP archive generator
+///
+/// Handles the bookkeeping involved in building an archive, and provides an
+/// API to edit its contents.
 ///
 /// ```
-/// fn doit() -> zip::result::ZipResult<()>
-/// {
-///     use std::io::Write;
+/// # fn doit() -> zip::result::ZipResult<()>
+/// # {
+/// # use zip::ZipWriter;
+/// use std::io::Write;
+/// use zip::write::FileOptions;
 ///
-///     // For this example we write to a buffer, but normally you should use a File
-///     let mut buf: &mut [u8] = &mut [0u8; 65536];
-///     let mut w = std::io::Cursor::new(buf);
-///     let mut zip = zip::ZipWriter::new(w);
+/// // We use a buffer here, though you'd normally use a `File`
+/// let mut buf = [0; 65536];
+/// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
 ///
-///     let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-///     zip.start_file("hello_world.txt", options)?;
-///     zip.write(b"Hello, World!")?;
+/// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+/// zip.start_file("hello_world.txt", options)?;
+/// zip.write(b"Hello, World!")?;
 ///
-///     // Optionally finish the zip. (this is also done on drop)
-///     zip.finish()?;
+/// // Apply the changes you've made.
+/// // Dropping the `ZipWriter` will have the same effect, but may silently fail
+/// zip.finish()?;
 ///
-///     Ok(())
-/// }
-///
-/// println!("Result: {:?}", doit().unwrap());
+/// # Ok(())
+/// # }
+/// # doit().unwrap();
 /// ```
 pub struct ZipWriter<W: Write + io::Seek> {
     inner: GenericZipWriter<W>,
@@ -183,9 +187,9 @@ impl ZipWriterStats {
 }
 
 impl<W: Write + io::Seek> ZipWriter<W> {
-    /// Initializes the ZipWriter.
+    /// Initializes the archive.
     ///
-    /// Before writing to this object, the start_file command should be called.
+    /// Before writing to this object, the [`ZipWriter::start_file`] function should be called.
     pub fn new(inner: W) -> ZipWriter<W> {
         ZipWriter {
             inner: GenericZipWriter::Storer(inner),
@@ -196,7 +200,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
     }
 
-    /// Set ZIP archive comment. Defaults to 'zip-rs' if not set.
+    /// Set ZIP archive comment.
     pub fn set_comment<S>(&mut self, comment: S)
     where
         S: Into<String>,
@@ -272,7 +276,9 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Starts a file.
+    /// Create a file in the archive and start writing its' contents.
+    ///
+    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
     where
         S: Into<String>,
@@ -290,6 +296,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
+    #[deprecated(
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change. Use `start_file` instead."
+    )]
     pub fn start_file_from_path(
         &mut self,
         path: &std::path::Path,
@@ -327,6 +337,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
+    #[deprecated(
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change. Use `add_directory` instead."
+    )]
     pub fn add_directory_from_path(
         &mut self,
         path: &std::path::Path,
