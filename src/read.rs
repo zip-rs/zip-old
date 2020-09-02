@@ -569,24 +569,44 @@ fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()> {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
         let mut len_left = len as i64;
-        // Zip64 extended information extra field
-        if kind == 0x0001 {
-            if file.uncompressed_size == 0xFFFFFFFF {
-                file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
-                len_left -= 8;
+        match kind {
+            // Zip64 extended information extra field
+            0x0001 => {
+                if file.uncompressed_size == 0xFFFFFFFF {
+                    file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
+                    len_left -= 8;
+                }
+                if file.compressed_size == 0xFFFFFFFF {
+                    file.compressed_size = reader.read_u64::<LittleEndian>()?;
+                    len_left -= 8;
+                }
+                if file.header_start == 0xFFFFFFFF {
+                    file.header_start = reader.read_u64::<LittleEndian>()?;
+                    len_left -= 8;
+                }
+                // Unparsed fields:
+                // u32: disk start number
             }
-            if file.compressed_size == 0xFFFFFFFF {
-                file.compressed_size = reader.read_u64::<LittleEndian>()?;
-                len_left -= 8;
+            // Zip Name field for backward compatibility
+            0x7075 => {
+                let _version = reader.read_u8()?;
+                let name_crc32 = reader.read_u32::<LittleEndian>()?;
+                len_left -= 1 + 4;
+                if len_left > 0 {
+                    let mut name_buf = vec![0u8; len_left as usize];
+                    reader.read_exact(&mut name_buf)?;
+                    let mut hasher = crc32fast::Hasher::new();
+                    hasher.update(&file.file_name_raw);
+                    // check if a utility renames the File Name but does not update the UTF-8 path extra field
+                    if hasher.finalize() == name_crc32 {
+                        if let Ok(name) = String::from_utf8(name_buf) {
+                            file.file_name = name;
+                        }
+                    }
+                }
             }
-            if file.header_start == 0xFFFFFFFF {
-                file.header_start = reader.read_u64::<LittleEndian>()?;
-                len_left -= 8;
-            }
-            // Unparsed fields:
-            // u32: disk start number
+            _ => {}
         }
-
         // We could also check for < 0 to check for errors
         if len_left > 0 {
             reader.seek(io::SeekFrom::Current(len_left))?;
@@ -948,5 +968,18 @@ mod test {
                     || (file_name.starts_with("file") && zip_file.is_file())
             );
         }
+    }
+
+    #[test]
+    fn unicode_path_in_extra_field_test() {
+        use super::ZipArchive;
+        use std::io;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/utf8_in_extra.zip"));
+        let mut zip = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let zip_file = zip.by_index(0).unwrap();
+        let file_name = zip_file.name();
+        assert_eq!(file_name, "自を.txt");
     }
 }
