@@ -21,8 +21,8 @@
 //! - Ease of use comes first. The library will sacrifice some performance for
 //!   the sake of an intuitive interface.
 // 2. Correctness
-//! - Archives won't be interpreted in any way that deviates from the spec. Any
-//!   ambiguities in the metadata must be resolved by the user.
+//! - Archives will be accurately represented by the API. If the meaning of any
+//!   metadata is unclear, the user will need to resolve it.
 // 3. Speed
 //! - Parsing should be as competitive with other popular implementations. [See
 //!   the benchmarks](#)
@@ -210,7 +210,7 @@ impl<'a, D, M> Iterator for Iter<'a, D, M> {
     fn next(&mut self) -> Option<Self::Item> {
         self.metadata.next().map(|metadata| File {
             inner: self.inner,
-            metadata
+            metadata,
         })
     }
 }
