@@ -34,3 +34,9 @@ pub enum ZipError {
     #[error("invalid password for file in archive")]
     InvalidPassword,
 }
+
+impl From<ZipError> for io::Error {
+    fn from(err: ZipError) -> io::Error {
+        io::Error::new(io::ErrorKind::Other, err)
+    }
+}
