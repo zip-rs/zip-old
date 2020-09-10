@@ -2,7 +2,7 @@
 
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
-use crate::result::{ZipError, ZipResult};
+use crate::result::{InvalidPassword, ZipError, ZipResult};
 use crate::spec;
 use crate::zipcrypto::ZipCryptoReader;
 use crate::zipcrypto::ZipCryptoReaderValid;
@@ -137,17 +137,17 @@ fn make_reader<'a>(
     crc32: u32,
     reader: io::Take<&'a mut dyn io::Read>,
     password: Option<&[u8]>,
-) -> ZipResult<ZipFileReader<'a>> {
+) -> ZipResult<Result<ZipFileReader<'a>, InvalidPassword>> {
     let reader = match password {
         None => CryptoReader::Plaintext(reader),
         Some(password) => match ZipCryptoReader::new(reader, password).validate(crc32)? {
-            None => return Err(ZipError::InvalidPassword),
+            None => return Ok(Err(InvalidPassword)),
             Some(r) => CryptoReader::ZipCrypto(r),
         },
     };
 
     match compression_method {
-        CompressionMethod::Stored => Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32))),
+        CompressionMethod::Stored => Ok(Ok(ZipFileReader::Stored(Crc32Reader::new(reader, crc32)))),
         #[cfg(any(
             feature = "deflate",
             feature = "deflate-miniz",
@@ -155,15 +155,18 @@ fn make_reader<'a>(
         ))]
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
-            Ok(ZipFileReader::Deflated(Crc32Reader::new(
+            Ok(Ok(ZipFileReader::Deflated(Crc32Reader::new(
                 deflate_reader,
                 crc32,
-            )))
+            ))))
         }
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 => {
             let bzip2_reader = BzDecoder::new(reader);
-            Ok(ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32)))
+            Ok(Ok(ZipFileReader::Bzip2(Crc32Reader::new(
+                bzip2_reader,
+                crc32,
+            ))))
         }
         _ => unsupported_zip_error("Compression method not supported"),
     }
@@ -341,20 +344,20 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         &'a mut self,
         name: &str,
         password: &[u8],
-    ) -> ZipResult<ZipFile<'a>> {
+    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
         self.by_name_with_optional_password(name, Some(password))
     }
 
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
-        self.by_name_with_optional_password(name, None)
+        Ok(self.by_name_with_optional_password(name, None)?.unwrap())
     }
 
     fn by_name_with_optional_password<'a>(
         &'a mut self,
         name: &str,
         password: Option<&[u8]>,
-    ) -> ZipResult<ZipFile<'a>> {
+    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
         let index = match self.names_map.get(name) {
             Some(index) => *index,
             None => {
@@ -369,27 +372,33 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         &'a mut self,
         file_number: usize,
         password: &[u8],
-    ) -> ZipResult<ZipFile<'a>> {
+    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
         self.by_index_with_optional_password(file_number, Some(password))
     }
 
     /// Get a contained file by index
     pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
-        self.by_index_with_optional_password(file_number, None)
+        Ok(self
+            .by_index_with_optional_password(file_number, None)?
+            .unwrap())
     }
 
     fn by_index_with_optional_password<'a>(
         &'a mut self,
         file_number: usize,
         mut password: Option<&[u8]>,
-    ) -> ZipResult<ZipFile<'a>> {
+    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
         if file_number >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
         let data = &mut self.files[file_number];
 
         match (password, data.encrypted) {
-            (None, true) => return Err(ZipError::PasswordRequired),
+            (None, true) => {
+                return Err(ZipError::UnsupportedArchive(
+                    "Password required to decrypt file",
+                ))
+            }
             (Some(_), false) => password = None, //Password supplied, but none needed! Discard.
             _ => {}
         }
@@ -411,10 +420,14 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         self.reader.seek(io::SeekFrom::Start(data.data_start))?;
         let limit_reader = (self.reader.by_ref() as &mut dyn Read).take(data.compressed_size);
 
-        Ok(ZipFile {
-            reader: make_reader(data.compression_method, data.crc32, limit_reader, password)?,
-            data: Cow::Borrowed(data),
-        })
+        match make_reader(data.compression_method, data.crc32, limit_reader, password) {
+            Ok(Ok(reader)) => Ok(Ok(ZipFile {
+                reader,
+                data: Cow::Borrowed(data),
+            })),
+            Err(e) => Err(e),
+            Ok(Err(e)) => Ok(Err(e)),
+        }
     }
 
     /// Unwrap and return the inner reader object
@@ -778,7 +791,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     let result_compression_method = result.compression_method;
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
-        reader: make_reader(result_compression_method, result_crc32, limit_reader, None)?,
+        reader: make_reader(result_compression_method, result_crc32, limit_reader, None)?.unwrap(),
     }))
 }
 
