@@ -7,6 +7,11 @@ use thiserror::Error;
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
+/// The given password is wrong
+#[derive(Error, Debug)]
+#[error("invalid password for file in archive")]
+pub struct InvalidPassword;
+
 /// Error type for Zip
 #[derive(Debug, Error)]
 pub enum ZipError {
@@ -25,14 +30,6 @@ pub enum ZipError {
     /// The requested file could not be found in the archive
     #[error("specified file not found in archive")]
     FileNotFound,
-
-    /// No password was given but the data is encrypted
-    #[error("missing password, file in archive is encrypted")]
-    PasswordRequired,
-
-    /// The given password is wrong
-    #[error("invalid password for file in archive")]
-    InvalidPassword,
 }
 
 impl From<ZipError> for io::Error {
