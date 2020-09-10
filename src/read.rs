@@ -433,6 +433,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
     reader: &mut R,
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
+    let central_header_start = reader.seek(io::SeekFrom::Current(0))?;
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
@@ -490,6 +491,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         file_name_raw,
         file_comment,
         header_start: offset,
+        central_header_start,
         data_start: 0,
         external_attributes: external_file_attributes,
     };
@@ -646,6 +648,10 @@ impl<'a> ZipFile<'a> {
     pub fn header_start(&self) -> u64 {
         self.data.header_start
     }
+    /// Get the starting offset of the zip header in the central directory for this file
+    pub fn central_header_start(&self) -> u64 {
+        self.data.central_header_start
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
@@ -747,6 +753,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // not available.
         header_start: 0,
         data_start: 0,
+        central_header_start: 0,
         // The external_attributes field is only available in the central directory.
         // We set this to zero, which should be valid as the docs state 'If input came
         // from standard input, this field is set to zero.'
@@ -811,14 +818,15 @@ mod test {
     }
 
     #[test]
-    fn zip_comment() {
+    fn zip_contents() {
         use super::ZipArchive;
         use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
-        let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
         assert!(reader.comment() == b"");
+        assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
     }
 
     #[test]

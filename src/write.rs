@@ -236,6 +236,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 file_comment: String::new(),
                 header_start,
                 data_start: 0,
+                central_header_start: 0,
                 external_attributes: permissions << 16,
             };
             write_local_file_header(writer, &file)?;
