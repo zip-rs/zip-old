@@ -234,6 +234,10 @@ pub struct ZipFileData {
     pub file_comment: String,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
+    /// Specifies where the central header of the file starts
+    ///
+    /// Note that when this is not known, it is set to 0
+    pub central_header_start: u64,
     /// Specifies where the compressed data of the file starts
     pub data_start: u64,
     /// External file attributes
@@ -309,6 +313,7 @@ mod test {
             file_comment: String::new(),
             header_start: 0,
             data_start: 0,
+            central_header_start: 0,
             external_attributes: 0,
         };
         assert_eq!(
