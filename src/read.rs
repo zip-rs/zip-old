@@ -9,6 +9,7 @@ use crate::zipcrypto::ZipCryptoReaderValid;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
+use std::path::Component;
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
@@ -564,11 +565,21 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the name of the file
+    ///
+    /// # Warnings
+    ///
+    /// It is dangerous to use this name directly when extracting an archive.
+    /// It may contain an absolute path (`/etc/shadow`), or break out of the
+    /// current directory (`../runtime`). Carelessly writing to these paths
+    /// allows an attacker to craft a ZIP archive that will overwrite critical
+    /// files.
     pub fn name(&self) -> &str {
         &self.data.file_name
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
+    ///
+    /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
         &self.data.file_name_raw
     }
@@ -578,9 +589,24 @@ impl<'a> ZipFile<'a> {
     #[deprecated(
         since = "0.5.7",
         note = "by stripping `..`s from the path, the meaning of paths can change.
-                You must use a sanitization strategy that's appropriate for your input"
+                `mangled_name` can be used if this behaviour is desirable"
     )]
     pub fn sanitized_name(&self) -> ::std::path::PathBuf {
+        self.mangled_name()
+    }
+
+    /// Rewrite the path, ignoring any path components with special meaning.
+    ///
+    /// - Absolute paths are made relative
+    /// - [`ParentDir`]s are ignored
+    /// - Truncates the filename at a NULL byte
+    ///
+    /// This is appropriate if you need to be able to extract *something* from
+    /// any archive, but will easily misrepresent trivial paths like
+    /// `foo/../bar` as `foo/bar` (instead of `bar`).
+    ///
+    /// [`ParentDir`]: `Component::ParentDir`
+    pub fn mangled_name(&self) -> ::std::path::PathBuf {
         self.data.file_name_sanitized()
     }
 
