@@ -18,8 +18,10 @@ fn real_main() -> i32 {
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).unwrap();
-        #[allow(deprecated)]
-        let outpath = file.sanitized_name();
+        let outpath = match file.name_as_child() {
+            Some(path) => path,
+            None => continue,
+        };
 
         {
             let comment = file.comment();
@@ -29,17 +31,13 @@ fn real_main() -> i32 {
         }
 
         if (&*file.name()).ends_with('/') {
-            println!(
-                "File {} extracted to \"{}\"",
-                i,
-                outpath.as_path().display()
-            );
+            println!("File {} extracted to \"{}\"", i, outpath.display());
             fs::create_dir_all(&outpath).unwrap();
         } else {
             println!(
                 "File {} extracted to \"{}\" ({} bytes)",
                 i,
-                outpath.as_path().display(),
+                outpath.display(),
                 file.size()
             );
             if let Some(p) = outpath.parent() {
