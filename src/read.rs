@@ -9,7 +9,7 @@ use crate::zipcrypto::ZipCryptoReaderValid;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
-use std::path::Component;
+use std::path::{Component, Path};
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
@@ -573,6 +573,9 @@ impl<'a> ZipFile<'a> {
     /// current directory (`../runtime`). Carelessly writing to these paths
     /// allows an attacker to craft a ZIP archive that will overwrite critical
     /// files.
+    ///
+    /// You can use the [`ZipFile::name_as_child`] method to validate the name
+    /// as a safe path.
     pub fn name(&self) -> &str {
         &self.data.file_name
     }
@@ -603,11 +606,39 @@ impl<'a> ZipFile<'a> {
     ///
     /// This is appropriate if you need to be able to extract *something* from
     /// any archive, but will easily misrepresent trivial paths like
-    /// `foo/../bar` as `foo/bar` (instead of `bar`).
+    /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
+    /// [`ZipFile::name_as_child`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
     pub fn mangled_name(&self) -> ::std::path::PathBuf {
         self.data.file_name_sanitized()
+    }
+
+    /// Ensure the file path is safe to use as a [`Path`].
+    ///
+    /// - It can't contain NULL bytes
+    /// - It can't resolve to a path outside the current directory
+    ///   > `foo/../bar` is fine, `foo/../../bar` is not.
+    /// - It can't be an absolute path
+    ///
+    /// This will read well-formed ZIP files correctly, and is resistant
+    /// to path-based exploits. It is recommended over
+    /// [`ZipFile::mangled_name`].
+    pub fn name_as_child(&self) -> Option<&Path> {
+        if self.data.file_name.contains('\0') {
+            return None;
+        }
+        let path = Path::new(&self.data.file_name);
+        let mut depth = 0usize;
+        for component in path.components() {
+            match component {
+                Component::Prefix(_) | Component::RootDir => return None,
+                Component::ParentDir => depth = depth.checked_sub(1)?,
+                Component::Normal(_) => depth += 1,
+                Component::CurDir => (),
+            }
+        }
+        Some(path)
     }
 
     /// Get the comment of the file
