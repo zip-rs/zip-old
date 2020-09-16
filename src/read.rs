@@ -502,6 +502,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
+        extra_field,
         file_comment,
         header_start: offset,
         central_header_start,
@@ -509,7 +510,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         external_attributes: external_file_attributes,
     };
 
-    match parse_extra_field(&mut result, &*extra_field) {
+    match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
@@ -520,10 +521,10 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
     Ok(result)
 }
 
-fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(data);
+fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+    let mut reader = io::Cursor::new(&file.extra_field);
 
-    while (reader.position() as usize) < data.len() {
+    while (reader.position() as usize) < file.extra_field.len() {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
         let mut len_left = len as i64;
@@ -652,6 +653,11 @@ impl<'a> ZipFile<'a> {
         self.data.crc32
     }
 
+    /// Get the extra data of the zip header for this file
+    pub fn extra_data(&self) -> &[u8] {
+        &self.data.extra_field
+    }
+
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
         self.data.data_start
@@ -761,6 +767,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
+        extra_field,
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
@@ -773,7 +780,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         external_attributes: 0,
     };
 
-    match parse_extra_field(&mut result, &extra_field) {
+    match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }

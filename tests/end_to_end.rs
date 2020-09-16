@@ -28,6 +28,9 @@ fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
+    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options, |_| LOREM_IPSUM)?;
+    zip.write_all(b"Hello, World! Again.\n")?;
+
     zip.start_file("test/lorem_ipsum.txt", Default::default())?;
     zip.write_all(LOREM_IPSUM)?;
 
@@ -38,10 +41,21 @@ fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
 fn read_zip_file(zip_file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<String> {
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
-    let expected_file_names = ["test/", "test/☃.txt", "test/lorem_ipsum.txt"];
+    let expected_file_names = [
+        "test/",
+        "test/☃.txt",
+        "test_with_extra_data/🐢.txt",
+        "test/lorem_ipsum.txt",
+    ];
     let expected_file_names = HashSet::from_iter(expected_file_names.iter().map(|&v| v));
     let file_names = archive.file_names().collect::<HashSet<_>>();
     assert_eq!(file_names, expected_file_names);
+
+    {
+        let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
+        let expected_extra_data = LOREM_IPSUM;
+        assert_eq!(file_with_extra_data.extra_data(), expected_extra_data);
+    }
 
     let mut file = archive.by_name("test/lorem_ipsum.txt")?;
 

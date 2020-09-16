@@ -209,9 +209,16 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
+    fn start_entry<S, V, F>(
+        &mut self,
+        name: S,
+        options: FileOptions,
+        extra_data: F,
+    ) -> ZipResult<()>
     where
         S: Into<String>,
+        V: Into<Vec<u8>>,
+        F: FnOnce(u64) -> V,
     {
         self.finish_file()?;
 
@@ -222,6 +229,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             let permissions = options.permissions.unwrap_or(0o100644);
             let file_name = name.into();
             let file_name_raw = file_name.clone().into_bytes();
+            let extra_field = extra_data(header_start + 30 + file_name_raw.len() as u64).into();
             let mut file = ZipFileData {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
@@ -233,6 +241,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 uncompressed_size: 0,
                 file_name,
                 file_name_raw,
+                extra_field,
                 file_comment: String::new(),
                 header_start,
                 data_start: 0,
@@ -288,7 +297,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options)?;
+        self.start_entry(name, options, |_data_start| Vec::new())?;
         self.writing_to_file = true;
         Ok(())
     }
@@ -307,6 +316,30 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         options: FileOptions,
     ) -> ZipResult<()> {
         self.start_file(path_to_string(path), options)
+    }
+
+    /// Starts a file with extra data.
+    ///
+    /// Extra data is given by closure which provides a preliminary `ZipFile::data_start()` as it
+    /// would be without any extra data.
+    pub fn start_file_with_extra_data<S, V, F>(
+        &mut self,
+        name: S,
+        mut options: FileOptions,
+        extra_data: F,
+    ) -> ZipResult<()>
+    where
+        S: Into<String>,
+        V: Into<Vec<u8>>,
+        F: FnOnce(u64) -> V,
+    {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o644);
+        }
+        *options.permissions.as_mut().unwrap() |= 0o100000;
+        self.start_entry(name, options, extra_data)?;
+        self.writing_to_file = true;
+        Ok(())
     }
 
     /// Add a directory entry.
@@ -329,7 +362,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options)?;
+        self.start_entry(name_with_slash, options, |_data_start| Vec::new())?;
         self.writing_to_file = false;
         Ok(())
     }
@@ -611,10 +644,14 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn build_extra_field(_file: &ZipFileData) -> ZipResult<Vec<u8>> {
-    let writer = Vec::new();
-    // Future work
-    Ok(writer)
+fn build_extra_field(file: &ZipFileData) -> ZipResult<Vec<u8>> {
+    if file.extra_field.len() > std::u16::MAX as usize {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Extra data exceeds extra field",
+        ))?;
+    }
+    Ok(file.extra_field.clone())
 }
 
 fn path_to_string(path: &std::path::Path) -> String {
