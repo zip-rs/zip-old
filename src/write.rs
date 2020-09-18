@@ -67,6 +67,8 @@ pub struct ZipWriter<W: Write + io::Seek> {
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
+    writing_to_extra_field: bool,
+    writing_to_central_extra_field_only: bool,
     comment: String,
 }
 
@@ -155,11 +157,15 @@ impl<W: Write + io::Seek> Write for ZipWriter<W> {
         }
         match self.inner.ref_mut() {
             Some(ref mut w) => {
-                let write_result = w.write(buf);
-                if let Ok(count) = write_result {
-                    self.stats.update(&buf[0..count]);
+                if self.writing_to_extra_field {
+                    self.files.last_mut().unwrap().extra_field.write(buf)
+                } else {
+                    let write_result = w.write(buf);
+                    if let Ok(count) = write_result {
+                        self.stats.update(&buf[0..count]);
+                    }
+                    write_result
                 }
-                write_result
             }
             None => Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
@@ -196,6 +202,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
+            writing_to_extra_field: false,
+            writing_to_central_extra_field_only: false,
             comment: String::new(),
         }
     }
@@ -209,16 +217,9 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S, V, F>(
-        &mut self,
-        name: S,
-        options: FileOptions,
-        extra_data: F,
-    ) -> ZipResult<()>
+    fn start_entry<S>(&mut self, name: S, options: FileOptions) -> ZipResult<()>
     where
         S: Into<String>,
-        V: Into<Vec<u8>>,
-        F: FnOnce(u64) -> V,
     {
         self.finish_file()?;
 
@@ -229,7 +230,6 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             let permissions = options.permissions.unwrap_or(0o100644);
             let file_name = name.into();
             let file_name_raw = file_name.clone().into_bytes();
-            let extra_field = extra_data(header_start + 30 + file_name_raw.len() as u64).into();
             let mut file = ZipFileData {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
@@ -241,7 +241,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 uncompressed_size: 0,
                 file_name,
                 file_name_raw,
-                extra_field,
+                extra_field: Vec::new(),
                 file_comment: String::new(),
                 header_start,
                 data_start: 0,
@@ -266,6 +266,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
+        if self.writing_to_extra_field {
+            // Implicitly calling `end_extra_data()` for empty files.
+            self.end_extra_data()?;
+        }
         self.inner.switch_to(CompressionMethod::Stored)?;
         let writer = self.inner.get_plain();
 
@@ -297,14 +301,14 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options, |_data_start| Vec::new())?;
+        self.start_entry(name, options)?;
         self.writing_to_file = true;
         Ok(())
     }
 
     /// Starts a file, taking a Path as argument.
     ///
-    /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
+    /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
     #[deprecated(
         since = "0.5.7",
@@ -318,28 +322,140 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         self.start_file(path_to_string(path), options)
     }
 
-    /// Starts a file with extra data.
+    /// Create a file in the archive and start writing its extra data first.
     ///
-    /// Extra data is given by closure which provides a preliminary `ZipFile::data_start()` as it
-    /// would be without any extra data.
-    pub fn start_file_with_extra_data<S, V, F>(
+    /// Finish writing extra data and start writing file data with `end_extra_data()`. Optionally,
+    /// distinguish local from central extra data with `end_local_start_central_extra_data()`.
+    ///
+    /// Returns the preliminary starting offset of the file data without any extra data allowing to
+    /// align the file data by calculating a pad length to be prepended as part of the extra data.
+    ///
+    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
+    ///
+    /// ```
+    /// use byteorder::{LittleEndian, WriteBytesExt};
+    /// use zip::{ZipArchive, ZipWriter, write::FileOptions, result::ZipResult};
+    /// use std::io::{Write, Cursor};
+    ///
+    /// # fn main() -> ZipResult<()> {
+    /// let mut archive = Cursor::new(Vec::new());
+    ///
+    /// {
+    ///     let mut zip = ZipWriter::new(&mut archive);
+    ///     let options = FileOptions::default();
+    ///
+    ///     zip.start_file_with_extra_data("identical_extra_data.txt", options)?;
+    ///     let extra_data = b"local and central extra data";
+    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(extra_data.len() as u16)?;
+    ///     zip.write_all(extra_data)?;
+    ///     zip.end_extra_data()?;
+    ///     zip.write_all(b"file data")?;
+    ///
+    ///     let data_start = zip.start_file_with_extra_data("different_extra_data.txt", options)?;
+    ///     let extra_data = b"local extra data";
+    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(extra_data.len() as u16)?;
+    ///     zip.write_all(extra_data)?;
+    ///     let data_start = data_start as usize + 4 + extra_data.len() + 4;
+    ///     let align = 64;
+    ///     let pad_length = (align - data_start % align) % align;
+    ///     assert_eq!(pad_length, 17);
+    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(pad_length as u16)?;
+    ///     zip.write_all(&vec![0; pad_length])?;
+    ///     let data_start = zip.end_local_start_central_extra_data()?;
+    ///     assert_eq!(data_start as usize % align, 0);
+    ///     let extra_data = b"central extra data";
+    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(extra_data.len() as u16)?;
+    ///     zip.write_all(extra_data)?;
+    ///     zip.end_extra_data()?;
+    ///     zip.write_all(b"file data")?;
+    ///
+    ///     zip.finish()?;
+    /// }
+    ///
+    /// let mut zip = ZipArchive::new(archive)?;
+    /// assert_eq!(&zip.by_index(0)?.extra_data()[4..], b"local and central extra data");
+    /// assert_eq!(&zip.by_index(1)?.extra_data()[4..], b"central extra data");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn start_file_with_extra_data<S>(
         &mut self,
         name: S,
         mut options: FileOptions,
-        extra_data: F,
-    ) -> ZipResult<()>
+    ) -> ZipResult<u64>
     where
         S: Into<String>,
-        V: Into<Vec<u8>>,
-        F: FnOnce(u64) -> V,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options, extra_data)?;
+        self.start_entry(name, options)?;
         self.writing_to_file = true;
-        Ok(())
+        self.writing_to_extra_field = true;
+        Ok(self.files.last().unwrap().data_start)
+    }
+
+    /// End local and start central extra data. Requires `start_file_with_extra_data()`.
+    ///
+    /// Returns the final starting offset of the file data.
+    pub fn end_local_start_central_extra_data(&mut self) -> ZipResult<u64> {
+        let data_start = self.end_extra_data()?;
+        self.files.last_mut().unwrap().extra_field.clear();
+        self.writing_to_extra_field = true;
+        self.writing_to_central_extra_field_only = true;
+        Ok(data_start)
+    }
+
+    /// End extra data and start file data. Requires `start_file_with_extra_data()`.
+    ///
+    /// Returns the final starting offset of the file data.
+    pub fn end_extra_data(&mut self) -> ZipResult<u64> {
+        // Require `start_file_with_extra_data()`. Ensures `file` is some.
+        if !self.writing_to_extra_field {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Not writing to extra field",
+            )));
+        }
+        let file = self.files.last_mut().unwrap();
+
+        // Ensure extra data fits into extra field.
+        if file.extra_field.len() > 0xFFFF {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Extra data exceeds extra field",
+            )));
+        }
+
+        if !self.writing_to_central_extra_field_only {
+            self.inner.switch_to(CompressionMethod::Stored)?;
+            let writer = self.inner.get_plain();
+
+            // Append extra data to local file header and keep it for central file header.
+            writer.seek(io::SeekFrom::Start(file.data_start))?;
+            writer.write_all(&file.extra_field)?;
+
+            // Update final `data_start` as done in `start_entry()`.
+            let header_end = writer.seek(io::SeekFrom::Current(0))?;
+            self.stats.start = header_end;
+            file.data_start = header_end;
+
+            // Update extra field length in local file header.
+            writer.seek(io::SeekFrom::Start(file.header_start + 28))?;
+            writer.write_u16::<LittleEndian>(file.extra_field.len() as u16)?;
+            writer.seek(io::SeekFrom::Start(header_end))?;
+
+            self.inner.switch_to(file.compression_method)?;
+        }
+
+        self.writing_to_extra_field = false;
+        self.writing_to_central_extra_field_only = false;
+        Ok(file.data_start)
     }
 
     /// Add a directory entry.
@@ -362,7 +478,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options, |_data_start| Vec::new())?;
+        self.start_entry(name_with_slash, options)?;
         self.writing_to_file = false;
         Ok(())
     }
@@ -570,12 +686,9 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     // file name length
     writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
-    let extra_field = build_extra_field(file)?;
-    writer.write_u16::<LittleEndian>(extra_field.len() as u16)?;
+    writer.write_u16::<LittleEndian>(file.extra_field.len() as u16)?;
     // file name
     writer.write_all(file.file_name.as_bytes())?;
-    // extra field
-    writer.write_all(&extra_field)?;
 
     Ok(())
 }
@@ -622,8 +735,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name length
     writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
-    let extra_field = build_extra_field(file)?;
-    writer.write_u16::<LittleEndian>(extra_field.len() as u16)?;
+    writer.write_u16::<LittleEndian>(file.extra_field.len() as u16)?;
     // file comment length
     writer.write_u16::<LittleEndian>(0)?;
     // disk number start
@@ -637,21 +749,11 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name
     writer.write_all(file.file_name.as_bytes())?;
     // extra field
-    writer.write_all(&extra_field)?;
+    writer.write_all(&file.extra_field)?;
     // file comment
     // <none>
 
     Ok(())
-}
-
-fn build_extra_field(file: &ZipFileData) -> ZipResult<Vec<u8>> {
-    if file.extra_field.len() > std::u16::MAX as usize {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Extra data exceeds extra field",
-        ))?;
-    }
-    Ok(file.extra_field.clone())
 }
 
 fn path_to_string(path: &std::path::Path) -> String {
