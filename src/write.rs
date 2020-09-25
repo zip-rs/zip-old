@@ -322,6 +322,35 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         self.start_file(path_to_string(path), options)
     }
 
+    /// Create an aligned file in the archive and start writing its' contents.
+    ///
+    /// Returns the number of padding bytes required to align the file.
+    ///
+    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
+    pub fn start_file_aligned<S>(
+        &mut self,
+        name: S,
+        options: FileOptions,
+        align: u16,
+    ) -> Result<u64, ZipError>
+    where
+        S: Into<String>,
+    {
+        let data_start = self.start_file_with_extra_data(name, options)?;
+        let align = align as u64;
+        if align > 1 && data_start % align != 0 {
+            let pad_length = (align - (data_start + 4) % align) % align;
+            let pad = vec![0; pad_length as usize];
+            self.write_all(b"za").map_err(ZipError::from)?; // 0x617a
+            self.write_u16::<LittleEndian>(pad.len() as u16)
+                .map_err(ZipError::from)?;
+            self.write_all(&pad).map_err(ZipError::from)?;
+            assert_eq!(self.end_local_start_central_extra_data()? % align, 0);
+        }
+        let extra_data_end = self.end_extra_data()?;
+        Ok(extra_data_end - data_start)
+    }
+
     /// Create a file in the archive and start writing its extra data first.
     ///
     /// Finish writing extra data and start writing file data with `end_extra_data()`. Optionally,
