@@ -260,8 +260,6 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             self.files.push(file);
         }
 
-        self.inner.switch_to(options.compression_method)?;
-
         Ok(())
     }
 
@@ -302,6 +300,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
         self.start_entry(name, options)?;
+        self.inner.switch_to(options.compression_method)?;
         self.writing_to_file = true;
         Ok(())
     }
@@ -363,7 +362,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// ```
     /// use byteorder::{LittleEndian, WriteBytesExt};
-    /// use zip::{ZipArchive, ZipWriter, write::FileOptions, result::ZipResult};
+    /// use zip::{ZipArchive, ZipWriter, result::ZipResult};
+    /// use zip::{write::FileOptions, CompressionMethod};
     /// use std::io::{Write, Cursor};
     ///
     /// # fn main() -> ZipResult<()> {
@@ -371,7 +371,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// {
     ///     let mut zip = ZipWriter::new(&mut archive);
-    ///     let options = FileOptions::default();
+    ///     let options = FileOptions::default()
+    ///         .compression_method(CompressionMethod::Stored);
     ///
     ///     zip.start_file_with_extra_data("identical_extra_data.txt", options)?;
     ///     let extra_data = b"local and central extra data";
@@ -389,7 +390,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///     let data_start = data_start as usize + 4 + extra_data.len() + 4;
     ///     let align = 64;
     ///     let pad_length = (align - data_start % align) % align;
-    ///     assert_eq!(pad_length, 17);
+    ///     assert_eq!(pad_length, 19);
     ///     zip.write_u16::<LittleEndian>(0x0000)?;
     ///     zip.write_u16::<LittleEndian>(pad_length as u16)?;
     ///     zip.write_all(&vec![0; pad_length])?;
@@ -462,15 +463,13 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
 
         if !self.writing_to_central_extra_field_only {
-            self.inner.switch_to(CompressionMethod::Stored)?;
             let writer = self.inner.get_plain();
 
             // Append extra data to local file header and keep it for central file header.
-            writer.seek(io::SeekFrom::Start(file.data_start))?;
             writer.write_all(&file.extra_field)?;
 
-            // Update final `data_start` as done in `start_entry()`.
-            let header_end = writer.seek(io::SeekFrom::Current(0))?;
+            // Update final `data_start`.
+            let header_end = file.data_start + file.extra_field.len() as u64;
             self.stats.start = header_end;
             file.data_start = header_end;
 
