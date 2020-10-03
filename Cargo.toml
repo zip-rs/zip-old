@@ -29,6 +29,7 @@ walkdir = "2"
 deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
+unreserved = []
 default = ["bzip2", "deflate", "time"]
 
 [[bench]]

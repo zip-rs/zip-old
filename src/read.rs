@@ -508,6 +508,7 @@ fn central_header_to_zip_file<R: Read + io::Seek>(
         central_header_start,
         data_start: 0,
         external_attributes: external_file_attributes,
+        large_file: false,
     };
 
     match parse_extra_field(&mut result) {
@@ -530,6 +531,8 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         let mut len_left = len as i64;
         // Zip64 extended information extra field
         if kind == 0x0001 {
+            file.large_file = true;
+
             if file.uncompressed_size == 0xFFFFFFFF {
                 file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
                 len_left -= 8;
@@ -778,6 +781,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // We set this to zero, which should be valid as the docs state 'If input came
         // from standard input, this field is set to zero.'
         external_attributes: 0,
+        large_file: false,
     };
 
     match parse_extra_field(&mut result) {

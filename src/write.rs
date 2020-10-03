@@ -4,7 +4,7 @@ use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{DateTime, System, ZipFileData, DEFAULT_VERSION};
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
 use std::default::Default;
 use std::io;
@@ -85,6 +85,7 @@ pub struct FileOptions {
     compression_method: CompressionMethod,
     last_modified_time: DateTime,
     permissions: Option<u32>,
+    large_file: bool,
 }
 
 impl FileOptions {
@@ -108,6 +109,7 @@ impl FileOptions {
             #[cfg(not(feature = "time"))]
             last_modified_time: DateTime::default(),
             permissions: None,
+            large_file: false,
         }
     }
 
@@ -115,7 +117,6 @@ impl FileOptions {
     ///
     /// The default is `CompressionMethod::Deflated`. If the deflate compression feature is
     /// disabled, `CompressionMethod::Stored` becomes the default.
-    /// otherwise.
     pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
         self.compression_method = method;
         self
@@ -137,6 +138,15 @@ impl FileOptions {
     /// and `0o755`, which represents `rwxr-xr-x` for directories
     pub fn unix_permissions(mut self, mode: u32) -> FileOptions {
         self.permissions = Some(mode & 0o777);
+        self
+    }
+
+    /// Set whether the new file's compressed and uncompressed size is less than 4 GiB.
+    ///
+    /// If set to `false` and the file exceeds the limit, an I/O error is thrown. If set to `true`
+    /// and the file does not exceed the limit, 20 B are wasted. The default is `false`.
+    pub fn large_file(mut self, large: bool) -> FileOptions {
+        self.large_file = large;
         self
     }
 }
@@ -163,6 +173,14 @@ impl<W: Write + io::Seek> Write for ZipWriter<W> {
                     let write_result = w.write(buf);
                     if let Ok(count) = write_result {
                         self.stats.update(&buf[0..count]);
+                        if self.stats.bytes_written > 0xFFFFFFFF
+                            && !self.files.last_mut().unwrap().large_file
+                        {
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                "Large file option has not been set",
+                            ));
+                        }
                     }
                     write_result
                 }
@@ -247,6 +265,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 data_start: 0,
                 central_header_start: 0,
                 external_attributes: permissions << 16,
+                large_file: options.large_file,
             };
             write_local_file_header(writer, &file)?;
 
@@ -376,7 +395,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     ///     zip.start_file_with_extra_data("identical_extra_data.txt", options)?;
     ///     let extra_data = b"local and central extra data";
-    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(0xbeef)?;
     ///     zip.write_u16::<LittleEndian>(extra_data.len() as u16)?;
     ///     zip.write_all(extra_data)?;
     ///     zip.end_extra_data()?;
@@ -384,20 +403,20 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     ///     let data_start = zip.start_file_with_extra_data("different_extra_data.txt", options)?;
     ///     let extra_data = b"local extra data";
-    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(0xbeef)?;
     ///     zip.write_u16::<LittleEndian>(extra_data.len() as u16)?;
     ///     zip.write_all(extra_data)?;
     ///     let data_start = data_start as usize + 4 + extra_data.len() + 4;
     ///     let align = 64;
     ///     let pad_length = (align - data_start % align) % align;
     ///     assert_eq!(pad_length, 19);
-    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(0xdead)?;
     ///     zip.write_u16::<LittleEndian>(pad_length as u16)?;
     ///     zip.write_all(&vec![0; pad_length])?;
     ///     let data_start = zip.end_local_start_central_extra_data()?;
     ///     assert_eq!(data_start as usize % align, 0);
     ///     let extra_data = b"central extra data";
-    ///     zip.write_u16::<LittleEndian>(0x0000)?;
+    ///     zip.write_u16::<LittleEndian>(0xbeef)?;
     ///     zip.write_u16::<LittleEndian>(extra_data.len() as u16)?;
     ///     zip.write_all(extra_data)?;
     ///     zip.end_extra_data()?;
@@ -454,13 +473,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
         let file = self.files.last_mut().unwrap();
 
-        // Ensure extra data fits into extra field.
-        if file.extra_field.len() > 0xFFFF {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Extra data exceeds extra field",
-            )));
-        }
+        validate_extra_data(&file)?;
 
         if !self.writing_to_central_extra_field_only {
             let writer = self.inner.get_plain();
@@ -474,8 +487,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             file.data_start = header_end;
 
             // Update extra field length in local file header.
+            let extra_field_length =
+                if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
             writer.seek(io::SeekFrom::Start(file.header_start + 28))?;
-            writer.write_u16::<LittleEndian>(file.extra_field.len() as u16)?;
+            writer.write_u16::<LittleEndian>(extra_field_length)?;
             writer.seek(io::SeekFrom::Start(header_end))?;
 
             self.inner.switch_to(file.compression_method)?;
@@ -549,13 +564,50 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             }
             let central_size = writer.seek(io::SeekFrom::Current(0))? - central_start;
 
+            if self.files.len() > 0xFFFF || central_size > 0xFFFFFFFF || central_start > 0xFFFFFFFF
+            {
+                let zip64_footer = spec::Zip64CentralDirectoryEnd {
+                    version_made_by: DEFAULT_VERSION as u16,
+                    version_needed_to_extract: DEFAULT_VERSION as u16,
+                    disk_number: 0,
+                    disk_with_central_directory: 0,
+                    number_of_files_on_this_disk: self.files.len() as u64,
+                    number_of_files: self.files.len() as u64,
+                    central_directory_size: central_size,
+                    central_directory_offset: central_start,
+                };
+
+                zip64_footer.write(writer)?;
+
+                let zip64_footer = spec::Zip64CentralDirectoryEndLocator {
+                    disk_with_central_directory: 0,
+                    end_of_central_directory_offset: central_start + central_size,
+                    number_of_disks: 1,
+                };
+
+                zip64_footer.write(writer)?;
+            }
+
+            let number_of_files = if self.files.len() > 0xFFFF {
+                0xFFFF
+            } else {
+                self.files.len() as u16
+            };
             let footer = spec::CentralDirectoryEnd {
                 disk_number: 0,
                 disk_with_central_directory: 0,
-                number_of_files_on_this_disk: self.files.len() as u16,
-                number_of_files: self.files.len() as u16,
-                central_directory_size: central_size as u32,
-                central_directory_offset: central_start as u32,
+                number_of_files_on_this_disk: number_of_files,
+                number_of_files,
+                central_directory_size: if central_size > 0xFFFFFFFF {
+                    0xFFFFFFFF
+                } else {
+                    central_size as u32
+                },
+                central_directory_offset: if central_start > 0xFFFFFFFF {
+                    0xFFFFFFFF
+                } else {
+                    central_start as u32
+                },
                 zip_file_comment: self.comment.as_bytes().to_vec(),
             };
 
@@ -708,15 +760,28 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     // crc-32
     writer.write_u32::<LittleEndian>(file.crc32)?;
     // compressed size
-    writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
+    writer.write_u32::<LittleEndian>(if file.compressed_size > 0xFFFFFFFF {
+        0xFFFFFFFF
+    } else {
+        file.compressed_size as u32
+    })?;
     // uncompressed size
-    writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+    writer.write_u32::<LittleEndian>(if file.uncompressed_size > 0xFFFFFFFF {
+        0xFFFFFFFF
+    } else {
+        file.uncompressed_size as u32
+    })?;
     // file name length
     writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
-    writer.write_u16::<LittleEndian>(file.extra_field.len() as u16)?;
+    let extra_field_length = if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
+    writer.write_u16::<LittleEndian>(extra_field_length)?;
     // file name
     writer.write_all(file.file_name.as_bytes())?;
+    // zip64 extra field
+    if file.large_file {
+        write_local_zip64_extra_field(writer, &file)?;
+    }
 
     Ok(())
 }
@@ -728,12 +793,37 @@ fn update_local_file_header<T: Write + io::Seek>(
     const CRC32_OFFSET: u64 = 14;
     writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32::<LittleEndian>(file.crc32)?;
-    writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
-    writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+    writer.write_u32::<LittleEndian>(if file.compressed_size > 0xFFFFFFFF {
+        if file.large_file {
+            0xFFFFFFFF
+        } else {
+            // compressed size can be slightly larger than uncompressed size
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Large file option has not been set",
+            )));
+        }
+    } else {
+        file.compressed_size as u32
+    })?;
+    writer.write_u32::<LittleEndian>(if file.uncompressed_size > 0xFFFFFFFF {
+        // uncompressed size is checked on write to catch it as soon as possible
+        0xFFFFFFFF
+    } else {
+        file.uncompressed_size as u32
+    })?;
+    if file.large_file {
+        update_local_zip64_extra_field(writer, file)?;
+    }
     Ok(())
 }
 
 fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
+    // buffer zip64 extra field to determine its variable length
+    let mut zip64_extra_field = [0; 28];
+    let zip64_extra_field_length =
+        write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
+
     // central file header signature
     writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
     // version made by
@@ -757,13 +847,21 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // crc-32
     writer.write_u32::<LittleEndian>(file.crc32)?;
     // compressed size
-    writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
+    writer.write_u32::<LittleEndian>(if file.compressed_size > 0xFFFFFFFF {
+        0xFFFFFFFF
+    } else {
+        file.compressed_size as u32
+    })?;
     // uncompressed size
-    writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+    writer.write_u32::<LittleEndian>(if file.uncompressed_size > 0xFFFFFFFF {
+        0xFFFFFFFF
+    } else {
+        file.uncompressed_size as u32
+    })?;
     // file name length
     writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
-    writer.write_u16::<LittleEndian>(file.extra_field.len() as u16)?;
+    writer.write_u16::<LittleEndian>(zip64_extra_field_length + file.extra_field.len() as u16)?;
     // file comment length
     writer.write_u16::<LittleEndian>(0)?;
     // disk number start
@@ -773,15 +871,140 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // external file attributes
     writer.write_u32::<LittleEndian>(file.external_attributes)?;
     // relative offset of local header
-    writer.write_u32::<LittleEndian>(file.header_start as u32)?;
+    writer.write_u32::<LittleEndian>(if file.header_start > 0xFFFFFFFF {
+        0xFFFFFFFF
+    } else {
+        file.header_start as u32
+    })?;
     // file name
     writer.write_all(file.file_name.as_bytes())?;
+    // zip64 extra field
+    writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
     // extra field
     writer.write_all(&file.extra_field)?;
     // file comment
     // <none>
 
     Ok(())
+}
+
+fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
+    let mut data = file.extra_field.as_slice();
+
+    if data.len() > 0xFFFF {
+        return Err(ZipError::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Extra data exceeds extra field",
+        )));
+    }
+
+    while data.len() > 0 {
+        let left = data.len();
+        if left < 4 {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Incomplete extra data header",
+            )));
+        }
+        let kind = data.read_u16::<LittleEndian>()?;
+        let size = data.read_u16::<LittleEndian>()? as usize;
+        let left = left - 4;
+
+        if kind == 0x0001 {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "No custom ZIP64 extra data allowed",
+            )));
+        }
+
+        #[cfg(not(feature = "unreserved"))]
+        {
+            if kind <= 31
+                || [0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690]
+                    .iter()
+                    .any(|&reserved| reserved == kind)
+            {
+                return Err(ZipError::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Reserved extra data header ID",
+                )));
+            }
+        }
+
+        if size > left {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Extra data size exceeds extra field",
+            )));
+        }
+
+        data = &data[size..];
+    }
+
+    Ok(())
+}
+
+fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
+    // This entry in the Local header MUST include BOTH original
+    // and compressed file size fields.
+    writer.write_u16::<LittleEndian>(0x0001)?;
+    writer.write_u16::<LittleEndian>(16)?;
+    writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
+    writer.write_u64::<LittleEndian>(file.compressed_size)?;
+    // Excluded fields:
+    // u32: disk start number
+    Ok(())
+}
+
+fn update_local_zip64_extra_field<T: Write + io::Seek>(
+    writer: &mut T,
+    file: &ZipFileData,
+) -> ZipResult<()> {
+    let zip64_extra_field = file.header_start + 30 + file.file_name_raw.len() as u64;
+    writer.seek(io::SeekFrom::Start(zip64_extra_field + 4))?;
+    writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
+    writer.write_u64::<LittleEndian>(file.compressed_size)?;
+    // Excluded fields:
+    // u32: disk start number
+    Ok(())
+}
+
+fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<u16> {
+    // The order of the fields in the zip64 extended
+    // information record is fixed, but the fields MUST
+    // only appear if the corresponding Local or Central
+    // directory record field is set to 0xFFFF or 0xFFFFFFFF.
+    let mut size = 0;
+    let uncompressed_size = file.uncompressed_size > 0xFFFFFFFF;
+    let compressed_size = file.compressed_size > 0xFFFFFFFF;
+    let header_start = file.header_start > 0xFFFFFFFF;
+    if uncompressed_size {
+        size += 8;
+    }
+    if compressed_size {
+        size += 8;
+    }
+    if header_start {
+        size += 8;
+    }
+    if size > 0 {
+        writer.write_u16::<LittleEndian>(0x0001)?;
+        writer.write_u16::<LittleEndian>(size)?;
+        size += 4;
+
+        if uncompressed_size {
+            writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
+        }
+        if compressed_size {
+            writer.write_u64::<LittleEndian>(file.compressed_size)?;
+        }
+        if header_start {
+            writer.write_u64::<LittleEndian>(file.header_start)?;
+        }
+        // Excluded fields:
+        // u32: disk start number
+    }
+    Ok(size)
 }
 
 fn path_to_string(path: &std::path::Path) -> String {
@@ -852,6 +1075,7 @@ mod test {
             compression_method: CompressionMethod::Stored,
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
+            large_file: false,
         };
         writer.start_file("mimetype", options).unwrap();
         writer

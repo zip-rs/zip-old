@@ -244,6 +244,8 @@ pub struct ZipFileData {
     pub data_start: u64,
     /// External file attributes
     pub external_attributes: u32,
+    /// Reserve local ZIP64 extra field
+    pub large_file: bool,
 }
 
 impl ZipFileData {
@@ -277,10 +279,18 @@ impl ZipFileData {
             })
     }
 
+    pub fn zip64_extension(&self) -> bool {
+        self.uncompressed_size > 0xFFFFFFFF
+            || self.compressed_size > 0xFFFFFFFF
+            || self.header_start > 0xFFFFFFFF
+    }
+
     pub fn version_needed(&self) -> u16 {
-        match self.compression_method {
+        // higher versions matched first
+        match (self.zip64_extension(), self.compression_method) {
             #[cfg(feature = "bzip2")]
-            crate::compression::CompressionMethod::Bzip2 => 46,
+            (_, crate::compression::CompressionMethod::Bzip2) => 46,
+            (true, _) => 45,
             _ => 20,
         }
     }
@@ -318,6 +328,7 @@ mod test {
             data_start: 0,
             central_header_start: 0,
             external_attributes: 0,
+            large_file: false,
         };
         assert_eq!(
             data.file_name_sanitized(),

@@ -30,7 +30,7 @@ fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     zip.write_all(b"Hello, World!\n")?;
 
     zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)?;
-    zip.write_u16::<LittleEndian>(0)?;
+    zip.write_u16::<LittleEndian>(0xbeef)?;
     zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
     zip.write_all(EXTRA_DATA)?;
     zip.end_extra_data()?;
@@ -59,7 +59,7 @@ fn read_zip_file(zip_file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<Strin
     {
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_data = Vec::new();
-        extra_data.write_u16::<LittleEndian>(0)?;
+        extra_data.write_u16::<LittleEndian>(0xbeef)?;
         extra_data.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
         extra_data.write_all(EXTRA_DATA)?;
         assert_eq!(file_with_extra_data.extra_data(), extra_data.as_slice());
