@@ -531,13 +531,13 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         let mut len_left = len as i64;
         // Zip64 extended information extra field
         if kind == 0x0001 {
-            file.large_file = true;
-
             if file.uncompressed_size == 0xFFFFFFFF {
+                file.large_file = true;
                 file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
                 len_left -= 8;
             }
             if file.compressed_size == 0xFFFFFFFF {
+                file.large_file = true;
                 file.compressed_size = reader.read_u64::<LittleEndian>()?;
                 len_left -= 8;
             }
