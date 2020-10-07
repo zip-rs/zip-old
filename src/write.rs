@@ -176,6 +176,7 @@ impl<W: Write + io::Seek> Write for ZipWriter<W> {
                         if self.stats.bytes_written > 0xFFFFFFFF
                             && !self.files.last_mut().unwrap().large_file
                         {
+                            let _inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
                                 "Large file option has not been set",
