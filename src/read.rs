@@ -1,6 +1,6 @@
 //! Types for reading ZIP archives
 
-use crate::aes::{AesReaderValid, AesReader};
+use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
@@ -205,8 +205,11 @@ fn make_reader<'a>(
     crc32: u32,
     reader: CryptoReader<'a>,
 ) -> ZipFileReader<'a> {
+    let aes_encrypted = matches!(reader, CryptoReader::Aes(_));
     match compression_method {
-        CompressionMethod::Stored => ZipFileReader::Stored(Crc32Reader::new(reader, crc32)),
+        CompressionMethod::Stored => {
+            ZipFileReader::Stored(Crc32Reader::new(reader, crc32, aes_encrypted))
+        }
         #[cfg(any(
             feature = "deflate",
             feature = "deflate-miniz",
@@ -214,12 +217,12 @@ fn make_reader<'a>(
         ))]
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
-            ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, crc32))
+            ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, crc32, aes_encrypted))
         }
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 => {
             let bzip2_reader = BzDecoder::new(reader);
-            ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32))
+            ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32, aes_encrypted))
         }
         _ => panic!("Compression method not supported"),
     }
@@ -514,7 +517,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             limit_reader,
             password,
             data.aes_mode,
-            data.compressed_size
+            data.compressed_size,
         ) {
             Ok(Ok(crypto_reader)) => Ok(Ok(ZipFile {
                 crypto_reader: Some(crypto_reader),
@@ -610,13 +613,12 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
         large_file: false,
         aes_mode: None,
     };
-    
+
     match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
-    
-    
+
     let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
         return Err(ZipError::InvalidArchive(
