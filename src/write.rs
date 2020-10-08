@@ -920,14 +920,13 @@ fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
 
         #[cfg(not(feature = "unreserved"))]
         {
-            if kind <= 31
-                || [0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690]
-                    .iter()
-                    .any(|&reserved| reserved == kind)
-            {
+            if kind <= 31 || EXTRA_FIELD_MAPPING.iter().any(|&mapped| mapped == kind) {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
-                    "Reserved extra data header ID",
+                    format!(
+                        "Extra data header ID {:#06} requires crate feature \"unreserved\"",
+                        kind,
+                    ),
                 )));
             }
         }
@@ -1105,3 +1104,12 @@ mod test {
         assert_eq!(path_str, "windows/system32");
     }
 }
+
+#[cfg(not(feature = "unreserved"))]
+const EXTRA_FIELD_MAPPING: [u16; 49] = [
+    0x0001, 0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016,
+    0x0017, 0x0018, 0x0019, 0x0020, 0x0021, 0x0022, 0x0023, 0x0065, 0x0066, 0x4690, 0x07c8, 0x2605,
+    0x2705, 0x2805, 0x334d, 0x4341, 0x4453, 0x4704, 0x470f, 0x4b46, 0x4c41, 0x4d49, 0x4f4c, 0x5356,
+    0x5455, 0x554e, 0x5855, 0x6375, 0x6542, 0x7075, 0x756e, 0x7855, 0xa11e, 0xa220, 0xfd4a, 0x9901,
+    0x9902,
+];
