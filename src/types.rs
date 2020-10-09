@@ -249,7 +249,7 @@ pub struct ZipFileData {
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
     /// AES mode if applicable
-    pub aes_mode: Option<AesMode>,
+    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
 }
 
 impl ZipFileData {
@@ -300,8 +300,14 @@ impl ZipFileData {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum AesVendorVersion {
+    Ae1,
+    Ae2,
+}
+
 /// AES variant used.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub enum AesMode {
     Aes128,
     Aes192,
