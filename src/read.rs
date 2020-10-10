@@ -1112,9 +1112,8 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = io::Cursor::new(v);
         loop {
-            match read_zipfile_from_stream(&mut reader).unwrap() {
-                None => break,
-                _ => (),
+            if read_zipfile_from_stream(&mut reader).unwrap().is_none() {
+                break;
             }
         }
     }
