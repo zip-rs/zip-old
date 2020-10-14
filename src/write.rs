@@ -334,7 +334,6 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 central_header_start: 0,
                 external_attributes: permissions << 16,
                 large_file: options.large_file,
-                #[cfg(feature = "aes-crypto")]
                 aes_mode: None,
             };
             write_local_file_header(writer, &file)?;
