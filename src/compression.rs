@@ -27,7 +27,7 @@ pub enum CompressionMethod {
     /// Encrypted using AES.
     /// The actual compression method has to be taken from the AES extra data field
     /// or from `ZipFileData`.
-    AES,
+    Aes,
     /// Unsupported compression method
     #[deprecated(since = "0.5.7", note = "use the constants instead")]
     Unsupported(u16),
@@ -89,7 +89,7 @@ impl CompressionMethod {
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
-            99 => CompressionMethod::AES,
+            99 => CompressionMethod::Aes,
             v => CompressionMethod::Unsupported(v),
         }
     }
@@ -111,7 +111,7 @@ impl CompressionMethod {
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
-            CompressionMethod::AES => 99,
+            CompressionMethod::Aes => 99,
             CompressionMethod::Unsupported(v) => v,
         }
     }

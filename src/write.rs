@@ -831,7 +831,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                 CompressionMethod::Bzip2 => {
                     GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::default()))
                 }
-                CompressionMethod::AES => {
+                CompressionMethod::Aes => {
                     return Err(ZipError::UnsupportedArchive(
                         "AES compression is not supported for writing",
                     ))
