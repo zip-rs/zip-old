@@ -16,7 +16,7 @@ edition = "2018"
 flate2 = { version = ">=1.0.0, <=1.0.14", default-features = false, optional = true }
 time = { version = "0.1", optional = true }
 byteorder = "1.3"
-bzip2 = { version = "0.3", optional = true }
+bzip2 = { version = "0.4", optional = true }
 crc32fast = "1.0"
 thiserror = "1.0"
 

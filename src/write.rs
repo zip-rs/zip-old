@@ -447,7 +447,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                 )),
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
-                    GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::Default))
+                    GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::default()))
                 }
                 CompressionMethod::Unsupported(..) => {
                     return Err(ZipError::UnsupportedArchive("Unsupported compression"))
