@@ -221,10 +221,12 @@ pub struct ZipFile<'a> {
     reader: ZipFileReader<'a>,
 }
 
-#[cfg(feature = "async")]
 /// A struct for reading a zip file
+#[cfg(feature = "async")]
+#[pin_project]
 pub struct AsyncZipFile<'a> {
     data: Cow<'a, ZipFileData>,
+    #[pin]
     reader: AsyncZipFileReader<'a>,
 }
 
@@ -1307,6 +1309,16 @@ impl<'a> ZipFile<'a> {
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_reader().read(buf)
+    }
+}
+
+impl<'a> AsyncRead for AsyncZipFile<'a> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        self.project().reader.poll_read(cx, buf)
     }
 }
 
