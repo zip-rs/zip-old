@@ -57,7 +57,7 @@ impl ZipCryptoKeys {
 }
 
 /// A ZipCrypto reader with unverified password
-#[cfg_attr(feature = "async", pin_project)]
+#[cfg_attr(feature = "async", pin_project(project=ZipCryptoReaderProject))]
 pub struct ZipCryptoReader<R> {
     #[cfg_attr(feature = "async", pin)]
     file: R,
@@ -155,7 +155,7 @@ impl<R: AsyncRead + Unpin> ZipCryptoReader<R> {
 }
 
 /// A ZipCrypto reader with verified password
-#[cfg_attr(feature = "async", pin_project)]
+#[cfg_attr(feature = "async", pin_project(project=ZipCryptoReaderValidProject))]
 pub struct ZipCryptoReaderValid<R> {
     #[cfg_attr(feature = "async", pin)]
     reader: ZipCryptoReader<R>,
@@ -177,24 +177,21 @@ impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
 #[cfg(feature = "async")]
 impl<R: AsyncRead> AsyncRead for ZipCryptoReaderValid<R> {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
         // Note: There might be potential for optimization. Inspiration can be found at:
         // https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
-        self.project()
-            .reader
-            .project()
-            .file
-            .poll_read(cx, buf)
-            .map(|result| {
-                for byte in buf.iter_mut() {
-                    *byte = self.reader.keys.decrypt_byte(*byte);
-                }
+        let ZipCryptoReaderValidProject { reader } = self.as_mut().project();
+        let ZipCryptoReaderProject { file, keys } = reader.project();
+        file.poll_read(cx, buf).map(|result| {
+            for byte in buf.iter_mut() {
+                *byte = keys.decrypt_byte(*byte);
+            }
 
-                result
-            })
+            result
+        })
     }
 }
 

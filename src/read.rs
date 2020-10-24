@@ -26,7 +26,7 @@ use flate2::read::DeflateDecoder;
 use bzip2::read::BzDecoder;
 
 #[cfg(feature = "async")]
-use crate::async_util::{BlockExt, CompatExt};
+use crate::async_util::CompatExt;
 #[cfg(feature = "async")]
 use async_compression::futures::bufread::{
     BzDecoder as AsyncBzDecoder, DeflateDecoder as AsyncDeflateDecoder,
@@ -862,7 +862,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
     }
 
     async fn by_index_with_optional_password<'a>(
-        mut self: Pin<&'a mut Self>,
+        self: Pin<&'a mut Self>,
         file_number: usize,
         mut password: Option<&[u8]>,
     ) -> ZipResult<Result<AsyncZipFile<'a>, InvalidPassword>> {
@@ -871,7 +871,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
         }
         let AsyncZipArchiveProject {
             files, mut reader, ..
-        } = self.as_mut().project();
+        } = self.project();
 
         let data = &mut files[file_number];
 
@@ -900,11 +900,11 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
             data.header_start + magic_and_header + file_name_length + extra_field_length;
 
         reader.seek(io::SeekFrom::Start(data.data_start)).await?;
-        let limit_reader = (reader as Pin<&mut dyn AsyncRead>).take(data.compressed_size);
+        let limit_reader = (reader as Pin<&'a mut dyn AsyncRead>).take(data.compressed_size);
 
         match make_reader_async(data.compression_method, data.crc32, limit_reader, password).await {
             Ok(Ok(reader)) => Ok(Ok(AsyncZipFile {
-                reader: reader,
+                reader,
                 // TODO: Avoid clone?
                 data: Cow::Owned(data.clone()),
             })),

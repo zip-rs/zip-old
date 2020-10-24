@@ -11,7 +11,7 @@ use futures::io::AsyncRead;
 use pin_project::pin_project;
 
 /// Reader that validates the CRC32 when it reaches the EOF.
-#[cfg_attr(feature = "async", pin_project)]
+#[cfg_attr(feature = "async", pin_project(project=Crc32ReaderProject))]
 pub struct Crc32Reader<R> {
     #[cfg_attr(feature = "async", pin)]
     inner: R,
@@ -55,19 +55,24 @@ impl<R: Read> Read for Crc32Reader<R> {
 #[cfg(feature = "async")]
 impl<R: AsyncRead> AsyncRead for Crc32Reader<R> {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<usize>> {
-        self.project().inner.poll_read(cx, buf).map(|count| {
+        let Crc32ReaderProject {
+            inner,
+            hasher,
+            check,
+        } = self.as_mut().project();
+        inner.poll_read(cx, buf).map(|count| {
             let count = match count {
-                Ok(0) if !buf.is_empty() && !self.check_matches() => {
+                Ok(0) if !buf.is_empty() && !(*check == hasher.clone().finalize()) => {
                     return Err(io::Error::new(io::ErrorKind::Other, "Invalid checksum"))
                 }
                 Ok(n) => n,
                 Err(e) => return Err(e),
             };
-            self.hasher.update(&buf[0..count]);
+            hasher.update(&buf[0..count]);
             Ok(count)
         })
     }
