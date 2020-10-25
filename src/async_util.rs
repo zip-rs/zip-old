@@ -20,9 +20,8 @@ impl<T: AsyncRead> TokioAsyncRead for Compat<T> {
     ) -> std::task::Poll<std::io::Result<()>> {
         self.project()
             .0
-            // TODO: Is the initialized section what we want?
-            .poll_read(cx, buf.initialized_mut())
-            .map(|r| r.map(|_| ()))
+            .poll_read(cx, buf.initialize_unfilled())
+            .map(|r| r.map(|n| buf.set_filled(n)))
     }
 }
 
