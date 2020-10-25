@@ -138,7 +138,9 @@ impl CentralDirectoryEnd {
         let mut pos = file_length - HEADER_SIZE;
         while pos >= search_upper_bound {
             reader.seek(io::SeekFrom::Start(pos as u64)).await?;
-            if reader.compat_mut().read_u32_le().await? == CENTRAL_DIRECTORY_END_SIGNATURE {
+            if reader.compat_mut().read_u32_le().await.expect("fff")
+                == CENTRAL_DIRECTORY_END_SIGNATURE
+            {
                 reader
                     .seek(io::SeekFrom::Current(
                         BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,

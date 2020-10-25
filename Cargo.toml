@@ -30,6 +30,7 @@ async-compression = { version = "0.3.5", features = ["futures-io", "deflate", "b
 bencher = "0.1"
 rand = "0.7"
 walkdir = "2"
+futures-await-test = "0.3.0"
 
 [features]
 deflate = ["flate2/rust_backend"]

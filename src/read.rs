@@ -941,8 +941,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
         match make_reader_async(data.compression_method, data.crc32, limit_reader, password).await {
             Ok(Ok(reader)) => Ok(Ok(AsyncZipFile {
                 reader,
-                // TODO: Avoid clone?
-                data: Cow::Owned(data.clone()),
+                data: Cow::Borrowed(data),
             })),
             Err(e) => Err(e),
             Ok(Err(e)) => Ok(Err(e)),
@@ -1622,6 +1621,92 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     }))
 }
 
+/// See [read_zipfile_from_stream_async]
+#[cfg(feature = "async")]
+pub async fn read_zipfile_from_stream_async<'a, R: AsyncRead>(
+    mut reader: Pin<&'a mut R>,
+) -> ZipResult<Option<AsyncZipFile<'_>>> {
+    let mut r = reader.compat_mut();
+    let signature = r.read_u32_le().await?;
+
+    match signature {
+        spec::LOCAL_FILE_HEADER_SIGNATURE => (),
+        spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE => return Ok(None),
+        _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
+    }
+
+    let version_made_by = r.read_u16_le().await?;
+    let flags = r.read_u16_le().await?;
+    let encrypted = flags & 1 == 1;
+    let is_utf8 = flags & (1 << 11) != 0;
+    let using_data_descriptor = flags & (1 << 3) != 0;
+    #[allow(deprecated)]
+    let compression_method = CompressionMethod::from_u16(r.read_u16_le().await?);
+    let last_mod_time = r.read_u16_le().await?;
+    let last_mod_date = r.read_u16_le().await?;
+    let crc32 = r.read_u32_le().await?;
+    let compressed_size = r.read_u32_le().await?;
+    let uncompressed_size = r.read_u32_le().await?;
+    let file_name_length = r.read_u16_le().await? as usize;
+    let extra_field_length = r.read_u16_le().await? as usize;
+
+    let mut file_name_raw = vec![0; file_name_length];
+    reader.read_exact(&mut file_name_raw).await?;
+    let mut extra_field = vec![0; extra_field_length];
+    reader.read_exact(&mut extra_field).await?;
+
+    let file_name = match is_utf8 {
+        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
+        false => file_name_raw.clone().from_cp437(),
+    };
+
+    let mut result = ZipFileData {
+        system: System::from_u8((version_made_by >> 8) as u8),
+        version_made_by: version_made_by as u8,
+        encrypted,
+        compression_method,
+        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
+        crc32,
+        compressed_size: compressed_size as u64,
+        uncompressed_size: uncompressed_size as u64,
+        file_name,
+        file_name_raw,
+        file_comment: String::new(), // file comment is only available in the central directory
+        // header_start and data start are not available, but also don't matter, since seeking is
+        // not available.
+        header_start: 0,
+        data_start: 0,
+        central_header_start: 0,
+        // The external_attributes field is only available in the central directory.
+        // We set this to zero, which should be valid as the docs state 'If input came
+        // from standard input, this field is set to zero.'
+        external_attributes: 0,
+    };
+
+    match parse_extra_field(&mut result, &extra_field) {
+        Ok(..) | Err(ZipError::Io(..)) => {}
+        Err(e) => return Err(e),
+    }
+
+    if encrypted {
+        return unsupported_zip_error("Encrypted files are not supported");
+    }
+    if using_data_descriptor {
+        return unsupported_zip_error("The file length is not available in the local header");
+    }
+
+    let limit_reader = (reader as Pin<&'a mut dyn AsyncRead>).take(result.compressed_size as u64);
+
+    let result_crc32 = result.crc32;
+    let result_compression_method = result.compression_method;
+    Ok(Some(AsyncZipFile {
+        data: Cow::Owned(result),
+        reader: make_reader_async(result_compression_method, result_crc32, limit_reader, None)
+            .await?
+            .unwrap(),
+    }))
+}
+
 #[cfg(test)]
 mod test {
     #[test]
@@ -1743,6 +1828,45 @@ mod test {
                 (file_name.starts_with("dir") && zip_file.is_dir())
                     || (file_name.starts_with("file") && zip_file.is_file())
             );
+        }
+    }
+}
+
+#[cfg(all(test, feature = "async"))]
+mod async_tests {
+    use futures::io::Cursor;
+    use futures_await_test::async_test;
+    use std::pin::Pin;
+
+    #[async_test]
+    async fn async_contents() {
+        use super::AsyncZipArchive;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let cursor = Cursor::new(v);
+        let mut reader = AsyncZipArchive::new(cursor).await.unwrap();
+        let reader = Pin::new(&mut reader);
+        assert!(reader.comment() == b"");
+        assert_eq!(reader.by_index(0).await.unwrap().central_header_start(), 77);
+    }
+
+    #[ignore = "Async drop implementation is currently broken"]
+    #[async_test]
+    async fn zip_read_streaming_async() {
+        use super::read_zipfile_from_stream_async;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
+        let mut reader = Cursor::new(v);
+        loop {
+            match read_zipfile_from_stream_async(Pin::new(&mut reader))
+                .await
+                .unwrap()
+            {
+                None => break,
+                _ => (),
+            }
         }
     }
 }
