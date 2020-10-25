@@ -11,6 +11,9 @@ pub use crate::types::DateTime;
 pub use crate::write::ZipWriter;
 
 #[cfg(feature = "async")]
+pub use crate::read::AsyncZipArchive;
+
+#[cfg(feature = "async")]
 mod async_util;
 
 mod compression;

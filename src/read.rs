@@ -34,7 +34,7 @@ use async_compression::futures::bufread::{
 #[cfg(feature = "async")]
 use futures::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader as AsyncBufReader};
 #[cfg(feature = "async")]
-use pin_project::pin_project;
+use pin_project::{pin_project, pinned_drop};
 #[cfg(feature = "async")]
 use std::pin::Pin;
 #[cfg(feature = "async")]
@@ -128,6 +128,17 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
+#[cfg(feature = "async")]
+impl<'a> AsyncCryptoReader<'a> {
+    /// Consumes this decoder, returning the underlying reader.
+    pub fn into_inner(self) -> futures::io::Take<Pin<&'a mut dyn AsyncRead>> {
+        match self {
+            AsyncCryptoReader::Plaintext(r) => r,
+            AsyncCryptoReader::ZipCrypto(r) => r.into_inner(),
+        }
+    }
+}
+
 enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn io::Read>),
@@ -216,6 +227,27 @@ impl<'a> ZipFileReader<'a> {
     }
 }
 
+#[cfg(feature = "async")]
+impl<'a> AsyncZipFileReader<'a> {
+    /// Consumes this decoder, returning the underlying reader.
+    pub fn into_inner(self) -> futures::io::Take<Pin<&'a mut dyn AsyncRead>> {
+        match self {
+            AsyncZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
+            AsyncZipFileReader::Stored(r) => r.into_inner().into_inner(),
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            AsyncZipFileReader::Deflated(r) => {
+                r.into_inner().into_inner().into_inner().into_inner()
+            }
+            #[cfg(feature = "bzip2")]
+            AsyncZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner().into_inner(),
+        }
+    }
+}
+
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
     data: Cow<'a, ZipFileData>,
@@ -225,7 +257,7 @@ pub struct ZipFile<'a> {
 
 /// A struct for reading a zip file
 #[cfg(feature = "async")]
-#[pin_project]
+#[pin_project(PinnedDrop)]
 pub struct AsyncZipFile<'a> {
     data: Cow<'a, ZipFileData>,
     #[pin]
@@ -1308,6 +1340,110 @@ impl<'a> ZipFile<'a> {
     }
 }
 
+/// Methods for retrieving information on zip files
+#[cfg(feature = "async")]
+impl<'a> AsyncZipFile<'a> {
+    /// Get the version of the file
+    pub fn version_made_by(&self) -> (u8, u8) {
+        (
+            self.data.version_made_by / 10,
+            self.data.version_made_by % 10,
+        )
+    }
+
+    /// Get the name of the file
+    pub fn name(&self) -> &str {
+        &self.data.file_name
+    }
+
+    /// Get the name of the file, in the raw (internal) byte representation.
+    pub fn name_raw(&self) -> &[u8] {
+        &self.data.file_name_raw
+    }
+
+    /// Get the comment of the file
+    pub fn comment(&self) -> &str {
+        &self.data.file_comment
+    }
+
+    /// Get the compression method used to store the file
+    pub fn compression(&self) -> CompressionMethod {
+        self.data.compression_method
+    }
+
+    /// Get the size of the file in the archive
+    pub fn compressed_size(&self) -> u64 {
+        self.data.compressed_size
+    }
+
+    /// Get the size of the file when uncompressed
+    pub fn size(&self) -> u64 {
+        self.data.uncompressed_size
+    }
+
+    /// Get the time the file was last modified
+    pub fn last_modified(&self) -> DateTime {
+        self.data.last_modified_time
+    }
+    /// Returns whether the file is actually a directory
+    pub fn is_dir(&self) -> bool {
+        self.name()
+            .chars()
+            .rev()
+            .next()
+            .map_or(false, |c| c == '/' || c == '\\')
+    }
+
+    /// Returns whether the file is a regular file
+    pub fn is_file(&self) -> bool {
+        !self.is_dir()
+    }
+
+    /// Get unix mode for the file
+    pub fn unix_mode(&self) -> Option<u32> {
+        if self.data.external_attributes == 0 {
+            return None;
+        }
+
+        match self.data.system {
+            System::Unix => Some(self.data.external_attributes >> 16),
+            System::Dos => {
+                // Interpret MSDOS directory bit
+                let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
+                    ffi::S_IFDIR | 0o0775
+                } else {
+                    ffi::S_IFREG | 0o0664
+                };
+                if 0x01 == (self.data.external_attributes & 0x01) {
+                    // Read-only bit; strip write permissions
+                    mode &= 0o0555;
+                }
+                Some(mode)
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the CRC32 hash of the original file
+    pub fn crc32(&self) -> u32 {
+        self.data.crc32
+    }
+
+    /// Get the starting offset of the data of the compressed file
+    pub fn data_start(&self) -> u64 {
+        self.data.data_start
+    }
+
+    /// Get the starting offset of the zip header for this file
+    pub fn header_start(&self) -> u64 {
+        self.data.header_start
+    }
+    /// Get the starting offset of the zip header in the central directory for this file
+    pub fn central_header_start(&self) -> u64 {
+        self.data.central_header_start
+    }
+}
+
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_reader().read(buf)
@@ -1346,6 +1482,33 @@ impl<'a> Drop for ZipFile<'a> {
 
             loop {
                 match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(_) => (),
+                    Err(e) => panic!(
+                        "Could not consume all of the output of the current ZipFile: {:?}",
+                        e
+                    ),
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[pinned_drop]
+impl<'a> PinnedDrop for AsyncZipFile<'a> {
+    fn drop(mut self: Pin<&mut Self>) {
+        // self.data is Owned, this reader is constructed by a streaming reader.
+        // In this case, we want to exhaust the reader so that the next file is accessible.
+        if let Cow::Owned(_) = self.data {
+            let mut buffer = [0; 1 << 16];
+
+            // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
+            let innerreader = ::std::mem::replace(&mut self.reader, AsyncZipFileReader::NoReader);
+            let mut reader: futures::io::Take<Pin<&mut dyn AsyncRead>> = innerreader.into_inner();
+
+            loop {
+                match futures::executor::block_on(reader.read(&mut buffer)) {
                     Ok(0) => break,
                     Ok(_) => (),
                     Err(e) => panic!(
