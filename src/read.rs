@@ -70,6 +70,7 @@ pub struct ZipArchive<R: Read + io::Seek> {
     comment: Vec<u8>,
 }
 
+/// Async ZIP archive reader
 #[cfg(feature = "async")]
 #[pin_project(project=AsyncZipArchiveProject)]
 #[derive(Clone, Debug)]
@@ -103,6 +104,7 @@ enum AsyncCryptoReader<'a> {
     ZipCrypto(#[pin] ZipCryptoReaderValid<futures::io::Take<Pin<&'a mut dyn AsyncRead>>>),
 }
 
+#[cfg(feature = "async")]
 impl<'a> AsyncRead for AsyncCryptoReader<'a> {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -1312,6 +1314,7 @@ impl<'a> Read for ZipFile<'a> {
     }
 }
 
+#[cfg(feature = "async")]
 impl<'a> AsyncRead for AsyncZipFile<'a> {
     fn poll_read(
         self: Pin<&mut Self>,

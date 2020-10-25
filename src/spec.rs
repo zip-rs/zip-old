@@ -55,6 +55,7 @@ impl CentralDirectoryEnd {
         })
     }
 
+    #[cfg(feature = "async")]
     pub async fn parse_async<T: AsyncRead>(reader: Pin<&mut T>) -> ZipResult<CentralDirectoryEnd> {
         let mut reader = reader.compat();
         let magic = reader.read_u32_le().await?;
@@ -120,6 +121,7 @@ impl CentralDirectoryEnd {
         ))
     }
 
+    #[cfg(feature = "async")]
     pub async fn find_and_parse_async<T: AsyncRead + AsyncSeek>(
         mut reader: Pin<&mut T>,
     ) -> ZipResult<(CentralDirectoryEnd, u64)> {
