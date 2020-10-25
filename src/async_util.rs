@@ -4,7 +4,7 @@ use tokio::io::AsyncRead as TokioAsyncRead;
 
 /// Wrapper for converting between tokio and futures async read types
 #[pin_project]
-pub struct Compat<T>(#[pin] T);
+pub(crate) struct Compat<T>(#[pin] T);
 
 impl<T> Compat<T> {
     pub fn into_inner(self) -> T {
@@ -25,7 +25,7 @@ impl<T: AsyncRead> TokioAsyncRead for Compat<T> {
     }
 }
 
-pub trait CompatExt<T>: Sized {
+pub(crate) trait CompatExt<T>: Sized {
     fn compat(self) -> Compat<Self> {
         Compat(self)
     }
