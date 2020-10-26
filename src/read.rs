@@ -34,7 +34,7 @@ use async_compression::futures::bufread::{
 #[cfg(feature = "async")]
 use futures::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader as AsyncBufReader};
 #[cfg(feature = "async")]
-use pin_project::{pin_project, pinned_drop};
+use pin_project::pin_project;
 #[cfg(feature = "async")]
 use std::pin::Pin;
 #[cfg(feature = "async")]
@@ -128,17 +128,6 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
-#[cfg(feature = "async")]
-impl<'a> AsyncCryptoReader<'a> {
-    /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> futures::io::Take<Pin<&'a mut dyn AsyncRead>> {
-        match self {
-            AsyncCryptoReader::Plaintext(r) => r,
-            AsyncCryptoReader::ZipCrypto(r) => r.into_inner(),
-        }
-    }
-}
-
 enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn io::Read>),
@@ -156,7 +145,6 @@ enum ZipFileReader<'a> {
 #[cfg(feature = "async")]
 #[pin_project(project=AsyncZipFileReaderProject)]
 enum AsyncZipFileReader<'a> {
-    NoReader,
     Stored(#[pin] Crc32Reader<AsyncCryptoReader<'a>>),
     #[cfg(any(
         feature = "deflate",
@@ -194,7 +182,6 @@ impl<'a> AsyncRead for AsyncZipFileReader<'a> {
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<usize>> {
         match self.project() {
-            AsyncZipFileReaderProject::NoReader => panic!("ZipFileReader was in an invalid state"),
             AsyncZipFileReaderProject::Stored(r) => r.poll_read(cx, buf),
             #[cfg(any(
                 feature = "deflate",
@@ -227,27 +214,6 @@ impl<'a> ZipFileReader<'a> {
     }
 }
 
-#[cfg(feature = "async")]
-impl<'a> AsyncZipFileReader<'a> {
-    /// Consumes this decoder, returning the underlying reader.
-    pub fn into_inner(self) -> futures::io::Take<Pin<&'a mut dyn AsyncRead>> {
-        match self {
-            AsyncZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
-            AsyncZipFileReader::Stored(r) => r.into_inner().into_inner(),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            ))]
-            AsyncZipFileReader::Deflated(r) => {
-                r.into_inner().into_inner().into_inner().into_inner()
-            }
-            #[cfg(feature = "bzip2")]
-            AsyncZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner().into_inner(),
-        }
-    }
-}
-
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
     data: Cow<'a, ZipFileData>,
@@ -257,7 +223,7 @@ pub struct ZipFile<'a> {
 
 /// A struct for reading a zip file
 #[cfg(feature = "async")]
-#[pin_project(PinnedDrop)]
+#[pin_project]
 pub struct AsyncZipFile<'a> {
     data: Cow<'a, ZipFileData>,
     #[pin]
@@ -1495,33 +1461,6 @@ impl<'a> Drop for ZipFile<'a> {
     }
 }
 
-#[cfg(feature = "async")]
-#[pinned_drop]
-impl<'a> PinnedDrop for AsyncZipFile<'a> {
-    fn drop(mut self: Pin<&mut Self>) {
-        // self.data is Owned, this reader is constructed by a streaming reader.
-        // In this case, we want to exhaust the reader so that the next file is accessible.
-        if let Cow::Owned(_) = self.data {
-            let mut buffer = [0; 1 << 16];
-
-            // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
-            let innerreader = ::std::mem::replace(&mut self.reader, AsyncZipFileReader::NoReader);
-            let mut reader: futures::io::Take<Pin<&mut dyn AsyncRead>> = innerreader.into_inner();
-
-            loop {
-                match futures::executor::block_on(reader.read(&mut buffer)) {
-                    Ok(0) => break,
-                    Ok(_) => (),
-                    Err(e) => panic!(
-                        "Could not consume all of the output of the current ZipFile: {:?}",
-                        e
-                    ),
-                }
-            }
-        }
-    }
-}
-
 /// Read ZipFile structures from a non-seekable reader.
 ///
 /// This is an alternative method to read a zip file. If possible, use the ZipArchive functions
@@ -1624,6 +1563,9 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
 }
 
 /// See [read_zipfile_from_stream_async]
+///
+/// In contrast, there is no drop implementation in the asynchronous implementation.
+/// You must call `AsyncReadExt::read_to_end` or similar to drain each file before reusing the reader.
 #[cfg(feature = "async")]
 pub async fn read_zipfile_from_stream_async<'a, R: AsyncRead + Unpin>(
     reader: &'a mut R,
@@ -1837,7 +1779,7 @@ mod test {
 
 #[cfg(all(test, feature = "async"))]
 mod async_tests {
-    use futures::io::Cursor;
+    use futures::{io::Cursor, AsyncReadExt};
     use futures_await_test::async_test;
 
     #[async_test]
@@ -1852,7 +1794,6 @@ mod async_tests {
         assert_eq!(reader.by_index(0).await.unwrap().central_header_start(), 77);
     }
 
-    #[ignore = "Async drop implementation is currently broken"]
     #[async_test]
     async fn zip_read_streaming_async() {
         use super::read_zipfile_from_stream_async;
@@ -1863,7 +1804,10 @@ mod async_tests {
         loop {
             match read_zipfile_from_stream_async(&mut reader).await.unwrap() {
                 None => break,
-                _ => (),
+                f => {
+                    let mut buf = Vec::new();
+                    f.unwrap().read_to_end(&mut buf).await.unwrap();
+                }
             }
         }
     }
