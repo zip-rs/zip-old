@@ -24,8 +24,6 @@ use std::io::Read;
 use futures::AsyncReadExt;
 #[cfg(feature = "async")]
 use futures_await_test::async_test;
-#[cfg(feature = "async")]
-use std::pin::Pin;
 
 const ZIP_FILE_BYTES: &'static [u8; 197] = &[
     0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0x54, 0xbd, 0xb5, 0x50, 0x2f, 0x20,
@@ -98,13 +96,12 @@ async fn encrypted_file_async() {
     let zip_file_bytes = &mut futures::io::Cursor::new(ZIP_FILE_BYTES);
 
     let mut archive = zip::AsyncZipArchive::new(zip_file_bytes).await.unwrap();
-    let mut archive = Pin::new(&mut archive);
 
     assert_eq!(archive.len(), 1); //Only one file inside archive: `test.txt`
 
     {
         // No password
-        let file = archive.as_mut().by_index(0).await;
+        let file = archive.by_index(0).await;
         match file {
             Err(zip::result::ZipError::UnsupportedArchive("Password required to decrypt file")) => {
                 ()
@@ -118,10 +115,7 @@ async fn encrypted_file_async() {
 
     {
         // Wrong password
-        let file = archive
-            .as_mut()
-            .by_index_decrypt(0, b"wrong password")
-            .await;
+        let file = archive.by_index_decrypt(0, b"wrong password").await;
         match file {
             Ok(Err(zip::result::InvalidPassword)) => (),
             Err(_) => panic!(
@@ -134,7 +128,6 @@ async fn encrypted_file_async() {
     {
         // Correct password, read contents
         let mut file = archive
-            .as_mut()
             .by_index_decrypt(0, "test".as_bytes())
             .await
             .unwrap()

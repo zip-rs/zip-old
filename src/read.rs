@@ -74,7 +74,7 @@ pub struct ZipArchive<R: Read + io::Seek> {
 #[cfg(feature = "async")]
 #[pin_project(project=AsyncZipArchiveProject)]
 #[derive(Clone, Debug)]
-pub struct AsyncZipArchive<R: AsyncRead + AsyncSeek> {
+pub struct AsyncZipArchive<R: AsyncRead + AsyncSeek + Unpin> {
     #[pin]
     reader: R,
     files: Vec<ZipFileData>,
@@ -679,7 +679,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin> AsyncZipArchive<R> {
         }
 
         let (archive_offset, directory_start, number_of_files) =
-            Self::get_directory_counts(preader.as_mut(), &footer, cde_start_pos).await?;
+            Self::get_directory_counts(&mut preader.as_mut(), &footer, cde_start_pos).await?;
 
         let mut files = Vec::new();
         let mut names_map = HashMap::new();
@@ -711,11 +711,11 @@ impl<R: AsyncRead + AsyncSeek + Unpin> AsyncZipArchive<R> {
 }
 
 #[cfg(feature = "async")]
-impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
+impl<R: AsyncRead + AsyncSeek + Unpin> AsyncZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
     async fn get_directory_counts(
-        mut reader: Pin<&mut R>,
+        reader: &mut R,
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
@@ -730,7 +730,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
             .await
             .is_ok()
         {
-            match spec::Zip64CentralDirectoryEndLocator::parse_async(reader.as_mut()).await {
+            match spec::Zip64CentralDirectoryEndLocator::parse_async(Pin::new(reader)).await {
                 Ok(loc) => Some(loc),
                 Err(ZipError::InvalidArchive(_)) => {
                     // No ZIP64 header; that's actually fine. We're done here.
@@ -788,7 +788,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
                     ))?;
                 let (footer, archive_offset) =
                     spec::Zip64CentralDirectoryEnd::find_and_parse_async(
-                        reader,
+                        Pin::new(reader),
                         locator64.end_of_central_directory_offset,
                         search_upper_bound,
                     )
@@ -846,7 +846,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
 
     /// Search for a file entry by name, decrypt with given password
     pub async fn by_name_decrypt<'a>(
-        self: Pin<&'a mut Self>,
+        &'a mut self,
         name: &str,
         password: &[u8],
     ) -> ZipResult<Result<AsyncZipFile<'a>, InvalidPassword>> {
@@ -855,7 +855,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
     }
 
     /// Search for a file entry by name
-    pub async fn by_name<'a>(self: Pin<&'a mut Self>, name: &str) -> ZipResult<AsyncZipFile<'a>> {
+    pub async fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<AsyncZipFile<'a>> {
         Ok(self
             .by_name_with_optional_password(name, None)
             .await?
@@ -863,7 +863,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
     }
 
     async fn by_name_with_optional_password<'a>(
-        self: Pin<&'a mut Self>,
+        &'a mut self,
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<Result<AsyncZipFile<'a>, InvalidPassword>> {
@@ -878,7 +878,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
 
     /// Get a contained file by index, decrypt with given password
     pub async fn by_index_decrypt<'a>(
-        self: Pin<&'a mut Self>,
+        &'a mut self,
         file_number: usize,
         password: &[u8],
     ) -> ZipResult<Result<AsyncZipFile<'a>, InvalidPassword>> {
@@ -888,7 +888,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
 
     /// Get a contained file by index
     pub async fn by_index<'a>(
-        self: Pin<&'a mut Self>,
+        self: &'a mut Self,
         file_number: usize,
     ) -> ZipResult<AsyncZipFile<'a>> {
         Ok(self
@@ -898,18 +898,15 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
     }
 
     async fn by_index_with_optional_password<'a>(
-        self: Pin<&'a mut Self>,
+        &'a mut self,
         file_number: usize,
         mut password: Option<&[u8]>,
     ) -> ZipResult<Result<AsyncZipFile<'a>, InvalidPassword>> {
         if file_number >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
-        let AsyncZipArchiveProject {
-            files, mut reader, ..
-        } = self.project();
 
-        let data = &mut files[file_number];
+        let data = &mut self.files[file_number];
 
         match (password, data.encrypted) {
             (None, true) => {
@@ -922,21 +919,26 @@ impl<R: AsyncRead + AsyncSeek> AsyncZipArchive<R> {
         }
 
         // Parse local header
-        reader.seek(io::SeekFrom::Start(data.header_start)).await?;
-        let signature = reader.compat_mut().read_u32_le().await?;
+        self.reader
+            .seek(io::SeekFrom::Start(data.header_start))
+            .await?;
+        let signature = self.reader.compat_mut().read_u32_le().await?;
         if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid local file header"));
         }
 
-        reader.seek(io::SeekFrom::Current(22)).await?;
-        let file_name_length = reader.compat_mut().read_u16_le().await? as u64;
-        let extra_field_length = reader.compat_mut().read_u16_le().await? as u64;
+        self.reader.seek(io::SeekFrom::Current(22)).await?;
+        let file_name_length = self.reader.compat_mut().read_u16_le().await? as u64;
+        let extra_field_length = self.reader.compat_mut().read_u16_le().await? as u64;
         let magic_and_header = 4 + 22 + 2 + 2;
         data.data_start =
             data.header_start + magic_and_header + file_name_length + extra_field_length;
 
-        reader.seek(io::SeekFrom::Start(data.data_start)).await?;
-        let limit_reader = (reader as Pin<&'a mut dyn AsyncRead>).take(data.compressed_size);
+        self.reader
+            .seek(io::SeekFrom::Start(data.data_start))
+            .await?;
+        let limit_reader =
+            (Pin::new(&mut self.reader) as Pin<&'a mut dyn AsyncRead>).take(data.compressed_size);
 
         match make_reader_async(data.compression_method, data.crc32, limit_reader, password).await {
             Ok(Ok(reader)) => Ok(Ok(AsyncZipFile {
@@ -1623,8 +1625,8 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
 
 /// See [read_zipfile_from_stream_async]
 #[cfg(feature = "async")]
-pub async fn read_zipfile_from_stream_async<'a, R: AsyncRead>(
-    mut reader: Pin<&'a mut R>,
+pub async fn read_zipfile_from_stream_async<'a, R: AsyncRead + Unpin>(
+    reader: &'a mut R,
 ) -> ZipResult<Option<AsyncZipFile<'_>>> {
     let mut r = reader.compat_mut();
     let signature = r.read_u32_le().await?;
@@ -1695,7 +1697,8 @@ pub async fn read_zipfile_from_stream_async<'a, R: AsyncRead>(
         return unsupported_zip_error("The file length is not available in the local header");
     }
 
-    let limit_reader = (reader as Pin<&'a mut dyn AsyncRead>).take(result.compressed_size as u64);
+    let limit_reader =
+        (Pin::new(reader) as Pin<&'a mut dyn AsyncRead>).take(result.compressed_size as u64);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
@@ -1836,7 +1839,6 @@ mod test {
 mod async_tests {
     use futures::io::Cursor;
     use futures_await_test::async_test;
-    use std::pin::Pin;
 
     #[async_test]
     async fn async_contents() {
@@ -1844,10 +1846,9 @@ mod async_tests {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
-        let cursor = Cursor::new(v);
-        let mut reader = AsyncZipArchive::new(cursor).await.unwrap();
-        let reader = Pin::new(&mut reader);
-        assert!(reader.comment() == b"");
+        let mut cursor = Cursor::new(v);
+        let mut reader = AsyncZipArchive::new(&mut cursor).await.unwrap();
+        assert!(&mut reader.comment() == b"");
         assert_eq!(reader.by_index(0).await.unwrap().central_header_start(), 77);
     }
 
@@ -1860,10 +1861,7 @@ mod async_tests {
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = Cursor::new(v);
         loop {
-            match read_zipfile_from_stream_async(Pin::new(&mut reader))
-                .await
-                .unwrap()
-            {
+            match read_zipfile_from_stream_async(&mut reader).await.unwrap() {
                 None => break,
                 _ => (),
             }

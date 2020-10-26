@@ -7,8 +7,6 @@ use std::iter::FromIterator;
 use futures::AsyncReadExt;
 #[cfg(feature = "async")]
 use futures_await_test::async_test;
-#[cfg(feature = "async")]
-use std::pin::Pin;
 
 use zip::write::FileOptions;
 use zip::CompressionMethod;
@@ -125,7 +123,6 @@ async fn read_zip_file_async(
     zip_file: &mut futures::io::Cursor<Vec<u8>>,
 ) -> zip::result::ZipResult<String> {
     let mut archive = zip::AsyncZipArchive::new(zip_file).await.unwrap();
-    let archive = Pin::new(&mut archive);
 
     let expected_file_names = ["test/", "test/☃.txt", "test/lorem_ipsum.txt"];
     let expected_file_names = HashSet::from_iter(expected_file_names.iter().map(|&v| v));
