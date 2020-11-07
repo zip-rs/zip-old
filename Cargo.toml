@@ -22,7 +22,6 @@ thiserror = "1.0"
 
 futures = { version = "0.3", optional = true }
 pin-project = { version = "1.0.1", optional = true }
-async-compat = { version = "0.1.5", optional = true }
 tokio = { version = "0.3.1", features = ["io-util"], default-features = false, optional = true }
 async-compression = { version = "0.3.5", features = ["futures-io", "deflate", "bzip2"], default-features = false, optional = true }
 
@@ -37,7 +36,7 @@ deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 default = ["bzip2", "deflate", "time"]
-async = ["futures", "pin-project", "async-compat", "tokio", "async-compression"]
+async = ["futures", "pin-project", "tokio", "async-compression"]
 
 [[bench]]
 name = "read_entry"
