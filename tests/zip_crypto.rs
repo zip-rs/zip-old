@@ -43,7 +43,7 @@ const ZIP_FILE_BYTES: &'static [u8; 197] = &[
 
 #[test]
 fn encrypted_file() {
-    let zip_file_bytes = &mut Cursor::new(ZIP_FILE_BYTES);
+    let zip_file_bytes = &mut Cursor::new(&ZIP_FILE_BYTES[..]);
 
     let mut archive = zip::ZipArchive::new(zip_file_bytes).unwrap();
 
@@ -93,7 +93,7 @@ fn encrypted_file() {
 #[cfg(feature = "async")]
 #[async_test]
 async fn encrypted_file_async() {
-    let zip_file_bytes = &mut futures::io::Cursor::new(ZIP_FILE_BYTES);
+    let zip_file_bytes = &mut futures::io::Cursor::new(&ZIP_FILE_BYTES[..]);
 
     let mut archive = zip::AsyncZipArchive::new(zip_file_bytes).await.unwrap();
 
