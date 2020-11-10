@@ -62,7 +62,7 @@ impl DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = (datepart & 0b0000000000011111) >> 0;
+        let days = datepart & 0b0000000000011111;
         let months = (datepart & 0b0000000111100000) >> 5;
         let years = (datepart & 0b1111111000000000) >> 9;
 

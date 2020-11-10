@@ -47,7 +47,7 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        return (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize]);
+        (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize])
     }
 }
 
@@ -66,7 +66,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     /// password byte sequence that is unrepresentable in UTF-8.
     pub fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
         let mut result = ZipCryptoReader {
-            file: file,
+            file,
             keys: ZipCryptoKeys::new(),
         };
 

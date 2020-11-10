@@ -261,7 +261,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                 let directory_start = footer
                     .central_directory_offset
                     .checked_add(archive_offset)
-                    .ok_or_else(|| {
+                    .ok_or({
                         ZipError::InvalidArchive("Invalid central directory size or offset")
                     })?;
 
@@ -290,7 +290,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let mut files = Vec::new();
         let mut names_map = HashMap::new();
 
-        if let Err(_) = reader.seek(io::SeekFrom::Start(directory_start)) {
+        if reader.seek(io::SeekFrom::Start(directory_start)).is_err() {
             return Err(ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
             ));
@@ -349,7 +349,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
+    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile> {
         Ok(self.by_name_with_optional_password(name, None)?.unwrap())
     }
 
@@ -368,26 +368,26 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index, decrypt with given password
-    pub fn by_index_decrypt<'a>(
-        &'a mut self,
+    pub fn by_index_decrypt(
+        &mut self,
         file_number: usize,
         password: &[u8],
-    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
+    ) -> ZipResult<Result<ZipFile, InvalidPassword>> {
         self.by_index_with_optional_password(file_number, Some(password))
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile> {
         Ok(self
             .by_index_with_optional_password(file_number, None)?
             .unwrap())
     }
 
-    fn by_index_with_optional_password<'a>(
-        &'a mut self,
+    fn by_index_with_optional_password(
+        &mut self,
         file_number: usize,
         mut password: Option<&[u8]>,
-    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
+    ) -> ZipResult<Result<ZipFile, InvalidPassword>> {
         if file_number >= self.files.len() {
             return Err(ZipError::FileNotFound);
         }
@@ -835,7 +835,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.len() == 1);
+        assert_eq!(reader.len(), 1);
     }
 
     #[test]
@@ -846,7 +846,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment() == b"");
+        assert_eq!(reader.comment(), b"");
         assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
     }
 
@@ -904,7 +904,7 @@ mod test {
 
         assert_eq!(buf1, buf2);
         assert_eq!(buf3, buf4);
-        assert!(buf1 != buf3);
+        assert_ne!(buf1, buf3);
     }
 
     #[test]

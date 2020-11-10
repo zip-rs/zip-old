@@ -209,7 +209,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S,T>(&mut self, name: S, options: FileOptions, extra_data: T) -> ZipResult<()>
+    fn start_entry<S, T>(&mut self, name: S, options: FileOptions, extra_data: T) -> ZipResult<()>
     where
         S: Into<String>,
         T: Into<Vec<u8>>,
@@ -296,10 +296,15 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     /// Starts a file with extra data.
-    pub fn start_file_with_extra_data<S, T>(&mut self, name: S, mut options: FileOptions, extra_data: T) -> ZipResult<()>
-        where
-            S: Into<String>,
-            T: Into<Vec<u8>>,
+    pub fn start_file_with_extra_data<S, T>(
+        &mut self,
+        name: S,
+        mut options: FileOptions,
+        extra_data: T,
+    ) -> ZipResult<()>
+    where
+        S: Into<String>,
+        T: Into<Vec<u8>>,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o644);
