@@ -311,28 +311,23 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             comment: footer.zip_file_comment,
         })
     }
-    /// Extract a Zip archive into a directory.
+    /// Extract a Zip archive into a directory, overwriting files if they
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
-    /// Malformed and malicious paths are rejected so that they cannot escape
-    /// the given directory.
-    ///
-    /// This bails on the first error and does not attempt cleanup.
-    ///
-    /// # Platform-specific behaviour
-    ///
-    /// On unix systems permissions from the zip file are preserved, if they exist.
+    /// Extraction is not atomic; If an error is encountered, some of the files
+    /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
 
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
-                .name_as_child()
+                .enclosed_name()
                 .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
 
             let outpath = directory.as_ref().join(filepath);
 
-            if (file.name()).ends_with('/') {
+            if file.name().ends_with('/') {
                 fs::create_dir_all(&outpath)?;
             } else {
                 if let Some(p) = outpath.parent() {
@@ -617,7 +612,7 @@ impl<'a> ZipFile<'a> {
     /// allows an attacker to craft a ZIP archive that will overwrite critical
     /// files.
     ///
-    /// You can use the [`ZipFile::name_as_child`] method to validate the name
+    /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
     pub fn name(&self) -> &str {
         &self.data.file_name
@@ -650,7 +645,7 @@ impl<'a> ZipFile<'a> {
     /// This is appropriate if you need to be able to extract *something* from
     /// any archive, but will easily misrepresent trivial paths like
     /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
-    /// [`ZipFile::name_as_child`] is the better option in most scenarios.
+    /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
     pub fn mangled_name(&self) -> ::std::path::PathBuf {
@@ -667,7 +662,7 @@ impl<'a> ZipFile<'a> {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn name_as_child(&self) -> Option<&Path> {
+    pub fn enclosed_name(&self) -> Option<&Path> {
         if self.data.file_name.contains('\0') {
             return None;
         }
@@ -1010,7 +1005,7 @@ mod test {
 
         for i in 0..zip.len() {
             let zip_file = zip.by_index(i).unwrap();
-            let full_name = zip_file.name_as_child().unwrap();
+            let full_name = zip_file.enclosed_name().unwrap();
             let file_name = full_name.file_name().unwrap().to_str().unwrap();
             assert!(
                 (file_name.starts_with("dir") && zip_file.is_dir())
