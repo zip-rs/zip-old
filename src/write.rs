@@ -209,9 +209,10 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 
     /// Start a new file for with the requested options.
-    fn start_entry<S>(&mut self, name: S, options: FileOptions, extra_data: Option<&[u8]>) -> ZipResult<()>
+    fn start_entry<S,T>(&mut self, name: S, options: FileOptions, extra_data: T) -> ZipResult<()>
     where
         S: Into<String>,
+        T: Into<Vec<u8>>,
     {
         self.finish_file()?;
 
@@ -238,7 +239,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 data_start: 0,
                 central_header_start: 0,
                 external_attributes: permissions << 16,
-                extra_field: extra_data.unwrap_or_default().to_vec(),
+                extra_field: extra_data.into(),
             };
             write_local_file_header(writer, &file)?;
 
@@ -289,21 +290,22 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options, Option::None)?;
+        self.start_entry(name, options, vec![])?;
         self.writing_to_file = true;
         Ok(())
     }
 
     /// Starts a file with extra data.
-    pub fn start_file_with_extra_data<S>(&mut self, name: S, mut options: FileOptions, extra_data: &[u8]) -> ZipResult<()>
+    pub fn start_file_with_extra_data<S, T>(&mut self, name: S, mut options: FileOptions, extra_data: T) -> ZipResult<()>
         where
             S: Into<String>,
+            T: Into<Vec<u8>>,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(name, options, Option::from(extra_data))?;
+        self.start_entry(name, options, extra_data)?;
         self.writing_to_file = true;
         Ok(())
     }
@@ -357,7 +359,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(name_with_slash, options, Option::None)?;
+        self.start_entry(name_with_slash, options, vec![])?;
         self.writing_to_file = false;
         Ok(())
     }

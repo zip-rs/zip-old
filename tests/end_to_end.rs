@@ -14,7 +14,7 @@ fn end_to_end() {
 
     let file_contents: String = read_zip_file(file).unwrap();
 
-    assert!(file_contents.as_bytes() == LOREM_IPSUM);
+    assert_eq!(file_contents.as_bytes(), LOREM_IPSUM);
 }
 
 fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
@@ -28,7 +28,7 @@ fn write_to_zip_file(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
-    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options, ALICE_IPSUM)?;
+    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options, EXTRA_IPSUM)?;
     zip.write_all(b"Hello, World! Again.\n")?;
 
     zip.start_file("test/lorem_ipsum.txt", Default::default())?;
@@ -53,7 +53,7 @@ fn read_zip_file(zip_file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<Strin
 
     {
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
-        let expected_extra_data = ALICE_IPSUM;
+        let expected_extra_data = EXTRA_IPSUM;
         assert_eq!(file_with_extra_data.extra_data(), expected_extra_data);
     }
 
@@ -70,7 +70,7 @@ dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim ve
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
 inceptos himenaeos. Maecenas feugiat velit in ex ultrices scelerisque id id neque.
 ";
-const ALICE_IPSUM: &'static [u8] = b"`With extras?' asked the Mock Turtle a little anxiously.
+const EXTRA_IPSUM: &'static [u8] = b"`With extras?' asked the Mock Turtle a little anxiously.
 `Yes,' said Alice, `we learned French and music.'
 `And washing?' said the Mock Turtle.
 `Certainly not!' said Alice indignantly.   

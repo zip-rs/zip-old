@@ -243,7 +243,7 @@ pub struct ZipFileData {
     /// External file attributes
     pub external_attributes: u32,
     /// Extra field usually used for storage expansion
-    pub extra_field: Vec<u8>, // TODO: make Option
+    pub extra_field: Vec<u8>,
 }
 
 impl ZipFileData {
