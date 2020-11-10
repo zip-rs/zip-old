@@ -9,6 +9,7 @@ use crate::zipcrypto::ZipCryptoReaderValid;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
+use std::path::{Component, Path};
 
 use crate::cp437::FromCp437;
 use crate::types::{DateTime, System, ZipFileData};
@@ -310,6 +311,44 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             comment: footer.zip_file_comment,
         })
     }
+    /// Extract a Zip archive into a directory, overwriting files if they
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    ///
+    /// Extraction is not atomic; If an error is encountered, some of the files
+    /// may be left on disk.
+    pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+        use std::fs;
+
+        for i in 0..self.len() {
+            let mut file = self.by_index(i)?;
+            let filepath = file
+                .enclosed_name()
+                .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+
+            let outpath = directory.as_ref().join(filepath);
+
+            if file.name().ends_with('/') {
+                fs::create_dir_all(&outpath)?;
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        fs::create_dir_all(&p)?;
+                    }
+                }
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
+            }
+            // Get and Set permissions
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Some(mode) = file.unix_mode() {
+                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// Number of files contained in this zip.
     pub fn len(&self) -> usize {
@@ -564,11 +603,24 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the name of the file
+    ///
+    /// # Warnings
+    ///
+    /// It is dangerous to use this name directly when extracting an archive.
+    /// It may contain an absolute path (`/etc/shadow`), or break out of the
+    /// current directory (`../runtime`). Carelessly writing to these paths
+    /// allows an attacker to craft a ZIP archive that will overwrite critical
+    /// files.
+    ///
+    /// You can use the [`ZipFile::enclosed_name`] method to validate the name
+    /// as a safe path.
     pub fn name(&self) -> &str {
         &self.data.file_name
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
+    ///
+    /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
         &self.data.file_name_raw
     }
@@ -578,10 +630,53 @@ impl<'a> ZipFile<'a> {
     #[deprecated(
         since = "0.5.7",
         note = "by stripping `..`s from the path, the meaning of paths can change.
-                You must use a sanitization strategy that's appropriate for your input"
+                `mangled_name` can be used if this behaviour is desirable"
     )]
     pub fn sanitized_name(&self) -> ::std::path::PathBuf {
+        self.mangled_name()
+    }
+
+    /// Rewrite the path, ignoring any path components with special meaning.
+    ///
+    /// - Absolute paths are made relative
+    /// - [`ParentDir`]s are ignored
+    /// - Truncates the filename at a NULL byte
+    ///
+    /// This is appropriate if you need to be able to extract *something* from
+    /// any archive, but will easily misrepresent trivial paths like
+    /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
+    /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
+    ///
+    /// [`ParentDir`]: `Component::ParentDir`
+    pub fn mangled_name(&self) -> ::std::path::PathBuf {
         self.data.file_name_sanitized()
+    }
+
+    /// Ensure the file path is safe to use as a [`Path`].
+    ///
+    /// - It can't contain NULL bytes
+    /// - It can't resolve to a path outside the current directory
+    ///   > `foo/../bar` is fine, `foo/../../bar` is not.
+    /// - It can't be an absolute path
+    ///
+    /// This will read well-formed ZIP files correctly, and is resistant
+    /// to path-based exploits. It is recommended over
+    /// [`ZipFile::mangled_name`].
+    pub fn enclosed_name(&self) -> Option<&Path> {
+        if self.data.file_name.contains('\0') {
+            return None;
+        }
+        let path = Path::new(&self.data.file_name);
+        let mut depth = 0usize;
+        for component in path.components() {
+            match component {
+                Component::Prefix(_) | Component::RootDir => return None,
+                Component::ParentDir => depth = depth.checked_sub(1)?,
+                Component::Normal(_) => depth += 1,
+                Component::CurDir => (),
+            }
+        }
+        Some(path)
     }
 
     /// Get the comment of the file
@@ -910,8 +1005,7 @@ mod test {
 
         for i in 0..zip.len() {
             let zip_file = zip.by_index(i).unwrap();
-            #[allow(deprecated)]
-            let full_name = zip_file.sanitized_name();
+            let full_name = zip_file.enclosed_name().unwrap();
             let file_name = full_name.file_name().unwrap().to_str().unwrap();
             assert!(
                 (file_name.starts_with("dir") && zip_file.is_dir())
