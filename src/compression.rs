@@ -31,41 +31,41 @@ pub enum CompressionMethod {
 #[allow(deprecated, missing_docs)]
 /// All compression methods defined for the ZIP format
 impl CompressionMethod {
-    pub const STORE: Self = Self::Stored;
-    pub const SHRINK: Self = Self::Unsupported(1);
-    pub const REDUCE_1: Self = Self::Unsupported(2);
-    pub const REDUCE_2: Self = Self::Unsupported(3);
-    pub const REDUCE_3: Self = Self::Unsupported(4);
-    pub const REDUCE_4: Self = Self::Unsupported(5);
-    pub const IMPLODE: Self = Self::Unsupported(6);
+    pub const STORE: Self = CompressionMethod::Stored;
+    pub const SHRINK: Self = CompressionMethod::Unsupported(1);
+    pub const REDUCE_1: Self = CompressionMethod::Unsupported(2);
+    pub const REDUCE_2: Self = CompressionMethod::Unsupported(3);
+    pub const REDUCE_3: Self = CompressionMethod::Unsupported(4);
+    pub const REDUCE_4: Self = CompressionMethod::Unsupported(5);
+    pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     ))]
-    pub const DEFLATE: Self = Self::Deflated;
+    pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(any(
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     )))]
-    pub const DEFLATE: Self = Self::Unsupported(8);
-    pub const DEFLATE64: Self = Self::Unsupported(9);
-    pub const PKWARE_IMPLODE: Self = Self::Unsupported(10);
+    pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
+    pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
+    pub const PKWARE_IMPLODE: Self = CompressionMethod::Unsupported(10);
     #[cfg(feature = "bzip2")]
-    pub const BZIP2: Self = Self::Bzip2;
+    pub const BZIP2: Self = CompressionMethod::Bzip2;
     #[cfg(not(feature = "bzip2"))]
-    pub const BZIP2: Self = Self::Unsupported(12);
-    pub const LZMA: Self = Self::Unsupported(14);
-    pub const IBM_ZOS_CMPSC: Self = Self::Unsupported(16);
-    pub const IBM_TERSE: Self = Self::Unsupported(18);
-    pub const ZSTD_DEPRECATED: Self = Self::Unsupported(20);
-    pub const ZSTD: Self = Self::Unsupported(93);
-    pub const MP3: Self = Self::Unsupported(94);
-    pub const XZ: Self = Self::Unsupported(95);
-    pub const JPEG: Self = Self::Unsupported(96);
-    pub const WAVPACK: Self = Self::Unsupported(97);
-    pub const PPMD: Self = Self::Unsupported(98);
+    pub const BZIP2: Self = CompressionMethod::Unsupported(12);
+    pub const LZMA: Self = CompressionMethod::Unsupported(14);
+    pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
+    pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
+    pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
+    pub const ZSTD: Self = CompressionMethod::Unsupported(93);
+    pub const MP3: Self = CompressionMethod::Unsupported(94);
+    pub const XZ: Self = CompressionMethod::Unsupported(95);
+    pub const JPEG: Self = CompressionMethod::Unsupported(96);
+    pub const WAVPACK: Self = CompressionMethod::Unsupported(97);
+    pub const PPMD: Self = CompressionMethod::Unsupported(98);
 }
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
