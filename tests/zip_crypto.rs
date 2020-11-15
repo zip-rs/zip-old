@@ -75,8 +75,7 @@ fn encrypted_file() {
             .by_index_decrypt(0, "test".as_bytes())
             .unwrap()
             .unwrap();
-        #[allow(deprecated)]
-        let file_name = file.sanitized_name();
+        let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
         let mut data = Vec::new();
