@@ -57,7 +57,7 @@ fn copy() {
 async fn async_end_to_end() {
     let mut file = Cursor::new(Vec::new());
 
-    write_to_zip_file(&mut file).expect("file written");
+    write_to_zip(&mut file).expect("file written");
 
     let position = file.position();
     let mut file = futures::io::Cursor::new(file.into_inner());
