@@ -26,6 +26,12 @@ impl System {
 /// When constructed manually from a date and time, it will also check if the input is sensible
 /// (e.g. months are from [1, 12]), but when read from a zip some parts may be out of their normal
 /// bounds (e.g. month 0, or hour 31).
+///
+/// # Warning
+///
+/// Some utilities use alternative timestamps to improve the accuracy of their
+/// ZIPs, but we don't parse them yet. [We're working on this](https://github.com/mvdnes/zip-rs/issues/156#issuecomment-652981904),
+/// however this API shouldn't be considered complete.
 #[derive(Debug, Clone, Copy)]
 pub struct DateTime {
     year: u16,
@@ -228,6 +234,10 @@ pub struct ZipFileData {
     pub file_comment: String,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
+    /// Specifies where the central header of the file starts
+    ///
+    /// Note that when this is not known, it is set to 0
+    pub central_header_start: u64,
     /// Specifies where the compressed data of the file starts
     pub data_start: u64,
     /// External file attributes
@@ -305,6 +315,7 @@ mod test {
             file_comment: String::new(),
             header_start: 0,
             data_start: 0,
+            central_header_start: 0,
             external_attributes: 0,
             streaming: false,
         };

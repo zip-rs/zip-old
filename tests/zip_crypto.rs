@@ -47,7 +47,9 @@ fn encrypted_file() {
         // No password
         let file = archive.by_index(0);
         match file {
-            Err(zip::result::ZipError::PasswordRequired) => (),
+            Err(zip::result::ZipError::UnsupportedArchive("Password required to decrypt file")) => {
+                ()
+            }
             Err(_) => panic!(
                 "Expected PasswordRequired error when opening encrypted file without password"
             ),
@@ -59,18 +61,21 @@ fn encrypted_file() {
         // Wrong password
         let file = archive.by_index_decrypt(0, b"wrong password");
         match file {
-            Err(zip::result::ZipError::InvalidPassword) => (),
+            Ok(Err(zip::result::InvalidPassword)) => (),
             Err(_) => panic!(
                 "Expected InvalidPassword error when opening encrypted file with wrong password"
             ),
-            Ok(_) => panic!("Error: Successfully opened encrypted file with wrong password?!"),
+            Ok(Ok(_)) => panic!("Error: Successfully opened encrypted file with wrong password?!"),
         }
     }
 
     {
         // Correct password, read contents
-        let mut file = archive.by_index_decrypt(0, "test".as_bytes()).unwrap();
-        let file_name = file.sanitized_name();
+        let mut file = archive
+            .by_index_decrypt(0, "test".as_bytes())
+            .unwrap()
+            .unwrap();
+        let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 
         let mut data = Vec::new();
