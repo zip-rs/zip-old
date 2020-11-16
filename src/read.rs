@@ -32,11 +32,16 @@ use async_compression::futures::bufread::{
     BzDecoder as AsyncBzDecoder, DeflateDecoder as AsyncDeflateDecoder,
 };
 #[cfg(feature = "async")]
-use futures::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader as AsyncBufReader};
+use futures::{
+    io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, BufReader as AsyncBufReader},
+    FutureExt,
+};
 #[cfg(feature = "async")]
 use pin_project::pin_project;
 #[cfg(feature = "async")]
 use std::pin::Pin;
+#[cfg(feature = "async")]
+use std::task::Poll;
 #[cfg(feature = "async")]
 use tokio::io::AsyncReadExt as TokioAsyncReadExt;
 
@@ -128,6 +133,17 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
+#[cfg(feature = "async")]
+impl<'a> AsyncCryptoReader<'a> {
+    /// Consumes this decoder, returning the underlying reader.
+    pub fn into_inner(self) -> futures::io::Take<Pin<&'a mut dyn AsyncRead>> {
+        match self {
+            Self::Plaintext(r) => r,
+            Self::ZipCrypto(r) => r.into_inner(),
+        }
+    }
+}
+
 enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn io::Read>),
@@ -145,6 +161,8 @@ enum ZipFileReader<'a> {
 #[cfg(feature = "async")]
 #[pin_project(project=AsyncZipFileReaderProject)]
 enum AsyncZipFileReader<'a> {
+    NoReader,
+    Raw(#[pin] futures::io::Take<Pin<&'a mut dyn AsyncRead>>),
     Stored(#[pin] Crc32Reader<AsyncCryptoReader<'a>>),
     #[cfg(any(
         feature = "deflate",
@@ -182,6 +200,8 @@ impl<'a> AsyncRead for AsyncZipFileReader<'a> {
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<usize>> {
         match self.project() {
+            AsyncZipFileReaderProject::NoReader => panic!("ZipFileReader was in an invalid state"),
+            AsyncZipFileReaderProject::Raw(r) => r.poll_read(cx, buf),
             AsyncZipFileReaderProject::Stored(r) => r.poll_read(cx, buf),
             #[cfg(any(
                 feature = "deflate",
@@ -226,6 +246,7 @@ pub struct ZipFile<'a> {
 #[pin_project]
 pub struct AsyncZipFile<'a> {
     data: Cow<'a, ZipFileData>,
+    crypto_reader: Option<AsyncCryptoReader<'a>>,
     #[pin]
     reader: AsyncZipFileReader<'a>,
 }
@@ -279,12 +300,19 @@ fn make_reader<'a>(
 }
 
 #[cfg(feature = "async")]
-async fn make_reader_async<'a>(
+async fn make_crypto_reader_async<'a>(
     compression_method: crate::compression::CompressionMethod,
     crc32: u32,
     reader: futures::io::Take<Pin<&'a mut dyn AsyncRead>>,
     password: Option<&[u8]>,
-) -> ZipResult<Result<AsyncZipFileReader<'a>, InvalidPassword>> {
+) -> ZipResult<Result<AsyncCryptoReader<'a>, InvalidPassword>> {
+    #[allow(deprecated)]
+    {
+        if let CompressionMethod::Unsupported(_) = compression_method {
+            return unsupported_zip_error("Compression method not supported");
+        }
+    }
+
     let reader = match password {
         None => AsyncCryptoReader::Plaintext(reader),
         Some(password) => match ZipCryptoReader::new_async(reader, password)
@@ -296,11 +324,17 @@ async fn make_reader_async<'a>(
             Some(r) => AsyncCryptoReader::ZipCrypto(r),
         },
     };
+    Ok(Ok(reader))
+}
 
+#[cfg(feature = "async")]
+async fn make_reader_async<'a>(
+    compression_method: crate::compression::CompressionMethod,
+    crc32: u32,
+    reader: AsyncCryptoReader<'a>,
+) -> AsyncZipFileReader<'a> {
     match compression_method {
-        CompressionMethod::Stored => Ok(Ok(AsyncZipFileReader::Stored(Crc32Reader::new(
-            reader, crc32,
-        )))),
+        CompressionMethod::Stored => AsyncZipFileReader::Stored(Crc32Reader::new(reader, crc32)),
         #[cfg(any(
             feature = "deflate",
             feature = "deflate-miniz",
@@ -308,20 +342,14 @@ async fn make_reader_async<'a>(
         ))]
         CompressionMethod::Deflated => {
             let deflate_reader = AsyncDeflateDecoder::new(AsyncBufReader::new(reader));
-            Ok(Ok(AsyncZipFileReader::Deflated(Crc32Reader::new(
-                deflate_reader,
-                crc32,
-            ))))
+            AsyncZipFileReader::Deflated(Crc32Reader::new(deflate_reader, crc32))
         }
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 => {
             let bzip2_reader = AsyncBzDecoder::new(AsyncBufReader::new(reader));
-            Ok(Ok(AsyncZipFileReader::Bzip2(Crc32Reader::new(
-                bzip2_reader,
-                crc32,
-            ))))
+            AsyncZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32))
         }
-        _ => unsupported_zip_error("Compression method not supported"),
+        _ => panic!("Compression method not supported"),
     }
 }
 
@@ -906,9 +934,12 @@ impl<R: AsyncRead + AsyncSeek + Unpin> AsyncZipArchive<R> {
         let limit_reader =
             (Pin::new(&mut self.reader) as Pin<&'a mut dyn AsyncRead>).take(data.compressed_size);
 
-        match make_reader_async(data.compression_method, data.crc32, limit_reader, password).await {
-            Ok(Ok(reader)) => Ok(Ok(AsyncZipFile {
-                reader,
+        match make_crypto_reader_async(data.compression_method, data.crc32, limit_reader, password)
+            .await
+        {
+            Ok(Ok(crypto_reader)) => Ok(Ok(AsyncZipFile {
+                crypto_reader: Some(crypto_reader),
+                reader: AsyncZipFileReader::NoReader,
                 data: Cow::Borrowed(data),
             })),
             Err(e) => Err(e),
@@ -1310,6 +1341,24 @@ impl<'a> ZipFile<'a> {
 /// Methods for retrieving information on zip files
 #[cfg(feature = "async")]
 impl<'a> AsyncZipFile<'a> {
+    async fn get_reader(&mut self) -> &mut AsyncZipFileReader<'a> {
+        if let AsyncZipFileReader::NoReader = self.reader {
+            let data = &self.data;
+            let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
+            self.reader =
+                make_reader_async(data.compression_method, data.crc32, crypto_reader).await
+        }
+        &mut self.reader
+    }
+
+    pub(crate) fn get_raw_reader(&mut self) -> &mut (dyn AsyncRead + Unpin) {
+        if let AsyncZipFileReader::NoReader = self.reader {
+            let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
+            self.reader = AsyncZipFileReader::Raw(crypto_reader.into_inner())
+        }
+        &mut self.reader
+    }
+
     /// Get the version of the file
     pub fn version_made_by(&self) -> (u8, u8) {
         (
@@ -1420,11 +1469,17 @@ impl<'a> Read for ZipFile<'a> {
 #[cfg(feature = "async")]
 impl<'a> AsyncRead for AsyncZipFile<'a> {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<usize>> {
-        self.project().reader.poll_read(cx, buf)
+        let reader = &mut self.get_reader().boxed_local().as_mut().poll(cx);
+
+        match reader {
+            Poll::Ready(reader) => Pin::new(reader).poll_read(cx, buf),
+            Poll::Pending => Poll::Pending,
+        }
+        // reader.poll_read(cx, buf)
     }
 }
 
@@ -1644,11 +1699,14 @@ pub async fn read_zipfile_from_stream_async<'a, R: AsyncRead + Unpin>(
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;
+    let crypto_reader =
+        make_crypto_reader_async(result_compression_method, result_crc32, limit_reader, None)
+            .await?
+            .unwrap();
     Ok(Some(AsyncZipFile {
         data: Cow::Owned(result),
-        reader: make_reader_async(result_compression_method, result_crc32, limit_reader, None)
-            .await?
-            .unwrap(),
+        crypto_reader: None,
+        reader: make_reader_async(result_compression_method, result_crc32, crypto_reader).await,
     }))
 }
 
