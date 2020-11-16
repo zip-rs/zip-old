@@ -19,8 +19,13 @@ fn real_main() -> i32 {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i).unwrap();
-        #[allow(deprecated)]
-        let outpath = file.sanitized_name();
+        let outpath = match file.enclosed_name() {
+            Some(path) => path,
+            None => {
+                println!("Entry {} has a suspicious path", file.name());
+                continue;
+            }
+        };
 
         {
             let comment = file.comment();
@@ -33,13 +38,13 @@ fn real_main() -> i32 {
             println!(
                 "Entry {} is a directory with name \"{}\"",
                 i,
-                outpath.as_path().display()
+                outpath.display()
             );
         } else {
             println!(
                 "Entry {} is a file with name \"{}\" ({} bytes)",
                 i,
-                outpath.as_path().display(),
+                outpath.display(),
                 file.size()
             );
         }
