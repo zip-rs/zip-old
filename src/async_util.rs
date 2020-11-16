@@ -1,10 +1,10 @@
-use futures::AsyncRead;
+use futures::{AsyncRead, AsyncWrite};
 use pin_project::pin_project;
-use tokio::io::AsyncRead as TokioAsyncRead;
+use tokio::io::{AsyncRead as TokioAsyncRead, AsyncWrite as TokioAsyncWrite};
 
 /// Wrapper for converting between tokio and futures async read types
 #[pin_project]
-pub(crate) struct Compat<T>(#[pin] T);
+pub(crate) struct Compat<T>(#[pin] pub T);
 
 impl<T> Compat<T> {
     pub fn into_inner(self) -> T {
@@ -25,6 +25,30 @@ impl<T: AsyncRead> TokioAsyncRead for Compat<T> {
     }
 }
 
+impl<T: AsyncWrite> TokioAsyncWrite for Compat<T> {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        self.project().0.poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        self.project().0.poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        self.project().0.poll_close(cx)
+    }
+}
+
 pub(crate) trait CompatExt<T>: Sized {
     fn compat(self) -> Compat<Self> {
         Compat(self)
@@ -36,3 +60,4 @@ pub(crate) trait CompatExt<T>: Sized {
 }
 
 impl<T: AsyncRead> CompatExt<T> for T {}
+// We can't also implement for AsyncWrite without specialization :(

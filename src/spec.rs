@@ -4,13 +4,15 @@ use std::io;
 use std::io::prelude::*;
 
 #[cfg(feature = "async")]
+use crate::async_util::Compat;
+#[cfg(feature = "async")]
 use crate::async_util::CompatExt;
 #[cfg(feature = "async")]
-use futures::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use futures::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite};
 #[cfg(feature = "async")]
 use std::pin::Pin;
 #[cfg(feature = "async")]
-use tokio::io::AsyncReadExt as TokioAsyncReadExt;
+use tokio::io::{AsyncReadExt as TokioAsyncReadExt, AsyncWriteExt as TokioAsyncWriteExt};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -174,6 +176,27 @@ impl CentralDirectoryEnd {
         writer.write_u32::<LittleEndian>(self.central_directory_offset)?;
         writer.write_u16::<LittleEndian>(self.zip_file_comment.len() as u16)?;
         writer.write_all(&self.zip_file_comment)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "async")]
+    pub async fn write_async<T: AsyncWrite + Unpin>(&self, writer: &mut T) -> ZipResult<()> {
+        let mut writer = Compat(writer);
+        writer.write_u32_le(CENTRAL_DIRECTORY_END_SIGNATURE).await?;
+        writer.write_u16_le(self.disk_number).await?;
+        writer
+            .write_u16_le(self.disk_with_central_directory)
+            .await?;
+        writer
+            .write_u16_le(self.number_of_files_on_this_disk)
+            .await?;
+        writer.write_u16_le(self.number_of_files).await?;
+        writer.write_u32_le(self.central_directory_size).await?;
+        writer.write_u32_le(self.central_directory_offset).await?;
+        writer
+            .write_u16_le(self.zip_file_comment.len() as u16)
+            .await?;
+        writer.write_all(&self.zip_file_comment).await?;
         Ok(())
     }
 }
