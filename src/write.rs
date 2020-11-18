@@ -1062,7 +1062,7 @@ fn update_local_zip64_extra_field<T: Write + io::Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    let zip64_extra_field = file.header_start + 30 + file.file_name_raw.len() as u64;
+    let zip64_extra_field = file.header_start + 30 + file.file_name.as_bytes().len() as u64;
     writer.seek(io::SeekFrom::Start(zip64_extra_field + 4))?;
     writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
     writer.write_u64::<LittleEndian>(file.compressed_size)?;
