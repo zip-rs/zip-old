@@ -206,6 +206,36 @@ fn make_reader<'a>(
     }
 }
 
+fn get_symlink_source(entry: &mut ZipFile<'_>) -> ZipResult<Option<Vec<u8>>> {
+    if let Some(mode) = entry.unix_mode() {
+        const S_IFLNK: u32 = 0o120000; // symbolic link
+        if mode & S_IFLNK == S_IFLNK {
+            let mut contents = Vec::new();
+            entry.read_to_end(&mut contents)?;
+            return Ok(Some(contents));
+        }
+    }
+    Ok(None)
+}
+fn create_link(link_target: Vec<u8>, link_path: &Path) -> ZipResult<()> {
+    #[cfg(target_family = "unix")]
+    {
+        // Needed to be able to call `OsString::from_vec(Vec<u8>)`
+        use std::os::unix::ffi::OsStringExt as _;
+
+        let link_target = std::ffi::OsString::from_vec(link_target);
+        std::os::unix::fs::symlink(link_target, link_path)?;
+    }
+    #[cfg(target_family = "windows")]
+    {
+        // TODO: Support non-UTF-8 paths (currently only works for paths which are valid UTF-8)
+        let link_path = String::from_utf8(contents)?;
+        std::os::windows::fs::symlink_file(link_target, link_path)?;
+    }
+
+    Ok(())
+}
+
 impl<R: Read + io::Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
@@ -368,8 +398,12 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                         fs::create_dir_all(&p)?;
                     }
                 }
-                let mut outfile = fs::File::create(&outpath)?;
-                io::copy(&mut file, &mut outfile)?;
+                if let Some(target) = get_symlink_source(&mut file)? {
+                    create_link(target, &outpath)?;
+                } else {
+                    let mut outfile = fs::File::create(&outpath)?;
+                    io::copy(&mut file, &mut outfile)?;
+                }
             }
             // Get and Set permissions
             #[cfg(unix)]
