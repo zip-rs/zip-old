@@ -229,6 +229,11 @@ fn create_link(link_target: Vec<u8>, link_path: &Path) -> ZipResult<()> {
     Ok(())
 }
 
+#[cfg(target_family = "windows")]
+fn create_link(_link_target: Vec<u8>, _link_path: &Path) -> ZipResult<()> {
+    Ok(())
+}
+
 impl<R: Read + io::Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
