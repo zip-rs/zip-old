@@ -217,21 +217,14 @@ fn get_symlink_source(entry: &mut ZipFile<'_>) -> ZipResult<Option<Vec<u8>>> {
     }
     Ok(None)
 }
-fn create_link(link_target: Vec<u8>, link_path: &Path) -> ZipResult<()> {
-    #[cfg(target_family = "unix")]
-    {
-        // Needed to be able to call `OsString::from_vec(Vec<u8>)`
-        use std::os::unix::ffi::OsStringExt as _;
 
-        let link_target = std::ffi::OsString::from_vec(link_target);
-        std::os::unix::fs::symlink(link_target, link_path)?;
-    }
-    // #[cfg(target_family = "windows")]
-    // {
-    //     // TODO: Support non-UTF-8 paths (currently only works for paths which are valid UTF-8)
-    //     let link_target = String::from_utf8(link_target)?;
-    //     std::os::windows::fs::symlink_file(link_target, link_path)?;
-    // }
+#[cfg(target_family = "unix")]
+fn create_link(link_target: Vec<u8>, link_path: &Path) -> ZipResult<()> {
+    // Needed to be able to call `OsString::from_vec(Vec<u8>)`
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let link_target = std::ffi::OsString::from_vec(link_target);
+    std::os::unix::fs::symlink(link_target, link_path)?;
 
     Ok(())
 }
@@ -398,11 +391,15 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                         fs::create_dir_all(&p)?;
                     }
                 }
-                if let Some(target) = get_symlink_source(&mut file)? {
-                    create_link(target, &outpath)?;
-                } else {
-                    let mut outfile = fs::File::create(&outpath)?;
-                    io::copy(&mut file, &mut outfile)?;
+
+                match (cfg!(target_family = "unix"), get_symlink_source(&mut file)?) {
+                    (true, Some(target)) => {
+                        create_link(target, &outpath)?;
+                    }
+                    _ => {
+                        let mut outfile = fs::File::create(&outpath)?;
+                        io::copy(&mut file, &mut outfile)?;
+                    }
                 }
             }
             // Get and Set permissions
