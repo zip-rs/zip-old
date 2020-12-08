@@ -229,7 +229,7 @@ fn create_link(link_target: Vec<u8>, link_path: &Path) -> ZipResult<()> {
     #[cfg(target_family = "windows")]
     {
         // TODO: Support non-UTF-8 paths (currently only works for paths which are valid UTF-8)
-        let link_path = String::from_utf8(contents)?;
+        let link_target = String::from_utf8(link_target)?;
         std::os::windows::fs::symlink_file(link_target, link_path)?;
     }
 
