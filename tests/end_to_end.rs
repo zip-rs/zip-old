@@ -46,6 +46,25 @@ fn copy() {
     check_zip_file_contents(&mut tgt_archive, COPY_ENTRY_NAME);
 }
 
+// This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
+// both the prior data and the appended data will be exactly the same as their originals.
+#[test]
+fn append() {
+    let mut file = &mut Cursor::new(Vec::new());
+    write_to_zip(file).expect("file written");
+
+    {
+        let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
+        zip.start_file(COPY_ENTRY_NAME, Default::default()).unwrap();
+        zip.write_all(LOREM_IPSUM).unwrap();
+        zip.finish().unwrap();
+    }
+
+    let mut zip = zip::ZipArchive::new(&mut file).unwrap();
+    check_zip_file_contents(&mut zip, ENTRY_NAME);
+    check_zip_file_contents(&mut zip, COPY_ENTRY_NAME);
+}
+
 fn write_to_zip(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     let mut zip = zip::ZipWriter::new(file);
 

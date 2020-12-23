@@ -209,7 +209,7 @@ fn make_reader<'a>(
 impl<R: Read + io::Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
-    fn get_directory_counts(
+    pub fn get_directory_counts(
         reader: &mut R,
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
@@ -514,7 +514,8 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
 
-fn central_header_to_zip_file<R: Read + io::Seek>(
+/// Parse a central directory entry to collect the information for the file.
+pub fn central_header_to_zip_file<R: Read + io::Seek>(
     reader: &mut R,
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
