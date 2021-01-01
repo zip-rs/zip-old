@@ -107,11 +107,8 @@ impl CentralDirectoryEnd {
                 reader.seek(io::SeekFrom::Current(
                     BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
                 ))?;
-                let comment_length = reader.read_u16::<LittleEndian>()? as u64;
-                if file_length - pos - HEADER_SIZE == comment_length {
-                    let cde_start_pos = reader.seek(io::SeekFrom::Start(pos as u64))?;
-                    return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
-                }
+                let cde_start_pos = reader.seek(io::SeekFrom::Start(pos as u64))?;
+                return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
             }
             pos = match pos.checked_sub(1) {
                 Some(p) => p,

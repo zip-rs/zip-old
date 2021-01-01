@@ -251,6 +251,27 @@ pub struct AsyncZipFile<'a> {
     reader: AsyncZipFileReader<'a>,
 }
 
+fn find_content<'a>(
+    data: &mut ZipFileData,
+    reader: &'a mut (impl Read + Seek),
+) -> ZipResult<io::Take<&'a mut dyn Read>> {
+    // Parse local header
+    reader.seek(io::SeekFrom::Start(data.header_start))?;
+    let signature = reader.read_u32::<LittleEndian>()?;
+    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
+        return Err(ZipError::InvalidArchive("Invalid local file header"));
+    }
+
+    reader.seek(io::SeekFrom::Current(22))?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+    let magic_and_header = 4 + 22 + 2 + 2;
+    data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+
+    reader.seek(io::SeekFrom::Start(data.data_start))?;
+    Ok((reader as &mut dyn Read).take(data.compressed_size))
+}
+
 fn make_crypto_reader<'a>(
     compression_method: crate::compression::CompressionMethod,
     crc32: u32,
@@ -602,6 +623,21 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             .unwrap())
     }
 
+    /// Get a contained file by index without decompressing it
+    pub fn by_index_raw<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+        let reader = &mut self.reader;
+        self.files
+            .get_mut(file_number)
+            .ok_or(ZipError::FileNotFound)
+            .and_then(move |data| {
+                Ok(ZipFile {
+                    crypto_reader: None,
+                    reader: ZipFileReader::Raw(find_content(data, reader)?),
+                    data: Cow::Borrowed(data),
+                })
+            })
+    }
+
     fn by_index_with_optional_password<'a>(
         &'a mut self,
         file_number: usize,
@@ -621,23 +657,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             (Some(_), false) => password = None, //Password supplied, but none needed! Discard.
             _ => {}
         }
-
-        // Parse local header
-        self.reader.seek(io::SeekFrom::Start(data.header_start))?;
-        let signature = self.reader.read_u32::<LittleEndian>()?;
-        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid local file header"));
-        }
-
-        self.reader.seek(io::SeekFrom::Current(22))?;
-        let file_name_length = self.reader.read_u16::<LittleEndian>()? as u64;
-        let extra_field_length = self.reader.read_u16::<LittleEndian>()? as u64;
-        let magic_and_header = 4 + 22 + 2 + 2;
-        data.data_start =
-            data.header_start + magic_and_header + file_name_length + extra_field_length;
-
-        self.reader.seek(io::SeekFrom::Start(data.data_start))?;
-        let limit_reader = (self.reader.by_ref() as &mut dyn Read).take(data.compressed_size);
+        let limit_reader = find_content(data, &mut self.reader)?;
 
         match make_crypto_reader(data.compression_method, data.crc32, limit_reader, password) {
             Ok(Ok(crypto_reader)) => Ok(Ok(ZipFile {
