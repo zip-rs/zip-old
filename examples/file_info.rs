@@ -19,13 +19,11 @@ fn real_main() -> i32 {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i).unwrap();
-        let outpath = match file.enclosed_name() {
-            Some(path) => path,
-            None => {
-                println!("Entry {} has a suspicious path", file.name());
-                continue;
-            }
-        };
+        let outpath = file.name() 
+        if (outpath.len() == 0) {
+            println!("Entry {} has no filename", i);
+            continue;
+        }
 
         {
             let comment = file.comment();
