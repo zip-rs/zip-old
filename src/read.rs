@@ -8,7 +8,7 @@ use crate::zipcrypto::ZipCryptoReader;
 use crate::zipcrypto::ZipCryptoReaderValid;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::{self, prelude::*};
+use std::io::{self, prelude::*, SeekFrom};
 use std::path::{Component, Path};
 
 use crate::cp437::FromCp437;
@@ -79,10 +79,15 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
+trait ReadSeek: Read + Seek {}
+
+impl<T: Seek + Read> ReadSeek for T {}
+
 enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn io::Read>),
     Stored(Crc32Reader<CryptoReader<'a>>),
+    Seekable(io::Take<&'a mut dyn ReadSeek>, u64, u64),
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
@@ -98,6 +103,7 @@ impl<'a> Read for ZipFileReader<'a> {
         match self {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r.read(buf),
+            ZipFileReader::Seekable(r, start, end) => r.read(buf),
             ZipFileReader::Stored(r) => r.read(buf),
             #[cfg(any(
                 feature = "deflate",
@@ -117,6 +123,7 @@ impl<'a> ZipFileReader<'a> {
         match self {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r,
+            ZipFileReader::Seekable(r, start, end) => unimplemented!(),
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
             #[cfg(any(
                 feature = "deflate",
@@ -423,6 +430,49 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// Search for a file entry by name
     pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
         Ok(self.by_name_with_optional_password(name, None)?.unwrap())
+    }
+
+    pub fn by_name_seekable<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
+        let file_number = match self.names_map.get(name) {
+            Some(index) => *index,
+            None => {
+                return Err(ZipError::FileNotFound);
+            }
+        };
+        if file_number >= self.files.len() {
+            return Err(ZipError::FileNotFound);
+        }
+        let data = &mut self.files[file_number];
+
+        if data.encrypted {
+            return Err(ZipError::UnsupportedArchive(
+                "Password required to decrypt file",
+            ));
+        }
+        // Parse local header
+        let reader = &mut self.reader;
+        reader.seek(io::SeekFrom::Start(data.header_start))?;
+        let signature = reader.read_u32::<LittleEndian>()?;
+        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid local file header"));
+        }
+
+        reader.seek(io::SeekFrom::Current(22))?;
+        let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
+        let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+        let magic_and_header = 4 + 22 + 2 + 2;
+        data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+
+        reader.seek(io::SeekFrom::Start(data.data_start))?;
+        let limit_reader = (reader as &mut dyn ReadSeek).take(data.compressed_size);
+        if data.compressed_size != data.uncompressed_size {
+            return Err(ZipError::InvalidArchive("Cannot seek compressed files"));
+        }
+        Ok(ZipFile {
+            data: Cow::Borrowed(data),
+            crypto_reader: None,
+            reader: ZipFileReader::Seekable(limit_reader, data.data_start, data.data_start + data.compressed_size),
+        })
     }
 
     fn by_name_with_optional_password<'a>(
@@ -815,6 +865,38 @@ impl<'a> ZipFile<'a> {
 impl<'a> Read for ZipFile<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.get_reader().read(buf)
+    }
+}
+
+#[inline]
+pub fn clamp<T: PartialOrd>(input: T, min: T, max: T) -> T {
+    debug_assert!(min <= max, "min must be less than or equal to max");
+    if input < min {
+        min
+    } else if input > max {
+        max
+    } else {
+        input
+    }
+}
+
+impl<'a> Seek for ZipFile<'a> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match &mut self.reader {
+            ZipFileReader::Seekable(s, start, end) => {
+                let start = start.clone();
+                let end = end.clone();
+                let file = s.get_mut();
+                let offset = file.seek(match pos {
+                    SeekFrom::Start(offset) => SeekFrom::Start(clamp(start + offset, start, end)),
+                    SeekFrom::End(offset) => SeekFrom::Start(clamp::<i64>(offset + end as i64, start as i64, end as i64) as u64),
+                    SeekFrom::Current(offset) => SeekFrom::Current(offset),
+                })?;
+                s.set_limit(clamp(end - offset, 0, end - start));
+                Ok(offset - start)
+            }
+            _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unseekable stream")),
+        }
     }
 }
 
