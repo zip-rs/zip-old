@@ -151,8 +151,9 @@ impl FileOptions {
 
     /// Set whether the new file's compressed and uncompressed size is less than 4 GiB.
     ///
-    /// If set to `false` and the file exceeds the limit, an I/O error is thrown. If set to `true`
-    /// and the file does not exceed the limit, 20 B are wasted. The default is `false`.
+    /// If set to `false` and the file exceeds the limit, an I/O error is thrown. If set to `true`,
+    /// readers will require ZIP64 support and if the file does not exceed the limit, 20 B are
+    /// wasted. The default is `false`.
     pub fn large_file(mut self, large: bool) -> FileOptions {
         self.large_file = large;
         self
