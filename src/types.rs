@@ -30,7 +30,7 @@ impl System {
 /// # Warning
 ///
 /// Some utilities use alternative timestamps to improve the accuracy of their
-/// ZIPs, but we don't parse them yet. [We're working on this](https://github.com/mvdnes/zip-rs/issues/156#issuecomment-652981904),
+/// ZIPs, but we don't parse them yet. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904),
 /// however this API shouldn't be considered complete.
 #[derive(Debug, Clone, Copy)]
 pub struct DateTime {

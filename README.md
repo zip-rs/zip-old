@@ -4,7 +4,7 @@ zip-rs
 [![Build Status](https://img.shields.io/github/workflow/status/zip-rs/zip/CI)](https://github.com/zip-rs/zip/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 
-[Documentation](http://mvdnes.github.io/rust-docs/zip-rs/zip/index.html)
+[Documentation](https://docs.rs/zip/0.5.10/zip/)
 
 
 Info
