@@ -1,10 +1,9 @@
 [package]
 name = "zip"
-version = "0.5.9"
-authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>"]
+version = "0.5.10"
+authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/mvdnes/zip-rs.git"
-documentation = "http://mvdnes.github.io/rust-docs/zip-rs/zip/index.html"
+repository = "https://github.com/zip/zip-rs.git"
 keywords = ["zip", "archive"]
 description = """
 Library to support the reading and writing of zip files.
