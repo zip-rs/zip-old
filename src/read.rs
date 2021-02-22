@@ -398,21 +398,24 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                 }
 
                 match (cfg!(target_family = "unix"), get_symlink_source(&mut file)?) {
+                    // Handle links on Linux
                     (true, Some(target)) => {
                         create_link(target, &outpath)?;
                     }
+                    // otherwise just write out the file
                     _ => {
                         let mut outfile = fs::File::create(&outpath)?;
                         io::copy(&mut file, &mut outfile)?;
+
+                        // Get and Set permissions
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Some(mode) = file.unix_mode() {
+                                fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                            }
+                        }
                     }
-                }
-            }
-            // Get and Set permissions
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Some(mode) = file.unix_mode() {
-                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
                 }
             }
         }
