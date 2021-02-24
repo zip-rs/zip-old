@@ -3,7 +3,7 @@ name = "zip"
 version = "0.5.10"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/zip/zip-rs.git"
+repository = "https://github.com/zip-rs/zip.git"
 keywords = ["zip", "archive"]
 description = """
 Library to support the reading and writing of zip files.
