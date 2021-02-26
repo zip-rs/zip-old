@@ -208,18 +208,15 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
         let (archive_offset, directory_start, number_of_files) =
             ZipArchive::get_directory_counts(&mut readwriter, &footer, cde_start_pos)?;
 
-        let mut files = Vec::new();
-
         if let Err(_) = readwriter.seek(io::SeekFrom::Start(directory_start)) {
             return Err(ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
             ));
         }
 
-        for _ in 0..number_of_files {
-            let file = central_header_to_zip_file(&mut readwriter, archive_offset)?;
-            files.push(file);
-        }
+        let files = (0..number_of_files)
+            .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let _ = readwriter.seek(io::SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
 
