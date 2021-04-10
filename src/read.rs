@@ -47,7 +47,7 @@ mod ffi {
 /// }
 /// ```
 #[derive(Clone, Debug)]
-pub struct ZipArchive<R: Read + io::Seek> {
+pub struct ZipArchive<R> {
     reader: R,
     files: Vec<ZipFileData>,
     names_map: HashMap<String, usize>,
