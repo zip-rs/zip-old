@@ -68,7 +68,7 @@ pub struct ZipWriter<W: Write + io::Seek> {
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
-    comment: String,
+    comment: Vec<u8>,
     writing_raw: bool,
 }
 
@@ -225,7 +225,7 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
             files,
             stats: Default::default(),
             writing_to_file: false,
-            comment: String::new(),
+            comment: footer.zip_file_comment,
             writing_raw: true, // avoid recomputing the last file's header
         })
     }
@@ -241,7 +241,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: String::new(),
+            comment: Vec::new(),
             writing_raw: false,
         }
     }
@@ -251,7 +251,15 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        self.comment = comment.into();
+        self.set_raw_comment(comment.into().into())
+    }
+
+    /// Set ZIP archive comment.
+    ///
+    /// This sets the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8
+    pub fn set_raw_comment(&mut self, comment: Vec<u8>) {
+        self.comment = comment;
     }
 
     /// Start a new file for with the requested options.
@@ -522,7 +530,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u16,
                 central_directory_size: central_size as u32,
                 central_directory_offset: central_start as u32,
-                zip_file_comment: self.comment.as_bytes().to_vec(),
+                zip_file_comment: self.comment.clone(),
             };
 
             footer.write(writer)?;
