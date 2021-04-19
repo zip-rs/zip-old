@@ -1,7 +1,7 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::ZipFile;
+use crate::read::{central_header_to_zip_file, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -68,7 +68,7 @@ pub struct ZipWriter<W: Write + io::Seek> {
     files: Vec<ZipFileData>,
     stats: ZipWriterStats,
     writing_to_file: bool,
-    comment: String,
+    comment: Vec<u8>,
     writing_raw: bool,
 }
 
@@ -194,6 +194,43 @@ impl ZipWriterStats {
     }
 }
 
+impl<A: Read + Write + io::Seek> ZipWriter<A> {
+    /// Initializes the archive from an existing ZIP archive, making it ready for append.
+    pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
+        let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
+
+        if footer.disk_number != footer.disk_with_central_directory {
+            return Err(ZipError::UnsupportedArchive(
+                "Support for multi-disk files is not implemented",
+            ));
+        }
+
+        let (archive_offset, directory_start, number_of_files) =
+            ZipArchive::get_directory_counts(&mut readwriter, &footer, cde_start_pos)?;
+
+        if let Err(_) = readwriter.seek(io::SeekFrom::Start(directory_start)) {
+            return Err(ZipError::InvalidArchive(
+                "Could not seek to start of central directory",
+            ));
+        }
+
+        let files = (0..number_of_files)
+            .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let _ = readwriter.seek(io::SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
+
+        Ok(ZipWriter {
+            inner: GenericZipWriter::Storer(readwriter),
+            files,
+            stats: Default::default(),
+            writing_to_file: false,
+            comment: footer.zip_file_comment,
+            writing_raw: true, // avoid recomputing the last file's header
+        })
+    }
+}
+
 impl<W: Write + io::Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
@@ -204,7 +241,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
-            comment: String::new(),
+            comment: Vec::new(),
             writing_raw: false,
         }
     }
@@ -214,7 +251,15 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        self.comment = comment.into();
+        self.set_raw_comment(comment.into().into())
+    }
+
+    /// Set ZIP archive comment.
+    ///
+    /// This sets the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8
+    pub fn set_raw_comment(&mut self, comment: Vec<u8>) {
+        self.comment = comment;
     }
 
     /// Start a new file for with the requested options.
@@ -485,7 +530,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 number_of_files: self.files.len() as u16,
                 central_directory_size: central_size as u32,
                 central_directory_offset: central_start as u32,
-                zip_file_comment: self.comment.as_bytes().to_vec(),
+                zip_file_comment: self.comment.clone(),
             };
 
             footer.write(writer)?;
