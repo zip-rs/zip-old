@@ -305,6 +305,7 @@ mod test {
             system: System::Dos,
             version_made_by: 0,
             encrypted: false,
+            using_data_descriptor: false,
             compression_method: crate::compression::CompressionMethod::Stored,
             last_modified_time: DateTime::default(),
             crc32: 0,
