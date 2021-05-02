@@ -57,6 +57,11 @@ pub struct ZipCryptoReader<R> {
     keys: ZipCryptoKeys,
 }
 
+pub enum ZipCryptoValidator {
+    PkzipCrc32(u32),
+    InfoZipMsdosTime(u16),
+}
+
 impl<R: std::io::Read> ZipCryptoReader<R> {
     /// Note: The password is `&[u8]` and not `&str` because the
     /// [zip specification](https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT)
@@ -81,7 +86,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     /// Read the ZipCrypto header bytes and validate the password.
     pub fn validate(
         mut self,
-        crc32_plaintext: u32,
+        validator: ZipCryptoValidator,
     ) -> Result<Option<ZipCryptoReaderValid<R>>, std::io::Error> {
         // ZipCrypto prefixes a file with a 12 byte header
         let mut header_buf = [0u8; 12];
@@ -90,13 +95,30 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
             *byte = self.keys.decrypt_byte(*byte);
         }
 
-        // PKZIP before 2.0 used 2 byte CRC check.
-        // PKZIP 2.0+ used 1 byte CRC check. It's more secure.
-        // We also use 1 byte CRC.
+        match validator {
+            ZipCryptoValidator::PkzipCrc32(crc32_plaintext) => {
+                // PKZIP before 2.0 used 2 byte CRC check.
+                // PKZIP 2.0+ used 1 byte CRC check. It's more secure.
+                // We also use 1 byte CRC.
 
-        if (crc32_plaintext >> 24) as u8 != header_buf[11] {
-            return Ok(None); // Wrong password
+                if (crc32_plaintext >> 24) as u8 != header_buf[11] {
+                    return Ok(None); // Wrong password
+                }
+            }
+            ZipCryptoValidator::InfoZipMsdosTime(last_mod_time) => {
+                // Info-ZIP modification to ZipCrypto format:
+                // If bit 3 of the general purpose bit flag is set
+                // (indicates that the file uses a data-descriptor section),
+                // it uses high byte of 16-bit File Time.
+                // Info-ZIP code probably writes 2 bytes of File Time.
+                // We check only 1 byte.
+
+                if (last_mod_time >> 8) as u8 != header_buf[11] {
+                    return Ok(None); // Wrong password
+                }
+            }
         }
+
         Ok(Some(ZipCryptoReaderValid { reader: self }))
     }
 }

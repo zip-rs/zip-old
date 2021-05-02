@@ -216,6 +216,8 @@ pub struct ZipFileData {
     pub version_made_by: u8,
     /// True if the file is encrypted.
     pub encrypted: bool,
+    /// True if the file uses a data-descriptor section
+    pub using_data_descriptor: bool,
     /// Compression method used to store the file
     pub compression_method: crate::compression::CompressionMethod,
     /// Last modified time. This will only have a 2 second precision.
