@@ -290,6 +290,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
                 encrypted: false,
+                using_data_descriptor: false,
                 compression_method: options.compression_method,
                 last_modified_time: options.last_modified_time,
                 crc32: raw_values.crc32,
