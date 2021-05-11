@@ -232,6 +232,8 @@ pub struct ZipFileData {
     pub file_name: String,
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Vec<u8>,
+    /// Extra field usually used for storage expansion
+    pub extra_field: Vec<u8>,
     /// File comment
     pub file_comment: String,
     /// Specifies where the local header of the file starts
@@ -244,6 +246,8 @@ pub struct ZipFileData {
     pub data_start: u64,
     /// External file attributes
     pub external_attributes: u32,
+    /// Reserve local ZIP64 extra field
+    pub large_file: bool,
 }
 
 impl ZipFileData {
@@ -277,10 +281,18 @@ impl ZipFileData {
             })
     }
 
+    pub fn zip64_extension(&self) -> bool {
+        self.uncompressed_size > 0xFFFFFFFF
+            || self.compressed_size > 0xFFFFFFFF
+            || self.header_start > 0xFFFFFFFF
+    }
+
     pub fn version_needed(&self) -> u16 {
-        match self.compression_method {
+        // higher versions matched first
+        match (self.zip64_extension(), self.compression_method) {
             #[cfg(feature = "bzip2")]
-            crate::compression::CompressionMethod::Bzip2 => 46,
+            (_, crate::compression::CompressionMethod::Bzip2) => 46,
+            (true, _) => 45,
             _ => 20,
         }
     }
@@ -313,11 +325,13 @@ mod test {
             uncompressed_size: 0,
             file_name: file_name.clone(),
             file_name_raw: file_name.into_bytes(),
+            extra_field: Vec::new(),
             file_comment: String::new(),
             header_start: 0,
             data_start: 0,
             central_header_start: 0,
             external_attributes: 0,
+            large_file: false,
         };
         assert_eq!(
             data.file_name_sanitized(),

@@ -1,3 +1,4 @@
+use byteorder::{LittleEndian, WriteBytesExt};
 use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::{Cursor, Seek};
@@ -76,6 +77,13 @@ fn write_to_zip(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
+    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", Default::default())?;
+    zip.write_u16::<LittleEndian>(0xbeef)?;
+    zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
+    zip.write_all(EXTRA_DATA)?;
+    zip.end_extra_data()?;
+    zip.write_all(b"Hello, World! Again.\n")?;
+
     zip.start_file(ENTRY_NAME, Default::default())?;
     zip.write_all(LOREM_IPSUM)?;
 
@@ -84,12 +92,26 @@ fn write_to_zip(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
 }
 
 fn read_zip<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip::ZipArchive<R>> {
-    let archive = zip::ZipArchive::new(zip_file).unwrap();
+    let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
-    let expected_file_names = ["test/", "test/☃.txt", ENTRY_NAME];
+    let expected_file_names = [
+        "test/",
+        "test/☃.txt",
+        "test_with_extra_data/🐢.txt",
+        ENTRY_NAME,
+    ];
     let expected_file_names = HashSet::from_iter(expected_file_names.iter().map(|&v| v));
     let file_names = archive.file_names().collect::<HashSet<_>>();
     assert_eq!(file_names, expected_file_names);
+
+    {
+        let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
+        let mut extra_data = Vec::new();
+        extra_data.write_u16::<LittleEndian>(0xbeef)?;
+        extra_data.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
+        extra_data.write_all(EXTRA_DATA)?;
+        assert_eq!(file_with_extra_data.extra_data(), extra_data.as_slice());
+    }
 
     Ok(archive)
 }
@@ -121,6 +143,8 @@ dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim ve
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
 inceptos himenaeos. Maecenas feugiat velit in ex ultrices scelerisque id id neque.
 ";
+
+const EXTRA_DATA: &'static [u8] = b"Extra Data";
 
 const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 

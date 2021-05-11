@@ -117,6 +117,14 @@ impl Zip64CentralDirectoryEndLocator {
             number_of_disks,
         })
     }
+
+    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
+        writer.write_u32::<LittleEndian>(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)?;
+        writer.write_u32::<LittleEndian>(self.disk_with_central_directory)?;
+        writer.write_u64::<LittleEndian>(self.end_of_central_directory_offset)?;
+        writer.write_u32::<LittleEndian>(self.number_of_disks)?;
+        Ok(())
+    }
 }
 
 pub struct Zip64CentralDirectoryEnd {
@@ -178,5 +186,19 @@ impl Zip64CentralDirectoryEnd {
         Err(ZipError::InvalidArchive(
             "Could not find ZIP64 central directory end",
         ))
+    }
+
+    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
+        writer.write_u32::<LittleEndian>(ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)?;
+        writer.write_u64::<LittleEndian>(44)?; // record size
+        writer.write_u16::<LittleEndian>(self.version_made_by)?;
+        writer.write_u16::<LittleEndian>(self.version_needed_to_extract)?;
+        writer.write_u32::<LittleEndian>(self.disk_number)?;
+        writer.write_u32::<LittleEndian>(self.disk_with_central_directory)?;
+        writer.write_u64::<LittleEndian>(self.number_of_files_on_this_disk)?;
+        writer.write_u64::<LittleEndian>(self.number_of_files)?;
+        writer.write_u64::<LittleEndian>(self.central_directory_size)?;
+        writer.write_u64::<LittleEndian>(self.central_directory_offset)?;
+        Ok(())
     }
 }

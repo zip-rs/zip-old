@@ -592,14 +592,16 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
+        extra_field,
         file_comment,
         header_start: offset,
         central_header_start,
         data_start: 0,
         external_attributes: external_file_attributes,
+        large_file: false,
     };
 
-    match parse_extra_field(&mut result, &*extra_field) {
+    match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
@@ -610,20 +612,22 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     Ok(result)
 }
 
-fn parse_extra_field(file: &mut ZipFileData, data: &[u8]) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(data);
+fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
+    let mut reader = io::Cursor::new(&file.extra_field);
 
-    while (reader.position() as usize) < data.len() {
+    while (reader.position() as usize) < file.extra_field.len() {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
         let mut len_left = len as i64;
         // Zip64 extended information extra field
         if kind == 0x0001 {
             if file.uncompressed_size == 0xFFFFFFFF {
+                file.large_file = true;
                 file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
                 len_left -= 8;
             }
             if file.compressed_size == 0xFFFFFFFF {
+                file.large_file = true;
                 file.compressed_size = reader.read_u64::<LittleEndian>()?;
                 len_left -= 8;
             }
@@ -815,6 +819,11 @@ impl<'a> ZipFile<'a> {
         self.data.crc32
     }
 
+    /// Get the extra data of the zip header for this file
+    pub fn extra_data(&self) -> &[u8] {
+        &self.data.extra_field
+    }
+
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
         self.data.data_start
@@ -933,6 +942,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
+        extra_field,
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
@@ -943,9 +953,10 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // We set this to zero, which should be valid as the docs state 'If input came
         // from standard input, this field is set to zero.'
         external_attributes: 0,
+        large_file: false,
     };
 
-    match parse_extra_field(&mut result, &extra_field) {
+    match parse_extra_field(&mut result) {
         Ok(..) | Err(ZipError::Io(..)) => {}
         Err(e) => return Err(e),
     }
