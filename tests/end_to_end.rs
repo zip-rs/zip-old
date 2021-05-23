@@ -10,81 +10,102 @@ use zip::CompressionMethod;
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn end_to_end() {
-    let file = &mut Cursor::new(Vec::new());
+    for method in SUPPORTED_METHODS.iter() {
+        let file = &mut Cursor::new(Vec::new());
 
-    write_to_zip(file).expect("file written");
+        write_to_zip(file, *method).expect("Couldn't write to test file");
 
-    check_zip_contents(file, ENTRY_NAME);
+        check_zip_contents(file, ENTRY_NAME, Some(*method));
+    }
 }
 
 // This test asserts that after copying a `ZipFile` to a new `ZipWriter`, then reading its
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    let src_file = &mut Cursor::new(Vec::new());
-    write_to_zip(src_file).expect("file written");
+    for method in SUPPORTED_METHODS.iter() {
+        let src_file = &mut Cursor::new(Vec::new());
+        write_to_zip(src_file, *method).expect("Couldn't write to test file");
 
-    let mut tgt_file = &mut Cursor::new(Vec::new());
-
-    {
-        let mut src_archive = zip::ZipArchive::new(src_file).unwrap();
-        let mut zip = zip::ZipWriter::new(&mut tgt_file);
+        let mut tgt_file = &mut Cursor::new(Vec::new());
 
         {
-            let file = src_archive.by_name(ENTRY_NAME).expect("file found");
-            zip.raw_copy_file(file).unwrap();
+            let mut src_archive = zip::ZipArchive::new(src_file).unwrap();
+            let mut zip = zip::ZipWriter::new(&mut tgt_file);
+
+            {
+                let file = src_archive
+                    .by_name(ENTRY_NAME)
+                    .expect("Missing expected file");
+
+                zip.raw_copy_file(file).expect("Couldn't copy file");
+            }
+
+            {
+                let file = src_archive
+                    .by_name(ENTRY_NAME)
+                    .expect("Missing expected file");
+
+                zip.raw_copy_file_rename(file, COPY_ENTRY_NAME)
+                    .expect("Couldn't copy and rename file");
+            }
         }
 
-        {
-            let file = src_archive.by_name(ENTRY_NAME).expect("file found");
-            zip.raw_copy_file_rename(file, COPY_ENTRY_NAME).unwrap();
-        }
+        let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
+
+        check_zip_file_contents(&mut tgt_archive, ENTRY_NAME);
+        check_zip_file_contents(&mut tgt_archive, COPY_ENTRY_NAME);
     }
-
-    let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
-
-    check_zip_file_contents(&mut tgt_archive, ENTRY_NAME);
-    check_zip_file_contents(&mut tgt_archive, COPY_ENTRY_NAME);
 }
 
 // This test asserts that after appending to a `ZipWriter`, then reading its contents back out,
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    let mut file = &mut Cursor::new(Vec::new());
-    write_to_zip(file).expect("file written");
+    for method in SUPPORTED_METHODS.iter() {
+        let mut file = &mut Cursor::new(Vec::new());
+        write_to_zip(file, *method).expect("Couldn't write to test file");
 
-    {
-        let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
-        zip.start_file(COPY_ENTRY_NAME, Default::default()).unwrap();
-        zip.write_all(LOREM_IPSUM).unwrap();
-        zip.finish().unwrap();
+        {
+            let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
+            zip.start_file(
+                COPY_ENTRY_NAME,
+                FileOptions::default().compression_method(*method),
+            )
+            .unwrap();
+            zip.write_all(LOREM_IPSUM).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut zip = zip::ZipArchive::new(&mut file).unwrap();
+        check_zip_file_contents(&mut zip, ENTRY_NAME);
+        check_zip_file_contents(&mut zip, COPY_ENTRY_NAME);
     }
-
-    let mut zip = zip::ZipArchive::new(&mut file).unwrap();
-    check_zip_file_contents(&mut zip, ENTRY_NAME);
-    check_zip_file_contents(&mut zip, COPY_ENTRY_NAME);
 }
 
-fn write_to_zip(file: &mut Cursor<Vec<u8>>) -> zip::result::ZipResult<()> {
+fn write_to_zip(
+    file: &mut Cursor<Vec<u8>>,
+    method: CompressionMethod,
+) -> zip::result::ZipResult<()> {
     let mut zip = zip::ZipWriter::new(file);
 
     zip.add_directory("test/", Default::default())?;
 
     let options = FileOptions::default()
-        .compression_method(CompressionMethod::Stored)
+        .compression_method(method)
         .unix_permissions(0o755);
+
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
-    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", Default::default())?;
+    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)?;
     zip.write_u16::<LittleEndian>(0xbeef)?;
     zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
     zip.write_all(EXTRA_DATA)?;
     zip.end_extra_data()?;
     zip.write_all(b"Hello, World! Again.\n")?;
 
-    zip.start_file(ENTRY_NAME, Default::default())?;
+    zip.start_file(ENTRY_NAME, options)?;
     zip.write_all(LOREM_IPSUM)?;
 
     zip.finish()?;
@@ -127,8 +148,26 @@ fn read_zip_file<R: Read + Seek>(
     Ok(contents)
 }
 
-fn check_zip_contents(zip_file: &mut Cursor<Vec<u8>>, name: &str) {
+fn check_zip_contents(
+    zip_file: &mut Cursor<Vec<u8>>,
+    name: &str,
+    expected_method: Option<CompressionMethod>,
+) {
     let mut archive = read_zip(zip_file).unwrap();
+
+    match expected_method {
+        Some(method) => {
+            let file = archive.by_name(name).unwrap();
+
+            assert_eq!(
+                method,
+                file.compression(),
+                "File does not have expected compression method"
+            )
+        }
+        None => {}
+    }
+
     check_zip_file_contents(&mut archive, name);
 }
 
@@ -149,3 +188,20 @@ const EXTRA_DATA: &'static [u8] = b"Extra Data";
 const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
+
+const SUPPORTED_METHODS: &'static [CompressionMethod] = &[
+    CompressionMethod::Stored,
+    //
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
+    CompressionMethod::Deflated,
+    //
+    #[cfg(feature = "bzip2")]
+    CompressionMethod::Bzip2,
+    //
+    #[cfg(feature = "zstd")]
+    CompressionMethod::Zstd,
+];
