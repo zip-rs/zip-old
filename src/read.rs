@@ -503,11 +503,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let data = &mut self.files[file_number];
 
         match (password, data.encrypted) {
-            (None, true) => {
-                return Err(ZipError::UnsupportedArchive(
-                    "Password required to decrypt file",
-                ))
-            }
+            (None, true) => return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)),
             (Some(_), false) => password = None, //Password supplied, but none needed! Discard.
             _ => {}
         }
