@@ -13,8 +13,11 @@ fn generate_random_archive(size: usize) -> Vec<u8> {
         zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     writer.start_file("random.dat", options).unwrap();
+
+    // Generate some random data.
     let mut bytes = vec![0u8; size];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::thread_rng().fill(bytes.as_mut_slice());
+
     writer.write_all(&bytes).unwrap();
 
     writer.finish().unwrap().into_inner()
