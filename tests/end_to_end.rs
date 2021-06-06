@@ -10,7 +10,7 @@ use zip::CompressionMethod;
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn end_to_end() {
-    for method in SUPPORTED_METHODS.iter() {
+    for method in CompressionMethod::supported_methods().iter() {
         let file = &mut Cursor::new(Vec::new());
 
         write_to_zip(file, *method).expect("Couldn't write to test file");
@@ -23,7 +23,7 @@ fn end_to_end() {
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    for method in SUPPORTED_METHODS.iter() {
+    for method in CompressionMethod::supported_methods().iter() {
         let src_file = &mut Cursor::new(Vec::new());
         write_to_zip(src_file, *method).expect("Couldn't write to test file");
 
@@ -62,7 +62,7 @@ fn copy() {
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    for method in SUPPORTED_METHODS.iter() {
+    for method in CompressionMethod::supported_methods().iter() {
         let mut file = &mut Cursor::new(Vec::new());
         write_to_zip(file, *method).expect("Couldn't write to test file");
 
@@ -188,20 +188,3 @@ const EXTRA_DATA: &'static [u8] = b"Extra Data";
 const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
-
-const SUPPORTED_METHODS: &'static [CompressionMethod] = &[
-    CompressionMethod::Stored,
-    //
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-miniz",
-        feature = "deflate-zlib"
-    ))]
-    CompressionMethod::Deflated,
-    //
-    #[cfg(feature = "bzip2")]
-    CompressionMethod::Bzip2,
-    //
-    #[cfg(feature = "zstd")]
-    CompressionMethod::Zstd,
-];

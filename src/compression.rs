@@ -121,6 +121,27 @@ impl CompressionMethod {
             CompressionMethod::Unsupported(v) => v,
         }
     }
+
+    pub fn supported_methods() -> &'static [CompressionMethod] {
+        static METHODS: [CompressionMethod; 4] = [
+            CompressionMethod::Stored,
+            //
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            CompressionMethod::Deflated,
+            //
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2,
+            //
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd,
+        ];
+
+        &METHODS
+    }
 }
 
 impl fmt::Display for CompressionMethod {
