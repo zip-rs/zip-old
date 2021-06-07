@@ -1,5 +1,5 @@
-use criterion::{BenchmarkId, Criterion, Throughput};
 use criterion::{criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput};
 
 use std::io::{Cursor, Read, Write};
 
@@ -44,7 +44,7 @@ fn read_entry(bench: &mut Criterion) {
                     let n = file.read(&mut buf).unwrap();
                     total_bytes += n;
                     if n == 0 {
-                        return total_bytes
+                        return total_bytes;
                     }
                 }
             });
