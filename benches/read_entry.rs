@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main};
-use criterion::{BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion};
 
 use std::io::{Cursor, Read, Write};
 
@@ -25,15 +25,16 @@ fn generate_random_archive(size: usize, method: Option<CompressionMethod>) -> Ve
 
 fn read_entry(bench: &mut Criterion) {
     let size = 1024 * 1024;
-    let bytes = generate_random_archive(size, None);
 
     //
     let mut group = bench.benchmark_group("read_entry");
 
     //
     for method in CompressionMethod::supported_methods().iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(method), method, |b, method| {
-            b.iter(|| {
+        group.bench_with_input(BenchmarkId::from_parameter(method), method, |bench, method| {
+            let bytes = generate_random_archive(size, Some(*method));
+
+            bench.iter(|| {
                 let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
                 let mut file = archive.by_name("random.dat").unwrap();
                 let mut buf = [0u8; 1024];
@@ -62,7 +63,7 @@ fn write_random_archive(bench: &mut Criterion) {
     for method in CompressionMethod::supported_methods().iter() {
         group.bench_with_input(BenchmarkId::from_parameter(method), method, |b, method| {
             b.iter(|| {
-                generate_random_archive(size, Some(method.clone()));
+                generate_random_archive(size, Some(*method));
             })
         });
     }
