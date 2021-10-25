@@ -152,7 +152,7 @@ impl DateTime {
     /// Converts the DateTime to a OffsetDateTime structure
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
         use std::convert::TryFrom;
-        
+
         let date =
             Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
         let time = Time::from_hms(self.hour, self.minute, self.second)?;

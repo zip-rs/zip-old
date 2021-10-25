@@ -9,7 +9,7 @@ use std::fmt;
 /// contents to be read without context.
 ///
 /// When creating ZIP files, you may choose the method to use with
-/// [`zip::write::FileOptions::compression_method`]
+/// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum CompressionMethod {
     /// Store the file as is
