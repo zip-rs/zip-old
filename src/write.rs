@@ -22,6 +22,9 @@ use flate2::write::DeflateEncoder;
 #[cfg(feature = "bzip2")]
 use bzip2::write::BzEncoder;
 
+#[cfg(feature = "time")]
+use time::OffsetDateTime;
+
 enum GenericZipWriter<W: Write + io::Seek> {
     Closed,
     Storer(W),
@@ -113,7 +116,7 @@ impl FileOptions {
             )))]
             compression_method: CompressionMethod::Stored,
             #[cfg(feature = "time")]
-            last_modified_time: DateTime::from_time(time::now()).unwrap_or_default(),
+            last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
             #[cfg(not(feature = "time"))]
             last_modified_time: DateTime::default(),
             permissions: None,
