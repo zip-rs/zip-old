@@ -111,7 +111,7 @@ fn doit(
     let path = Path::new(dst_file);
     let file = File::create(&path).unwrap();
 
-    let walkdir = WalkDir::new(src_dir.to_string());
+    let walkdir = WalkDir::new(src_dir);
     let it = walkdir.into_iter();
 
     zip_dir(&mut it.filter_map(|e| e.ok()), src_dir, file, method)?;
