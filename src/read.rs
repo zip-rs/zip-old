@@ -457,14 +457,14 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index
-    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile> {
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         Ok(self
             .by_index_with_optional_password(file_number, None)?
             .unwrap())
     }
 
     /// Get a contained file by index without decompressing it
-    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile> {
+    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
         self.files
             .get_mut(file_number)
@@ -1081,10 +1081,10 @@ mod test {
         let mut buf3 = [0; 5];
         let mut buf4 = [0; 5];
 
-        file1.read(&mut buf1).unwrap();
-        file2.read(&mut buf2).unwrap();
-        file1.read(&mut buf3).unwrap();
-        file2.read(&mut buf4).unwrap();
+        file1.read_exact(&mut buf1).unwrap();
+        file2.read_exact(&mut buf2).unwrap();
+        file1.read_exact(&mut buf3).unwrap();
+        file2.read_exact(&mut buf4).unwrap();
 
         assert_eq!(buf1, buf2);
         assert_eq!(buf3, buf4);

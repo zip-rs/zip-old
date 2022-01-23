@@ -1233,7 +1233,7 @@ mod test {
         };
         writer.start_file("mimetype", options).unwrap();
         writer
-            .write(b"application/vnd.oasis.opendocument.text")
+            .write_all(b"application/vnd.oasis.opendocument.text")
             .unwrap();
         let result = writer.finish().unwrap();
 

@@ -125,7 +125,7 @@ mod test {
 
     #[test]
     fn from_eq_to() {
-        for v in 0..(::std::u16::MAX as u32 + 1) {
+        for v in 0..(u16::MAX as u32 + 1) {
             #[allow(deprecated)]
             let from = CompressionMethod::from_u16(v as u16);
             #[allow(deprecated)]
@@ -135,17 +135,17 @@ mod test {
     }
 
     fn methods() -> Vec<CompressionMethod> {
-        let mut methods = Vec::new();
-        methods.push(CompressionMethod::Stored);
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib"
-        ))]
-        methods.push(CompressionMethod::Deflated);
-        #[cfg(feature = "bzip2")]
-        methods.push(CompressionMethod::Bzip2);
-        methods
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            CompressionMethod::Deflated,
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2,
+        ]
     }
 
     #[test]

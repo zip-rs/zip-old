@@ -88,6 +88,7 @@ impl DateTime {
     /// * hour: [0, 23]
     /// * minute: [0, 59]
     /// * second: [0, 60]
+    #[allow(clippy::result_unit_err)]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -96,8 +97,7 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, ()> {
-        if year >= 1980
-            && year <= 2107
+        if (1980..=2107).contains(&year)
             && month >= 1
             && month <= 12
             && day >= 1
@@ -123,6 +123,7 @@ impl DateTime {
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
+    #[allow(clippy::result_unit_err)]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
@@ -322,19 +323,21 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)]
     fn datetime_default() {
         use super::DateTime;
         let dt = DateTime::default();
         assert_eq!(dt.timepart(), 0);
-        assert_eq!(dt.datepart(), 0b0000_0000_0010_0001);
+        assert_eq!(dt.datepart(), 0b0000000_0001_00001);
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
-        assert_eq!(dt.timepart(), 0b1011_1111_0111_1110);
-        assert_eq!(dt.datepart(), 0b1111_1111_1001_1111);
+        assert_eq!(dt.timepart(), 0b10111_111011_11110);
+        assert_eq!(dt.datepart(), 0b1111111_1100_11111);
     }
 
     #[test]
