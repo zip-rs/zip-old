@@ -20,7 +20,7 @@ thiserror = "1.0.7"
 
 [dev-dependencies]
 bencher = "0.1"
-rand = "0.8"
+getrandom = "0.2"
 walkdir = "2"
 
 [features]
