@@ -133,6 +133,7 @@ impl FileOptions {
     ///
     /// The default is `CompressionMethod::Deflated`. If the deflate compression feature is
     /// disabled, `CompressionMethod::Stored` becomes the default.
+    #[must_use]
     pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
         self.compression_method = method;
         self
@@ -142,6 +143,7 @@ impl FileOptions {
     ///
     /// The default is the current timestamp if the 'time' feature is enabled, and 1980-01-01
     /// otherwise
+    #[must_use]
     pub fn last_modified_time(mut self, mod_time: DateTime) -> FileOptions {
         self.last_modified_time = mod_time;
         self
@@ -152,6 +154,7 @@ impl FileOptions {
     /// The format is represented with unix-style permissions.
     /// The default is `0o644`, which represents `rw-r--r--` for files,
     /// and `0o755`, which represents `rwxr-xr-x` for directories
+    #[must_use]
     pub fn unix_permissions(mut self, mode: u32) -> FileOptions {
         self.permissions = Some(mode & 0o777);
         self
@@ -162,6 +165,7 @@ impl FileOptions {
     /// If set to `false` and the file exceeds the limit, an I/O error is thrown. If set to `true`,
     /// readers will require ZIP64 support and if the file does not exceed the limit, 20 B are
     /// wasted. The default is `false`.
+    #[must_use]
     pub fn large_file(mut self, large: bool) -> FileOptions {
         self.large_file = large;
         self
@@ -614,11 +618,11 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        let options = FileOptions::default()
+        let mut options = FileOptions::default()
             .last_modified_time(file.last_modified())
             .compression_method(file.compression());
         if let Some(perms) = file.unix_mode() {
-            options.unix_permissions(perms);
+            options = options.unix_permissions(perms);
         }
 
         let raw_values = ZipRawValues {
