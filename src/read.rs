@@ -32,31 +32,35 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-/// ZIP archive reader
-///
-/// ```no_run
-/// use std::io::prelude::*;
-/// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
-///     let mut zip = zip::ZipArchive::new(reader)?;
-///
-///     for i in 0..zip.len() {
-///         let mut file = zip.by_index(i)?;
-///         println!("Filename: {}", file.name());
-///         std::io::copy(&mut file, &mut std::io::stdout());
-///     }
-///
-///     Ok(())
-/// }
-/// ```
-#[derive(Clone, Debug)]
-pub struct ZipArchive<R> {
-    reader: R,
-    files: Vec<ZipFileData>,
-    names_map: HashMap<String, usize>,
-    offset: u64,
-    comment: Vec<u8>,
-}
+// Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
+pub(crate) mod zip_archive {
 
+    /// ZIP archive reader
+    ///
+    /// ```no_run
+    /// use std::io::prelude::*;
+    /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
+    ///     let mut zip = zip::ZipArchive::new(reader)?;
+    ///
+    ///     for i in 0..zip.len() {
+    ///         let mut file = zip.by_index(i)?;
+    ///         println!("Filename: {}", file.name());
+    ///         std::io::copy(&mut file, &mut std::io::stdout());
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    #[derive(Clone, Debug)]
+    pub struct ZipArchive<R> {
+        pub(super) reader: R,
+        pub(super) files: Vec<super::ZipFileData>,
+        pub(super) names_map: super::HashMap<String, usize>,
+        pub(super) offset: u64,
+        pub(super) comment: Vec<u8>,
+    }
+}
+pub use zip_archive::ZipArchive;
 enum CryptoReader<'a> {
     Plaintext(io::Take<&'a mut dyn Read>),
     ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut dyn Read>>),
