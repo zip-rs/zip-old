@@ -39,6 +39,25 @@ jobs:
         command: test
         args: --all
 
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: clippy
+
+      - name: clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets --all-features -- -D warnings
+
   check_fmt_and_docs:
     name: Checking fmt and docs
     runs-on: ubuntu-latest
