@@ -65,7 +65,7 @@ impl DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = (datepart & 0b0000000000011111) >> 0;
+        let days = datepart & 0b0000000000011111;
         let months = (datepart & 0b0000000111100000) >> 5;
         let years = (datepart & 0b1111111000000000) >> 9;
 
@@ -88,6 +88,7 @@ impl DateTime {
     /// * hour: [0, 23]
     /// * minute: [0, 59]
     /// * second: [0, 60]
+    #[allow(clippy::result_unit_err)]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -96,8 +97,7 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, ()> {
-        if year >= 1980
-            && year <= 2107
+        if (1980..=2107).contains(&year)
             && month >= 1
             && month <= 12
             && day >= 1
@@ -123,6 +123,7 @@ impl DateTime {
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
+    #[allow(clippy::result_unit_err)]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
@@ -256,10 +257,7 @@ impl ZipFileData {
 
         ::std::path::Path::new(&filename)
             .components()
-            .filter(|component| match *component {
-                ::std::path::Component::Normal(..) => true,
-                _ => false,
-            })
+            .filter(|component| matches!(*component, ::std::path::Component::Normal(..)))
             .fold(::std::path::PathBuf::new(), |mut path, ref cur| {
                 path.push(cur.as_os_str());
                 path
@@ -325,6 +323,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)]
     fn datetime_default() {
         use super::DateTime;
         let dt = DateTime::default();
@@ -333,6 +332,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
@@ -394,7 +394,7 @@ mod test {
 
         #[cfg(feature = "time")]
         assert_eq!(
-            format!("{}", dt.to_time().unwrap().format(&Rfc3339).unwrap()),
+            dt.to_time().unwrap().format(&Rfc3339).unwrap(),
             "2018-11-17T10:38:30Z"
         );
     }
