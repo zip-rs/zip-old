@@ -1,9 +1,6 @@
 //! Types that specify what is contained in a ZIP.
 #[cfg(doc)]
-use {
-    crate::read::ZipFile,
-    crate::write::FileOptions,
-};
+use {crate::read::ZipFile, crate::write::FileOptions};
 
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
@@ -28,7 +25,7 @@ impl System {
 }
 
 /// Representation of a moment in time.
-/// 
+///
 /// Zip files use an old format from DOS to store timestamps,
 /// with its own set of peculiarities.
 /// For example, it has a resolution of 2 seconds!
@@ -37,7 +34,7 @@ impl System {
 /// or read from one with [`ZipFile::last_modified`]
 ///
 /// # Warning
-/// 
+///
 /// Because there is no timezone associated with the [`DateTime`], they should ideally only
 /// be used for user-facing descriptions. This also means [`DateTime::to_time`] returns an
 /// [`OffsetDateTime`] (which is the equivalent of chrono's `NaiveDateTime`).
@@ -175,45 +172,45 @@ impl DateTime {
     }
 
     /// Get the month, where 1 = january and 12 = december
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// When read from a zip file, this may not be a reasonable value
     pub fn month(&self) -> u8 {
         self.month
     }
 
     /// Get the day
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// When read from a zip file, this may not be a reasonable value
     pub fn day(&self) -> u8 {
         self.day
     }
 
     /// Get the hour
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// When read from a zip file, this may not be a reasonable value
     pub fn hour(&self) -> u8 {
         self.hour
     }
 
     /// Get the minute
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// When read from a zip file, this may not be a reasonable value
     pub fn minute(&self) -> u8 {
         self.minute
     }
 
     /// Get the second
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// When read from a zip file, this may not be a reasonable value
     pub fn second(&self) -> u8 {
         self.second
