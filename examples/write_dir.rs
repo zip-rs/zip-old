@@ -32,6 +32,11 @@ const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod
 #[cfg(not(feature = "bzip2"))]
 const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
 
+#[cfg(feature = "zstd")]
+const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
+#[cfg(not(feature = "zstd"))]
+const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
+
 fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 3 {
@@ -44,7 +49,7 @@ fn real_main() -> i32 {
 
     let src_dir = &*args[1];
     let dst_file = &*args[2];
-    for &method in [METHOD_STORED, METHOD_DEFLATED, METHOD_BZIP2].iter() {
+    for &method in [METHOD_STORED, METHOD_DEFLATED, METHOD_BZIP2, METHOD_ZSTD].iter() {
         if method.is_none() {
             continue;
         }
@@ -54,7 +59,7 @@ fn real_main() -> i32 {
         }
     }
 
-    return 0;
+    0
 }
 
 fn zip_dir<T>(
@@ -87,7 +92,7 @@ where
             f.read_to_end(&mut buffer)?;
             zip.write_all(&*buffer)?;
             buffer.clear();
-        } else if name.as_os_str().len() != 0 {
+        } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
             println!("adding dir {:?} as {:?} ...", path, name);
@@ -111,7 +116,7 @@ fn doit(
     let path = Path::new(dst_file);
     let file = File::create(&path).unwrap();
 
-    let walkdir = WalkDir::new(src_dir.to_string());
+    let walkdir = WalkDir::new(src_dir);
     let it = walkdir.into_iter();
 
     zip_dir(&mut it.filter_map(|e| e.ok()), src_dir, file, method)?;

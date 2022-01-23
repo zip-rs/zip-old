@@ -9,7 +9,7 @@ use std::fmt;
 /// contents to be read without context.
 ///
 /// When creating ZIP files, you may choose the method to use with
-/// [`zip::write::FileOptions::compression_method`]
+/// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum CompressionMethod {
     /// Store the file as is
@@ -24,6 +24,9 @@ pub enum CompressionMethod {
     /// Compress the file using BZIP2
     #[cfg(feature = "bzip2")]
     Bzip2,
+    /// Compress the file using ZStandard
+    #[cfg(feature = "zstd")]
+    Zstd,
     /// Unsupported compression method
     #[deprecated(since = "0.5.7", note = "use the constants instead")]
     Unsupported(u16),
@@ -60,6 +63,9 @@ impl CompressionMethod {
     pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
     pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
     pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
+    #[cfg(feature = "zstd")]
+    pub const ZSTD: Self = CompressionMethod::Zstd;
+    #[cfg(not(feature = "zstd"))]
     pub const ZSTD: Self = CompressionMethod::Unsupported(93);
     pub const MP3: Self = CompressionMethod::Unsupported(94);
     pub const XZ: Self = CompressionMethod::Unsupported(95);
@@ -85,6 +91,8 @@ impl CompressionMethod {
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
+            #[cfg(feature = "zstd")]
+            93 => CompressionMethod::Zstd,
 
             v => CompressionMethod::Unsupported(v),
         }
@@ -107,6 +115,9 @@ impl CompressionMethod {
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd => 93,
+
             CompressionMethod::Unsupported(v) => v,
         }
     }
@@ -125,7 +136,7 @@ mod test {
 
     #[test]
     fn from_eq_to() {
-        for v in 0..(::std::u16::MAX as u32 + 1) {
+        for v in 0..(u16::MAX as u32 + 1) {
             #[allow(deprecated)]
             let from = CompressionMethod::from_u16(v as u16);
             #[allow(deprecated)]
@@ -135,17 +146,19 @@ mod test {
     }
 
     fn methods() -> Vec<CompressionMethod> {
-        let mut methods = Vec::new();
-        methods.push(CompressionMethod::Stored);
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib"
-        ))]
-        methods.push(CompressionMethod::Deflated);
-        #[cfg(feature = "bzip2")]
-        methods.push(CompressionMethod::Bzip2);
-        methods
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            CompressionMethod::Deflated,
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd,
+        ]
     }
 
     #[test]
