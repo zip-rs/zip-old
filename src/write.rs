@@ -237,7 +237,10 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
         let (archive_offset, directory_start, number_of_files) =
             ZipArchive::get_directory_counts(&mut readwriter, &footer, cde_start_pos)?;
 
-        if let Err(_) = readwriter.seek(io::SeekFrom::Start(directory_start)) {
+        if readwriter
+            .seek(io::SeekFrom::Start(directory_start))
+            .is_err()
+        {
             return Err(ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
             ));
@@ -307,7 +310,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     {
         self.finish_file()?;
 
-        let raw_values = raw_values.unwrap_or_else(|| ZipRawValues {
+        let raw_values = raw_values.unwrap_or(ZipRawValues {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
@@ -548,7 +551,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
         let file = self.files.last_mut().unwrap();
 
-        validate_extra_data(&file)?;
+        validate_extra_data(file)?;
 
         if !self.writing_to_central_extra_field_only {
             let writer = self.inner.get_plain();
@@ -858,10 +861,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
     }
 
     fn is_closed(&self) -> bool {
-        match *self {
-            GenericZipWriter::Closed => true,
-            _ => false,
-        }
+        matches!(*self, GenericZipWriter::Closed)
     }
 
     fn get_plain(&mut self) -> &mut W {
@@ -935,7 +935,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     writer.write_all(file.file_name.as_bytes())?;
     // zip64 extra field
     if file.large_file {
-        write_local_zip64_extra_field(writer, &file)?;
+        write_local_zip64_extra_field(writer, file)?;
     }
 
     Ok(())
@@ -1053,7 +1053,7 @@ fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
         )));
     }
 
-    while data.len() > 0 {
+    while !data.is_empty() {
         let left = data.len();
         if left < 4 {
             return Err(ZipError::Io(io::Error::new(

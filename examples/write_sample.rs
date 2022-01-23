@@ -18,7 +18,7 @@ fn real_main() -> i32 {
         Err(e) => println!("Error: {:?}", e),
     }
 
-    return 0;
+    0
 }
 
 fn doit(filename: &str) -> zip::result::ZipResult<()> {

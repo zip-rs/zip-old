@@ -65,7 +65,7 @@ impl DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = (datepart & 0b0000000000011111) >> 0;
+        let days = datepart & 0b0000000000011111;
         let months = (datepart & 0b0000000111100000) >> 5;
         let years = (datepart & 0b1111111000000000) >> 9;
 
@@ -256,10 +256,7 @@ impl ZipFileData {
 
         ::std::path::Path::new(&filename)
             .components()
-            .filter(|component| match *component {
-                ::std::path::Component::Normal(..) => true,
-                _ => false,
-            })
+            .filter(|component| matches!(*component, ::std::path::Component::Normal(..)))
             .fold(::std::path::PathBuf::new(), |mut path, ref cur| {
                 path.push(cur.as_os_str());
                 path
@@ -329,15 +326,15 @@ mod test {
         use super::DateTime;
         let dt = DateTime::default();
         assert_eq!(dt.timepart(), 0);
-        assert_eq!(dt.datepart(), 0b0000000_0001_00001);
+        assert_eq!(dt.datepart(), 0b0000_0000_0010_0001);
     }
 
     #[test]
     fn datetime_max() {
         use super::DateTime;
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
-        assert_eq!(dt.timepart(), 0b10111_111011_11110);
-        assert_eq!(dt.datepart(), 0b1111111_1100_11111);
+        assert_eq!(dt.timepart(), 0b1011_1111_0111_1110);
+        assert_eq!(dt.datepart(), 0b1111_1111_1001_1111);
     }
 
     #[test]
@@ -394,7 +391,7 @@ mod test {
 
         #[cfg(feature = "time")]
         assert_eq!(
-            format!("{}", dt.to_time().unwrap().format(&Rfc3339).unwrap()),
+            dt.to_time().unwrap().format(&Rfc3339).unwrap(),
             "2018-11-17T10:38:30Z"
         );
     }
