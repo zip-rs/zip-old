@@ -603,7 +603,10 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     }
 
     // Account for shifted zip offsets.
-    result.header_start += archive_offset;
+    result.header_start = result
+        .header_start
+        .checked_add(archive_offset)
+        .ok_or(ZipError::InvalidArchive("Archive header is too large"))?;
 
     Ok(result)
 }
