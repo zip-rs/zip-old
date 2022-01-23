@@ -1,4 +1,9 @@
 //! Types that specify what is contained in a ZIP.
+#[cfg(doc)]
+use {
+    crate::read::ZipFile,
+    crate::write::FileOptions,
+};
 
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
@@ -22,19 +27,23 @@ impl System {
     }
 }
 
-/// A DateTime field to be used for storing timestamps in a zip file
+/// Representation of a moment in time.
+/// 
+/// Zip files use an old format from DOS to store timestamps,
+/// with its own set of peculiarities.
+/// For example, it has a resolution of 2 seconds!
 ///
-/// This structure does bounds checking to ensure the date is able to be stored in a zip file.
-///
-/// When constructed manually from a date and time, it will also check if the input is sensible
-/// (e.g. months are from [1, 12]), but when read from a zip some parts may be out of their normal
-/// bounds (e.g. month 0, or hour 31).
+/// A [`DateTime`] can be stored directly in a zipfile with [`FileOptions::last_modified_time`],
+/// or read from one with [`ZipFile::last_modified`]
 ///
 /// # Warning
+/// 
+/// Because there is no timezone associated with the [`DateTime`], they should ideally only
+/// be used for user-facing descriptions. This also means [`DateTime::to_time`] returns an
+/// [`OffsetDateTime`] (which is the equivalent of chrono's `NaiveDateTime`).
 ///
-/// Some utilities use alternative timestamps to improve the accuracy of their
-/// ZIPs, but we don't parse them yet. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904),
-/// however this API shouldn't be considered complete.
+/// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
+/// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
 #[derive(Debug, Clone, Copy)]
 pub struct DateTime {
     year: u16,
@@ -166,26 +175,46 @@ impl DateTime {
     }
 
     /// Get the month, where 1 = january and 12 = december
+    /// 
+    /// # Warning
+    /// 
+    /// When read from a zip file, this may not be a reasonable value
     pub fn month(&self) -> u8 {
         self.month
     }
 
     /// Get the day
+    /// 
+    /// # Warning
+    /// 
+    /// When read from a zip file, this may not be a reasonable value
     pub fn day(&self) -> u8 {
         self.day
     }
 
     /// Get the hour
+    /// 
+    /// # Warning
+    /// 
+    /// When read from a zip file, this may not be a reasonable value
     pub fn hour(&self) -> u8 {
         self.hour
     }
 
     /// Get the minute
+    /// 
+    /// # Warning
+    /// 
+    /// When read from a zip file, this may not be a reasonable value
     pub fn minute(&self) -> u8 {
         self.minute
     }
 
     /// Get the second
+    /// 
+    /// # Warning
+    /// 
+    /// When read from a zip file, this may not be a reasonable value
     pub fn second(&self) -> u8 {
         self.second
     }
