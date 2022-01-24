@@ -9,7 +9,7 @@ use std::fmt;
 /// contents to be read without context.
 ///
 /// When creating ZIP files, you may choose the method to use with
-/// [`zip::write::FileOptions::compression_method`]
+/// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum CompressionMethod {
     /// Store the file as is
@@ -157,7 +157,7 @@ mod test {
 
     #[test]
     fn from_eq_to() {
-        for v in 0..(::std::u16::MAX as u32 + 1) {
+        for v in 0..(u16::MAX as u32 + 1) {
             #[allow(deprecated)]
             let from = CompressionMethod::from_u16(v as u16);
             #[allow(deprecated)]
@@ -167,20 +167,19 @@ mod test {
     }
 
     fn methods() -> Vec<CompressionMethod> {
-        let mut methods = Vec::new();
-        methods.push(CompressionMethod::Stored);
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib"
-        ))]
-        methods.push(CompressionMethod::Deflated);
-        #[cfg(feature = "bzip2")]
-        methods.push(CompressionMethod::Bzip2);
-        #[cfg(feature = "zstd")]
-        methods.push(CompressionMethod::Zstd);
-
-        methods
+        vec![
+            CompressionMethod::Stored,
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            CompressionMethod::Deflated,
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2,
+            #[cfg(feature = "zstd")]
+            CompressionMethod::Zstd,
+        ]
     }
 
     #[test]

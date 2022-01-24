@@ -47,7 +47,7 @@ impl ZipCryptoKeys {
     }
 
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
-        return (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize]);
+        (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize])
     }
 }
 
@@ -71,7 +71,7 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     /// password byte sequence that is unrepresentable in UTF-8.
     pub fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
         let mut result = ZipCryptoReader {
-            file: file,
+            file,
             keys: ZipCryptoKeys::new(),
         };
 
@@ -129,11 +129,11 @@ pub struct ZipCryptoReaderValid<R> {
 }
 
 impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
-    fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Note: There might be potential for optimization. Inspiration can be found at:
         // https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
 
-        let result = self.reader.file.read(&mut buf);
+        let result = self.reader.file.read(buf);
         for byte in buf.iter_mut() {
             *byte = self.reader.keys.decrypt_byte(*byte);
         }

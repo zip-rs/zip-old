@@ -1,35 +1,64 @@
 //! Error types that can be emitted from this library
 
+use std::error::Error;
+use std::fmt;
 use std::io;
-
-use thiserror::Error;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// The given password is wrong
-#[derive(Error, Debug)]
-#[error("invalid password for file in archive")]
+#[derive(Debug)]
 pub struct InvalidPassword;
 
+impl fmt::Display for InvalidPassword {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "invalid password for file in archive")
+    }
+}
+
+impl Error for InvalidPassword {}
+
 /// Error type for Zip
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum ZipError {
     /// An Error caused by I/O
-    #[error(transparent)]
-    Io(#[from] io::Error),
+    Io(io::Error),
 
     /// This file is probably not a zip archive
-    #[error("invalid Zip archive")]
     InvalidArchive(&'static str),
 
     /// This archive is not supported
-    #[error("unsupported Zip archive")]
     UnsupportedArchive(&'static str),
 
     /// The requested file could not be found in the archive
-    #[error("specified file not found in archive")]
     FileNotFound,
+}
+
+impl From<io::Error> for ZipError {
+    fn from(err: io::Error) -> ZipError {
+        ZipError::Io(err)
+    }
+}
+
+impl fmt::Display for ZipError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ZipError::Io(err) => write!(fmt, "{}", err),
+            ZipError::InvalidArchive(err) => write!(fmt, "invalid Zip archive: {}", err),
+            ZipError::UnsupportedArchive(err) => write!(fmt, "unsupported Zip archive: {}", err),
+            ZipError::FileNotFound => write!(fmt, "specified file not found in archive"),
+        }
+    }
+}
+
+impl Error for ZipError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ZipError::Io(err) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 impl ZipError {

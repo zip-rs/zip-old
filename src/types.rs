@@ -1,5 +1,8 @@
 //! Types that specify what is contained in a ZIP.
 
+#[cfg(feature = "time")]
+use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum System {
     Dos = 0,
@@ -62,7 +65,7 @@ impl DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
-        let days = (datepart & 0b0000000000011111) >> 0;
+        let days = datepart & 0b0000000000011111;
         let months = (datepart & 0b0000000111100000) >> 5;
         let years = (datepart & 0b1111111000000000) >> 9;
 
@@ -85,6 +88,7 @@ impl DateTime {
     /// * hour: [0, 23]
     /// * minute: [0, 59]
     /// * second: [0, 60]
+    #[allow(clippy::result_unit_err)]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -93,8 +97,7 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, ()> {
-        if year >= 1980
-            && year <= 2107
+        if (1980..=2107).contains(&year)
             && month >= 1
             && month <= 12
             && day >= 1
@@ -117,30 +120,19 @@ impl DateTime {
     }
 
     #[cfg(feature = "time")]
-    /// Converts a ::time::Tm object to a DateTime
+    /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    pub fn from_time(tm: ::time::Tm) -> Result<DateTime, ()> {
-        if tm.tm_year >= 80
-            && tm.tm_year <= 207
-            && tm.tm_mon >= 0
-            && tm.tm_mon <= 11
-            && tm.tm_mday >= 1
-            && tm.tm_mday <= 31
-            && tm.tm_hour >= 0
-            && tm.tm_hour <= 23
-            && tm.tm_min >= 0
-            && tm.tm_min <= 59
-            && tm.tm_sec >= 0
-            && tm.tm_sec <= 60
-        {
+    #[allow(clippy::result_unit_err)]
+    pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
+        if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
-                year: (tm.tm_year + 1900) as u16,
-                month: (tm.tm_mon + 1) as u8,
-                day: tm.tm_mday as u8,
-                hour: tm.tm_hour as u8,
-                minute: tm.tm_min as u8,
-                second: tm.tm_sec as u8,
+                year: (dt.year()) as u16,
+                month: (dt.month()) as u8,
+                day: dt.day() as u8,
+                hour: dt.hour() as u8,
+                minute: dt.minute() as u8,
+                second: dt.second() as u8,
             })
         } else {
             Err(())
@@ -158,20 +150,14 @@ impl DateTime {
     }
 
     #[cfg(feature = "time")]
-    /// Converts the datetime to a Tm structure
-    ///
-    /// The fields `tm_wday`, `tm_yday`, `tm_utcoff` and `tm_nsec` are set to their defaults.
-    pub fn to_time(&self) -> ::time::Tm {
-        ::time::Tm {
-            tm_sec: self.second as i32,
-            tm_min: self.minute as i32,
-            tm_hour: self.hour as i32,
-            tm_mday: self.day as i32,
-            tm_mon: self.month as i32 - 1,
-            tm_year: self.year as i32 - 1900,
-            tm_isdst: -1,
-            ..::time::empty_tm()
-        }
+    /// Converts the DateTime to a OffsetDateTime structure
+    pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
+        use std::convert::TryFrom;
+
+        let date =
+            Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
+        let time = Time::from_hms(self.hour, self.minute, self.second)?;
+        Ok(PrimitiveDateTime::new(date, time).assume_utc())
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -271,10 +257,7 @@ impl ZipFileData {
 
         ::std::path::Path::new(&filename)
             .components()
-            .filter(|component| match *component {
-                ::std::path::Component::Normal(..) => true,
-                _ => false,
-            })
+            .filter(|component| matches!(*component, ::std::path::Component::Normal(..)))
             .fold(::std::path::PathBuf::new(), |mut path, ref cur| {
                 path.push(cur.as_os_str());
                 path
@@ -340,6 +323,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)]
     fn datetime_default() {
         use super::DateTime;
         let dt = DateTime::default();
@@ -348,6 +332,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
         let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
@@ -375,57 +360,25 @@ mod test {
     }
 
     #[cfg(feature = "time")]
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+
+    #[cfg(feature = "time")]
     #[test]
     fn datetime_from_time_bounds() {
         use super::DateTime;
+        use time::macros::datetime;
 
         // 1979-12-31 23:59:59
-        assert!(DateTime::from_time(::time::Tm {
-            tm_sec: 59,
-            tm_min: 59,
-            tm_hour: 23,
-            tm_mday: 31,
-            tm_mon: 11,  // tm_mon has number range [0, 11]
-            tm_year: 79, // 1979 - 1900 = 79
-            ..::time::empty_tm()
-        })
-        .is_err());
+        assert!(DateTime::from_time(datetime!(1979-12-31 23:59:59 UTC)).is_err());
 
         // 1980-01-01 00:00:00
-        assert!(DateTime::from_time(::time::Tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 1,
-            tm_mon: 0,   // tm_mon has number range [0, 11]
-            tm_year: 80, // 1980 - 1900 = 80
-            ..::time::empty_tm()
-        })
-        .is_ok());
+        assert!(DateTime::from_time(datetime!(1980-01-01 00:00:00 UTC)).is_ok());
 
         // 2107-12-31 23:59:59
-        assert!(DateTime::from_time(::time::Tm {
-            tm_sec: 59,
-            tm_min: 59,
-            tm_hour: 23,
-            tm_mday: 31,
-            tm_mon: 11,   // tm_mon has number range [0, 11]
-            tm_year: 207, // 2107 - 1900 = 207
-            ..::time::empty_tm()
-        })
-        .is_ok());
+        assert!(DateTime::from_time(datetime!(2107-12-31 23:59:59 UTC)).is_ok());
 
         // 2108-01-01 00:00:00
-        assert!(DateTime::from_time(::time::Tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 1,
-            tm_mon: 0,    // tm_mon has number range [0, 11]
-            tm_year: 208, // 2108 - 1900 = 208
-            ..::time::empty_tm()
-        })
-        .is_err());
+        assert!(DateTime::from_time(datetime!(2108-01-01 00:00:00 UTC)).is_err());
     }
 
     #[test]
@@ -441,7 +394,7 @@ mod test {
 
         #[cfg(feature = "time")]
         assert_eq!(
-            format!("{}", dt.to_time().rfc3339()),
+            dt.to_time().unwrap().format(&Rfc3339).unwrap(),
             "2018-11-17T10:38:30Z"
         );
     }
@@ -458,10 +411,7 @@ mod test {
         assert_eq!(dt.second(), 62);
 
         #[cfg(feature = "time")]
-        assert_eq!(
-            format!("{}", dt.to_time().rfc3339()),
-            "2107-15-31T31:63:62Z"
-        );
+        assert!(dt.to_time().is_err());
 
         let dt = DateTime::from_msdos(0x0000, 0x0000);
         assert_eq!(dt.year(), 1980);
@@ -472,10 +422,7 @@ mod test {
         assert_eq!(dt.second(), 0);
 
         #[cfg(feature = "time")]
-        assert_eq!(
-            format!("{}", dt.to_time().rfc3339()),
-            "1980-00-00T00:00:00Z"
-        );
+        assert!(dt.to_time().is_err());
     }
 
     #[cfg(feature = "time")]
@@ -484,8 +431,8 @@ mod test {
         use super::DateTime;
 
         // 2020-01-01 00:00:00
-        let clock = ::time::Timespec::new(1577836800, 0);
-        let tm = ::time::at_utc(clock);
-        assert!(DateTime::from_time(tm).is_ok());
+        let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();
+
+        assert!(DateTime::from_time(clock).is_ok());
     }
 }

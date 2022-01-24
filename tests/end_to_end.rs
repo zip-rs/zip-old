@@ -121,7 +121,7 @@ fn read_zip<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip::ZipArchi
         "test_with_extra_data/🐢.txt",
         ENTRY_NAME,
     ];
-    let expected_file_names = HashSet::from_iter(expected_file_names.iter().map(|&v| v));
+    let expected_file_names = HashSet::from_iter(expected_file_names.iter().copied());
     let file_names = archive.file_names().collect::<HashSet<_>>();
     assert_eq!(file_names, expected_file_names);
 
@@ -173,17 +173,17 @@ fn check_zip_contents(
 
 fn check_zip_file_contents<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) {
     let file_contents: String = read_zip_file(archive, name).unwrap();
-    assert!(file_contents.as_bytes() == LOREM_IPSUM);
+    assert_eq!(file_contents.as_bytes(), LOREM_IPSUM);
 }
 
-const LOREM_IPSUM : &'static [u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
+const LOREM_IPSUM : &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
 molestie. Proin blandit ornare dui, a tempor nisl accumsan in. Praesent a consequat felis. Morbi metus diam, auctor in auctor vel, feugiat id odio. Curabitur ex ex,
 dictum quis auctor quis, suscipit id lorem. Aliquam vestibulum dolor nec enim vehicula, porta tristique augue tincidunt. Vivamus ut gravida est. Sed pellentesque, dolor
 vitae tristique consectetur, neque lectus pulvinar dui, sed feugiat purus diam id lectus. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per
 inceptos himenaeos. Maecenas feugiat velit in ex ultrices scelerisque id id neque.
 ";
 
-const EXTRA_DATA: &'static [u8] = b"Extra Data";
+const EXTRA_DATA: &[u8] = b"Extra Data";
 
 const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 

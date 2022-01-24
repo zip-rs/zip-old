@@ -198,11 +198,11 @@ fn make_crypto_reader<'a>(
     Ok(Ok(reader))
 }
 
-fn make_reader<'a>(
+fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
-    reader: CryptoReader<'a>,
-) -> ZipFileReader<'a> {
+    reader: CryptoReader,
+) -> ZipFileReader {
     match compression_method {
         CompressionMethod::Stored => ZipFileReader::Stored(Crc32Reader::new(reader, crc32)),
         #[cfg(any(
@@ -317,7 +317,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                 let directory_start = footer
                     .central_directory_offset
                     .checked_add(archive_offset)
-                    .ok_or_else(|| {
+                    .ok_or({
                         ZipError::InvalidArchive("Invalid central directory size or offset")
                     })?;
 
@@ -346,7 +346,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let mut files = Vec::new();
         let mut names_map = HashMap::new();
 
-        if let Err(_) = reader.seek(io::SeekFrom::Start(directory_start)) {
+        if reader.seek(io::SeekFrom::Start(directory_start)).is_err() {
             return Err(ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
             ));
@@ -471,14 +471,14 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         Ok(self
             .by_index_with_optional_password(file_number, None)?
             .unwrap())
     }
 
     /// Get a contained file by index without decompressing it
-    pub fn by_index_raw<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
         self.files
             .get_mut(file_number)
@@ -617,7 +617,10 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     }
 
     // Account for shifted zip offsets.
-    result.header_start += archive_offset;
+    result.header_start = result
+        .header_start
+        .checked_add(archive_offset)
+        .ok_or(ZipError::InvalidArchive("Archive header is too large"))?;
 
     Ok(result)
 }
@@ -1031,7 +1034,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.len() == 1);
+        assert_eq!(reader.len(), 1);
     }
 
     #[test]
@@ -1042,7 +1045,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment() == b"");
+        assert_eq!(reader.comment(), b"");
         assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
     }
 
@@ -1055,9 +1058,8 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = io::Cursor::new(v);
         loop {
-            match read_zipfile_from_stream(&mut reader).unwrap() {
-                None => break,
-                _ => (),
+            if read_zipfile_from_stream(&mut reader).unwrap().is_none() {
+                break;
             }
         }
     }
@@ -1093,14 +1095,14 @@ mod test {
         let mut buf3 = [0; 5];
         let mut buf4 = [0; 5];
 
-        file1.read(&mut buf1).unwrap();
-        file2.read(&mut buf2).unwrap();
-        file1.read(&mut buf3).unwrap();
-        file2.read(&mut buf4).unwrap();
+        file1.read_exact(&mut buf1).unwrap();
+        file2.read_exact(&mut buf2).unwrap();
+        file1.read_exact(&mut buf3).unwrap();
+        file2.read_exact(&mut buf4).unwrap();
 
         assert_eq!(buf1, buf2);
         assert_eq!(buf3, buf4);
-        assert!(buf1 != buf3);
+        assert_ne!(buf1, buf3);
     }
 
     #[test]
