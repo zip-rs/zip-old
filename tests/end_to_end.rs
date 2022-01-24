@@ -4,18 +4,20 @@ use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::iter::FromIterator;
 use zip::write::FileOptions;
-use zip::CompressionMethod;
+use zip::{CompressionMethod, SUPPORTED_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn end_to_end() {
-    for method in CompressionMethod::supported_methods().iter() {
+    for &method in SUPPORTED_METHODS {
         let file = &mut Cursor::new(Vec::new());
 
-        write_to_zip(file, *method).expect("Couldn't write to test file");
+        println!("Writing file with {} compression", method);
+        write_to_zip(file, method).expect("Couldn't write to test file");
 
-        check_zip_contents(file, ENTRY_NAME, Some(*method));
+        println!("Checking file contents");
+        check_zip_contents(file, ENTRY_NAME, Some(method));
     }
 }
 
@@ -23,9 +25,9 @@ fn end_to_end() {
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    for method in CompressionMethod::supported_methods().iter() {
+    for &method in SUPPORTED_METHODS {
         let src_file = &mut Cursor::new(Vec::new());
-        write_to_zip(src_file, *method).expect("Couldn't write to test file");
+        write_to_zip(src_file, method).expect("Couldn't write to test file");
 
         let mut tgt_file = &mut Cursor::new(Vec::new());
 
@@ -62,15 +64,15 @@ fn copy() {
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    for method in CompressionMethod::supported_methods().iter() {
+    for &method in SUPPORTED_METHODS {
         let mut file = &mut Cursor::new(Vec::new());
-        write_to_zip(file, *method).expect("Couldn't write to test file");
+        write_to_zip(file, method).expect("Couldn't write to test file");
 
         {
             let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
             zip.start_file(
                 COPY_ENTRY_NAME,
-                FileOptions::default().compression_method(*method),
+                FileOptions::default().compression_method(method),
             )
             .unwrap();
             zip.write_all(LOREM_IPSUM).unwrap();
