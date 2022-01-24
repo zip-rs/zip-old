@@ -3,7 +3,7 @@ zip-rs
 
 [![Build Status](https://img.shields.io/github/workflow/status/zip-rs/zip/CI)](https://github.com/zip-rs/zip/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
-[![Discord](https://img.shields.io/discord/691052431525675048.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/rQ7H9cSsF4)
+[![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/rQ7H9cSsF4)
 
 [Documentation](https://docs.rs/zip/0.5.13/zip/)
 
