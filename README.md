@@ -3,6 +3,7 @@ zip-rs
 
 [![Build Status](https://img.shields.io/github/workflow/status/zip-rs/zip/CI)](https://github.com/zip-rs/zip/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
+[![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/rQ7H9cSsF4)
 
 [Documentation](https://docs.rs/zip/0.5.13/zip/)
 
@@ -17,7 +18,7 @@ Supported compression formats:
 * stored (i.e. none)
 * deflate
 * bzip2
-* zstd (in progress...)
+* zstd
 
 Currently unsupported zip extensions:
 
@@ -43,7 +44,7 @@ zip = { version = "0.5", default-features = false }
 
 The features available are:
 
-* `deflate`: Enables the deflate compression algorithm, which is the default for zipfiles.
+* `deflate`: Enables the deflate compression algorithm, which is the default for zip files.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 * `zstd`: Enables the Zstandard compression algorithm.
@@ -53,7 +54,7 @@ All of these are enabled by default.
 MSRV
 ----
 
-Our current Minimum Supported Rust Version is **1.36.0**. When adding features,
+Our current Minimum Supported Rust Version is **1.54.0**. When adding features,
 we will follow these guidelines:
 
 - We will always support the latest four minor Rust versions. This gives you a 6
