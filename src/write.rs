@@ -848,7 +848,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                     GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::default()))
                 }
                 #[cfg(feature = "zstd")]
-                CompressionMethod::Zstd => {
+                CompressionMethod::ZSTD => {
                     GenericZipWriter::Zstd(ZstdEncoder::new(bare, 0).unwrap())
                 }
                 CompressionMethod::Unsupported(..) => {
@@ -900,7 +900,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(..) => Some(CompressionMethod::Bzip2),
             #[cfg(feature = "zstd")]
-            GenericZipWriter::Zstd(..) => Some(CompressionMethod::Zstd),
+            GenericZipWriter::Zstd(..) => Some(CompressionMethod::ZSTD),
             GenericZipWriter::Closed => None,
         }
     }

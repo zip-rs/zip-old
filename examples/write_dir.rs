@@ -33,7 +33,7 @@ const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod
 const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
 
 #[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
+const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::ZSTD);
 #[cfg(not(feature = "zstd"))]
 const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
 

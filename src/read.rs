@@ -220,7 +220,7 @@ fn make_reader(
             ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32))
         }
         #[cfg(feature = "zstd")]
-        CompressionMethod::Zstd => {
+        CompressionMethod::ZSTD | CompressionMethod::ZSTD_DEPRECATED => {
             let zstd_reader = ZstdDecoder::new(reader).unwrap();
             ZipFileReader::Zstd(Crc32Reader::new(zstd_reader, crc32))
         }
