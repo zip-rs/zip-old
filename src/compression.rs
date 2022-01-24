@@ -130,9 +130,24 @@ impl fmt::Display for CompressionMethod {
     }
 }
 
+/// The compression methods which have been implemented.
+pub const SUPPORTED_METHODS: &[CompressionMethod] = &[
+        CompressionMethod::Stored,
+        #[cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib"
+        ))]
+        CompressionMethod::Deflated,
+        #[cfg(feature = "bzip2")]
+        CompressionMethod::Bzip2,
+        #[cfg(feature = "zstd")]
+        CompressionMethod::Zstd,
+];
+
 #[cfg(test)]
 mod test {
-    use super::CompressionMethod;
+    use super::{CompressionMethod, SUPPORTED_METHODS};
 
     #[test]
     fn from_eq_to() {
@@ -143,22 +158,6 @@ mod test {
             let to = from.to_u16() as u32;
             assert_eq!(v, to);
         }
-    }
-
-    fn methods() -> Vec<CompressionMethod> {
-        vec![
-            CompressionMethod::Stored,
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            ))]
-            CompressionMethod::Deflated,
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2,
-            #[cfg(feature = "zstd")]
-            CompressionMethod::Zstd,
-        ]
     }
 
     #[test]
@@ -173,7 +172,7 @@ mod test {
             assert_eq!(to, back);
         }
 
-        for method in methods() {
+        for &method in SUPPORTED_METHODS {
             check_match(method);
         }
     }
@@ -186,7 +185,7 @@ mod test {
             assert_eq!(debug_str, display_str);
         }
 
-        for method in methods() {
+        for &method in SUPPORTED_METHODS {
             check_match(method);
         }
     }
