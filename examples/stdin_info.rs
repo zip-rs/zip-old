@@ -30,5 +30,6 @@ fn real_main() -> i32 {
             }
         }
     }
-    return 0;
+
+    0
 }

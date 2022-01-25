@@ -15,17 +15,17 @@ aes = { version = "0.6.0", optional = true }
 byteorder = "1.3"
 bzip2 = { version = "0.4", optional = true }
 constant_time_eq = { version = "0.1.5", optional = true }
-crc32fast = "1.0"
+crc32fast = "1.1.1"
 flate2 = { version = "1.0.0", default-features = false, optional = true }
 hmac = {version = "0.10.1", optional = true }
 pbkdf2 = {version = "0.6.0", optional = true }
 sha-1 = {version = "0.9.2", optional = true }
-thiserror = "1.0"
-time = { version = "0.1", optional = true }
+time = { version = "0.3", features = ["formatting", "macros" ], optional = true }
+zstd = { version = "0.10", optional = true }
 
 [dev-dependencies]
 bencher = "0.1"
-rand = "0.7"
+getrandom = "0.2"
 walkdir = "2"
 
 [features]
@@ -34,7 +34,7 @@ deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 unreserved = []
-default = ["aes-crypto", "bzip2", "deflate", "time"]
+default = ["aes-crypto", "bzip2", "deflate", "time", "zstd"]
 
 [[bench]]
 name = "read_entry"

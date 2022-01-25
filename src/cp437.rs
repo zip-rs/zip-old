@@ -6,7 +6,8 @@ pub trait FromCp437 {
     type Target;
 
     /// Function that does the conversion from cp437.
-    /// Gennerally allocations will be avoided if all data falls into the ASCII range.
+    /// Generally allocations will be avoided if all data falls into the ASCII range.
+    #[allow(clippy::wrong_self_convention)]
     fn from_cp437(self) -> Self::Target;
 }
 

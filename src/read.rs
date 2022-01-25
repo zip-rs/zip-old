@@ -25,6 +25,9 @@ use flate2::read::DeflateDecoder;
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
 
+#[cfg(feature = "zstd")]
+use zstd::stream::read::Decoder as ZstdDecoder;
+
 mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
@@ -109,6 +112,8 @@ enum ZipFileReader<'a> {
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
+    #[cfg(feature = "zstd")]
+    Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
 }
 
 impl<'a> Read for ZipFileReader<'a> {
@@ -125,6 +130,8 @@ impl<'a> Read for ZipFileReader<'a> {
             ZipFileReader::Deflated(r) => r.read(buf),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.read(buf),
+            #[cfg(feature = "zstd")]
+            ZipFileReader::Zstd(r) => r.read(buf),
         }
     }
 }
@@ -144,6 +151,8 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::Deflated(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
+            #[cfg(feature = "zstd")]
+            ZipFileReader::Zstd(r) => r.into_inner().finish().into_inner().into_inner(),
         }
     }
 }
@@ -227,11 +236,11 @@ fn make_crypto_reader<'a>(
     Ok(Ok(reader))
 }
 
-fn make_reader<'a>(
+fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
-    reader: CryptoReader<'a>,
-) -> ZipFileReader<'a> {
+    reader: CryptoReader,
+) -> ZipFileReader {
     let ae2_encrypted = reader.is_ae2_encrypted();
 
     match compression_method {
@@ -251,6 +260,11 @@ fn make_reader<'a>(
         CompressionMethod::Bzip2 => {
             let bzip2_reader = BzDecoder::new(reader);
             ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32, ae2_encrypted))
+        }
+        #[cfg(feature = "zstd")]
+        CompressionMethod::Zstd => {
+            let zstd_reader = ZstdDecoder::new(reader).unwrap();
+            ZipFileReader::Zstd(Crc32Reader::new(zstd_reader, crc32, ae2_encrypted))
         }
         _ => panic!("Compression method not supported"),
     }
@@ -345,7 +359,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                 let directory_start = footer
                     .central_directory_offset
                     .checked_add(archive_offset)
-                    .ok_or_else(|| {
+                    .ok_or({
                         ZipError::InvalidArchive("Invalid central directory size or offset")
                     })?;
 
@@ -499,14 +513,14 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index
-    pub fn by_index<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         Ok(self
             .by_index_with_optional_password(file_number, None)?
             .unwrap())
     }
 
     /// Get a contained file by index without decompressing it
-    pub fn by_index_raw<'a>(&'a mut self, file_number: usize) -> ZipResult<ZipFile<'a>> {
+    pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
         self.files
             .get_mut(file_number)
@@ -656,7 +670,10 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     }
 
     // Account for shifted zip offsets.
-    result.header_start += archive_offset;
+    result.header_start = result
+        .header_start
+        .checked_add(archive_offset)
+        .ok_or(ZipError::InvalidArchive("Archive header is too large"))?;
 
     Ok(result)
 }
@@ -1108,7 +1125,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
         let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.len() == 1);
+        assert_eq!(reader.len(), 1);
     }
 
     #[test]
@@ -1119,7 +1136,7 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
-        assert!(reader.comment() == b"");
+        assert_eq!(reader.comment(), b"");
         assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
     }
 
@@ -1169,14 +1186,14 @@ mod test {
         let mut buf3 = [0; 5];
         let mut buf4 = [0; 5];
 
-        file1.read(&mut buf1).unwrap();
-        file2.read(&mut buf2).unwrap();
-        file1.read(&mut buf3).unwrap();
-        file2.read(&mut buf4).unwrap();
+        file1.read_exact(&mut buf1).unwrap();
+        file2.read_exact(&mut buf2).unwrap();
+        file1.read_exact(&mut buf3).unwrap();
+        file2.read_exact(&mut buf4).unwrap();
 
         assert_eq!(buf1, buf2);
         assert_eq!(buf3, buf4);
-        assert!(buf1 != buf3);
+        assert_ne!(buf1, buf3);
     }
 
     #[test]

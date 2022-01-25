@@ -27,5 +27,5 @@ fn real_main() -> i32 {
     file.read_to_string(&mut contents).unwrap();
     println!("{}", contents);
 
-    return 0;
+    0
 }
