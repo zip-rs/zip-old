@@ -95,7 +95,7 @@ impl<R: Read> AesReader<R> {
             return Ok(None);
         }
 
-        let cipher = cipher_from_mode(self.aes_mode, &decrypt_key);
+        let cipher = cipher_from_mode(self.aes_mode, decrypt_key);
         let hmac = Hmac::<Sha1>::new_varkey(hmac_key).unwrap();
 
         Ok(Some(AesReaderValid {

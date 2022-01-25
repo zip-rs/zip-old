@@ -185,6 +185,7 @@ fn find_content<'a>(
     Ok((reader as &mut dyn Read).take(data.compressed_size))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_crypto_reader<'a>(
     compression_method: crate::compression::CompressionMethod,
     crc32: u32,
@@ -211,7 +212,7 @@ fn make_crypto_reader<'a>(
         }
         #[cfg(feature = "aes-crypto")]
         (Some(password), Some((aes_mode, vendor_version))) => {
-            match AesReader::new(reader, aes_mode, compressed_size).validate(&password)? {
+            match AesReader::new(reader, aes_mode, compressed_size).validate(password)? {
                 None => return Ok(Err(InvalidPassword)),
                 Some(r) => CryptoReader::Aes {
                     reader: r,
