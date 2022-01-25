@@ -121,11 +121,11 @@ pub struct AesReaderValid<R: Read> {
 
 impl<R: Read> Read for AesReaderValid<R> {
     /// This implementation does not fulfill all requirements set in the trait documentation.
-    /// 
+    ///
     /// ```txt
     /// "If an error is returned then it must be guaranteed that no bytes were read."
     /// ```
-    /// 
+    ///
     /// Whether this applies to errors that occur while reading the encrypted data depends on the
     /// underlying reader. If the error occurs while verifying the HMAC, the reader might become
     /// practically unusable, since its position after the error is not known.

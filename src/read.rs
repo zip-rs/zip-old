@@ -94,7 +94,13 @@ impl<'a> CryptoReader<'a> {
     /// Returns `true` if the data is encrypted using AE2.
     pub fn is_ae2_encrypted(&self) -> bool {
         #[cfg(feature = "aes-crypto")]
-        return matches!(self, CryptoReader::Aes { vendor_version: AesVendorVersion::Ae2, .. });
+        return matches!(
+            self,
+            CryptoReader::Aes {
+                vendor_version: AesVendorVersion::Ae2,
+                ..
+            }
+        );
         #[cfg(not(feature = "aes-crypto"))]
         false
     }

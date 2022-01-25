@@ -25,7 +25,7 @@ pub enum CompressionMethod {
     #[cfg(feature = "bzip2")]
     Bzip2,
     /// Encrypted using AES.
-    /// 
+    ///
     /// The actual compression method has to be taken from the AES extra data field
     /// or from `ZipFileData`.
     Aes,
