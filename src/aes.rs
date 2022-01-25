@@ -120,6 +120,15 @@ pub struct AesReaderValid<R: Read> {
 }
 
 impl<R: Read> Read for AesReaderValid<R> {
+    /// This implementation does not fulfill all requirements set in the trait documentation.
+    /// 
+    /// ```txt
+    /// "If an error is returned then it must be guaranteed that no bytes were read."
+    /// ```
+    /// 
+    /// Whether this applies to errors that occur while reading the encrypted data depends on the
+    /// underlying reader. If the error occurs while verifying the HMAC, the reader might become
+    /// practically unusable, since its position after the error is not known.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.data_remaining == 0 {
             return Ok(0);
@@ -129,13 +138,13 @@ impl<R: Read> Read for AesReaderValid<R> {
         // 2^32 bytes even on 32 bit systems.
         let bytes_to_read = self.data_remaining.min(buf.len() as u64) as usize;
         let read = self.reader.read(&mut buf[0..bytes_to_read])?;
+        self.data_remaining -= read as u64;
 
         // Update the hmac with the encrypted data
         self.hmac.update(&buf[0..read]);
 
         // decrypt the data
         self.cipher.crypt_in_place(&mut buf[0..read]);
-        self.data_remaining -= read as u64;
 
         // if there is no data left to read, check the integrity of the data
         if self.data_remaining == 0 {

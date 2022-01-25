@@ -104,7 +104,7 @@ where
     C: AesKind,
     C::Cipher: BlockCipher,
 {
-    /// Decrypt or encrypt given data.
+    /// Decrypt or encrypt `target`.
     #[inline]
     fn crypt_in_place(&mut self, mut target: &mut [u8]) {
         while !target.is_empty() {
