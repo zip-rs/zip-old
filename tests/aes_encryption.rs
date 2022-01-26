@@ -8,7 +8,7 @@ const PASSWORD: &[u8] = b"helloworld";
 #[test]
 fn aes256_encrypted_uncompressed_file() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/aes_archive.zip"));
+    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive
@@ -26,7 +26,7 @@ fn aes256_encrypted_uncompressed_file() {
 #[test]
 fn aes256_encrypted_file() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/aes_archive.zip"));
+    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive
@@ -44,7 +44,7 @@ fn aes256_encrypted_file() {
 #[test]
 fn aes192_encrypted_file() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/aes_archive.zip"));
+    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive
@@ -62,7 +62,7 @@ fn aes192_encrypted_file() {
 #[test]
 fn aes128_encrypted_file() {
     let mut v = Vec::new();
-    v.extend_from_slice(include_bytes!("../tests/data/aes_archive.zip"));
+    v.extend_from_slice(include_bytes!("data/aes_archive.zip"));
     let mut archive = ZipArchive::new(io::Cursor::new(v)).expect("couldn't open test zip file");
 
     let mut file = archive

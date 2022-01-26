@@ -167,7 +167,7 @@ impl<R: Read> Read for AesReaderValid<R> {
             // this.
             let hmac = std::mem::replace(
                 &mut self.hmac,
-                Hmac::new(&GenericArray::from_slice(
+                Hmac::new(GenericArray::from_slice(
                     &vec![0; <Hmac<Sha1> as KeySizeUser>::KeySize::to_usize()],
                 )),
             );
