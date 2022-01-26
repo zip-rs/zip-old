@@ -5,7 +5,7 @@
 //! See [AesCtrZipKeyStream](./struct.AesCtrZipKeyStream.html) for more information.
 
 use aes::cipher::generic_array::GenericArray;
-use aes::{BlockCipher, NewBlockCipher};
+use aes::{BlockEncrypt, NewBlockCipher};
 use byteorder::WriteBytesExt;
 use std::{any, fmt};
 
@@ -102,7 +102,7 @@ where
 impl<C> AesCipher for AesCtrZipKeyStream<C>
 where
     C: AesKind,
-    C::Cipher: BlockCipher,
+    C::Cipher: BlockEncrypt,
 {
     /// Decrypt or encrypt `target`.
     #[inline]

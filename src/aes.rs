@@ -6,8 +6,9 @@
 
 use crate::aes_ctr;
 use crate::types::AesMode;
+use aes::cipher::generic_array::{typenum::Unsigned, GenericArray};
 use constant_time_eq::constant_time_eq;
-use hmac::{Hmac, Mac, NewMac};
+use hmac::{digest::crypto_common::KeySizeUser, Hmac, Mac};
 use sha1::Sha1;
 use std::io::{self, Read};
 
@@ -96,13 +97,14 @@ impl<R: Read> AesReader<R> {
         }
 
         let cipher = cipher_from_mode(self.aes_mode, decrypt_key);
-        let hmac = Hmac::<Sha1>::new_varkey(hmac_key).unwrap();
+        let hmac = Hmac::<Sha1>::new_from_slice(hmac_key).unwrap();
 
         Ok(Some(AesReaderValid {
             reader: self.reader,
             data_remaining: self.data_length,
             cipher,
             hmac,
+            finalized: false,
         }))
     }
 }
@@ -117,6 +119,7 @@ pub struct AesReaderValid<R: Read> {
     data_remaining: u64,
     cipher: Box<dyn aes_ctr::AesCipher>,
     hmac: Hmac<Sha1>,
+    finalized: bool,
 }
 
 impl<R: Read> Read for AesReaderValid<R> {
@@ -148,11 +151,27 @@ impl<R: Read> Read for AesReaderValid<R> {
 
         // if there is no data left to read, check the integrity of the data
         if self.data_remaining == 0 {
+            assert!(
+                !self.finalized,
+                "Tried to use an already finalized HMAC. This is a bug!"
+            );
+            self.finalized = true;
+
             // Zip uses HMAC-Sha1-80, which only uses the first half of the hash
             // see https://www.winzip.com/win/en/aes_info.html#auth-faq
             let mut read_auth_code = [0; AUTH_CODE_LENGTH];
             self.reader.read_exact(&mut read_auth_code)?;
-            let computed_auth_code = &self.hmac.finalize_reset().into_bytes()[0..AUTH_CODE_LENGTH];
+
+            // The following call to `finalize` consumes `hmac` so we replace `self.hmac` with a
+            // dummy that uses a `Key` made up of only zeroes. `self.hmac` should not be used after
+            // this.
+            let hmac = std::mem::replace(
+                &mut self.hmac,
+                Hmac::new(&GenericArray::from_slice(
+                    &vec![0; <Hmac<Sha1> as KeySizeUser>::KeySize::to_usize()],
+                )),
+            );
+            let computed_auth_code = &hmac.finalize().into_bytes()[0..AUTH_CODE_LENGTH];
 
             // use constant time comparison to mitigate timing attacks
             if !constant_time_eq(computed_auth_code, &read_auth_code) {
