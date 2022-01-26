@@ -157,17 +157,14 @@ fn check_zip_contents(
 ) {
     let mut archive = read_zip(zip_file).unwrap();
 
-    match expected_method {
-        Some(method) => {
-            let file = archive.by_name(name).unwrap();
+    if let Some(expected_method) = expected_method {
+        let file = archive.by_name(name).unwrap();
+        let real_method = file.compression();
 
-            assert_eq!(
-                method,
-                file.compression(),
-                "File does not have expected compression method"
-            )
-        }
-        None => {}
+        assert_eq!(
+            expected_method, real_method,
+            "File does not have expected compression method"
+        );
     }
 
     check_zip_file_contents(&mut archive, name);
