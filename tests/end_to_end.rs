@@ -85,6 +85,7 @@ fn append() {
     }
 }
 
+// Write a test zip archive to buffer.
 fn write_to_zip(
     file: &mut Cursor<Vec<u8>>,
     method: CompressionMethod,
@@ -114,6 +115,7 @@ fn write_to_zip(
     Ok(())
 }
 
+// Load an archive from buffer and check for expected test data.
 fn read_zip<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip::ZipArchive<R>> {
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
@@ -139,6 +141,7 @@ fn read_zip<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip::ZipArchi
     Ok(archive)
 }
 
+// Read a file in the archive as a string.
 fn read_zip_file<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
     name: &str,
@@ -150,14 +153,16 @@ fn read_zip_file<R: Read + Seek>(
     Ok(contents)
 }
 
+// Check a file in the archive contains expected data.
 fn check_zip_contents(
     zip_file: &mut Cursor<Vec<u8>>,
     name: &str,
     expected_method: Option<CompressionMethod>,
 ) {
-    let mut archive = read_zip(zip_file).unwrap();
+    let mut archive = check_test_archive(zip_file).unwrap();
 
     if let Some(expected_method) = expected_method {
+        // Check the file's compression method.
         let file = archive.by_name(name).unwrap();
         let real_method = file.compression();
 
@@ -167,10 +172,11 @@ fn check_zip_contents(
         );
     }
 
-    check_zip_file_contents(&mut archive, name);
+    check_test_file_contents(&mut archive, name);
 }
 
-fn check_zip_file_contents<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) {
+// Check a file in the archive contains the lorem string.
+fn check_test_file_contents<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) {
     let file_contents: String = read_zip_file(archive, name).unwrap();
     assert_eq!(file_contents.as_bytes(), LOREM_IPSUM);
 }
