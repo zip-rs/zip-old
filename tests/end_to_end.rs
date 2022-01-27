@@ -17,7 +17,7 @@ fn end_to_end() {
         write_test_archive(file, method).expect("Couldn't write test zip archive");
 
         println!("Checking file contents");
-        check_archive_file(file, ENTRY_NAME, Some(method));
+        check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
     }
 }
 
@@ -55,8 +55,8 @@ fn copy() {
 
         let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
 
-        check_test_file_contents(&mut tgt_archive, ENTRY_NAME);
-        check_test_file_contents(&mut tgt_archive, COPY_ENTRY_NAME);
+        check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
+        check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
     }
 }
 
@@ -80,8 +80,8 @@ fn append() {
         }
 
         let mut zip = zip::ZipArchive::new(&mut file).unwrap();
-        check_test_file_contents(&mut zip, ENTRY_NAME);
-        check_test_file_contents(&mut zip, COPY_ENTRY_NAME);
+        check_archive_file_contents(&mut zip, ENTRY_NAME, LOREM_IPSUM);
+        check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
     }
 }
 
@@ -119,7 +119,7 @@ fn write_test_archive(
 fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip::ZipArchive<R>> {
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
-    // Check archive contains expected files names.
+    // Check archive contains expected file names.
     {
         let expected_file_names = [
             "test/",
@@ -132,7 +132,7 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip
         assert_eq!(file_names, expected_file_names);
     }
 
-    // Check an archive file has expected extra field contents.
+    // Check an archive file for extra data field contents.
     {
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_data = Vec::new();
@@ -158,11 +158,12 @@ fn read_archive_file<R: Read + Seek>(
     Ok(contents)
 }
 
-// Check a file in the archive contains expected data.
+// Check a file in the archive contains expected data and properties.
 fn check_archive_file(
     zip_file: &mut Cursor<Vec<u8>>,
     name: &str,
     expected_method: Option<CompressionMethod>,
+    expected_data: &[u8],
 ) {
     let mut archive = check_test_archive(zip_file).unwrap();
 
@@ -177,13 +178,17 @@ fn check_archive_file(
         );
     }
 
-    check_test_file_contents(&mut archive, name);
+    check_archive_file_contents(&mut archive, name, expected_data);
 }
 
-// Check a file in the archive contains the lorem string.
-fn check_test_file_contents<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) {
+// Check a file in the archive contains the given data.
+fn check_archive_file_contents<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    name: &str,
+    expected: &[u8],
+) {
     let file_contents: String = read_archive_file(archive, name).unwrap();
-    assert_eq!(file_contents.as_bytes(), LOREM_IPSUM);
+    assert_eq!(file_contents.as_bytes(), expected);
 }
 
 const LOREM_IPSUM : &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. In tellus elit, tristique vitae mattis egestas, ultricies vitae risus. Quisque sit amet quam ut urna aliquet
