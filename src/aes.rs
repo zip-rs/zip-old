@@ -6,9 +6,8 @@
 
 use crate::aes_ctr;
 use crate::types::AesMode;
-use aes::cipher::generic_array::{typenum::Unsigned, GenericArray};
 use constant_time_eq::constant_time_eq;
-use hmac::{digest::crypto_common::KeySizeUser, Hmac, Mac};
+use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use std::io::{self, Read};
 
@@ -161,17 +160,7 @@ impl<R: Read> Read for AesReaderValid<R> {
             // see https://www.winzip.com/win/en/aes_info.html#auth-faq
             let mut read_auth_code = [0; AUTH_CODE_LENGTH];
             self.reader.read_exact(&mut read_auth_code)?;
-
-            // The following call to `finalize` consumes `hmac` so we replace `self.hmac` with a
-            // dummy that uses a `Key` made up of only zeroes. `self.hmac` should not be used after
-            // this.
-            let hmac = std::mem::replace(
-                &mut self.hmac,
-                Hmac::new(GenericArray::from_slice(
-                    &vec![0; <Hmac<Sha1> as KeySizeUser>::KeySize::to_usize()],
-                )),
-            );
-            let computed_auth_code = &hmac.finalize().into_bytes()[0..AUTH_CODE_LENGTH];
+            let computed_auth_code = &self.hmac.finalize_reset().into_bytes()[0..AUTH_CODE_LENGTH];
 
             // use constant time comparison to mitigate timing attacks
             if !constant_time_eq(computed_auth_code, &read_auth_code) {
