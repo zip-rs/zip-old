@@ -24,6 +24,12 @@ pub enum CompressionMethod {
     /// Compress the file using BZIP2
     #[cfg(feature = "bzip2")]
     Bzip2,
+    /// Encrypted using AES.
+    ///
+    /// The actual compression method has to be taken from the AES extra data field
+    /// or from `ZipFileData`.
+    #[cfg(feature = "aes-crypto")]
+    Aes,
     /// Compress the file using ZStandard
     #[cfg(feature = "zstd")]
     Zstd,
@@ -72,6 +78,10 @@ impl CompressionMethod {
     pub const JPEG: Self = CompressionMethod::Unsupported(96);
     pub const WAVPACK: Self = CompressionMethod::Unsupported(97);
     pub const PPMD: Self = CompressionMethod::Unsupported(98);
+    #[cfg(feature = "aes-crypto")]
+    pub const AES: Self = CompressionMethod::Aes;
+    #[cfg(not(feature = "aes-crypto"))]
+    pub const AES: Self = CompressionMethod::Unsupported(99);
 }
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
@@ -93,6 +103,7 @@ impl CompressionMethod {
             12 => CompressionMethod::Bzip2,
             #[cfg(feature = "zstd")]
             93 => CompressionMethod::Zstd,
+            99 => CompressionMethod::AES,
 
             v => CompressionMethod::Unsupported(v),
         }
@@ -115,6 +126,7 @@ impl CompressionMethod {
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
+            CompressionMethod::AES => 99,
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => 93,
 

@@ -234,6 +234,8 @@ pub struct ZipFileData {
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
     pub large_file: bool,
+    /// AES mode if applicable
+    pub aes_mode: Option<(AesMode, AesVendorVersion)>,
 }
 
 impl ZipFileData {
@@ -281,6 +283,39 @@ impl ZipFileData {
     }
 }
 
+/// The encryption specification used to encrypt a file with AES.
+///
+/// According to the [specification](https://www.winzip.com/win/en/aes_info.html#winzip11) AE-2
+/// does not make use of the CRC check.
+#[derive(Copy, Clone, Debug)]
+pub enum AesVendorVersion {
+    Ae1,
+    Ae2,
+}
+
+/// AES variant used.
+#[derive(Copy, Clone, Debug)]
+pub enum AesMode {
+    Aes128,
+    Aes192,
+    Aes256,
+}
+
+#[cfg(feature = "aes-crypto")]
+impl AesMode {
+    pub fn salt_length(&self) -> usize {
+        self.key_length() / 2
+    }
+
+    pub fn key_length(&self) -> usize {
+        match self {
+            Self::Aes128 => 16,
+            Self::Aes192 => 24,
+            Self::Aes256 => 32,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     #[test]
@@ -315,6 +350,7 @@ mod test {
             central_header_start: 0,
             external_attributes: 0,
             large_file: false,
+            aes_mode: None,
         };
         assert_eq!(
             data.file_name_sanitized(),
