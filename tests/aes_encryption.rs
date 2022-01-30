@@ -1,3 +1,5 @@
+#![cfg(feature = "aes-crypto")]
+
 use std::io::{self, Read};
 use zip::ZipArchive;
 

@@ -669,7 +669,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
         Err(e) => return Err(e),
     }
 
-    let aes_enabled = result.compression_method == CompressionMethod::Aes;
+    let aes_enabled = result.compression_method == CompressionMethod::AES;
     if aes_enabled && result.aes_mode.is_none() {
         return Err(ZipError::InvalidArchive(
             "AES encryption without AES extra data field",
