@@ -132,17 +132,17 @@ impl fmt::Display for CompressionMethod {
 
 /// The compression methods which have been implemented.
 pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
-        CompressionMethod::Stored,
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib"
-        ))]
-        CompressionMethod::Deflated,
-        #[cfg(feature = "bzip2")]
-        CompressionMethod::Bzip2,
-        #[cfg(feature = "zstd")]
-        CompressionMethod::Zstd,
+    CompressionMethod::Stored,
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
+    CompressionMethod::Deflated,
+    #[cfg(feature = "bzip2")]
+    CompressionMethod::Bzip2,
+    #[cfg(feature = "zstd")]
+    CompressionMethod::Zstd,
 ];
 
 #[cfg(test)]
