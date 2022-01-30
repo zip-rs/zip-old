@@ -11,11 +11,16 @@ Library to support the reading and writing of zip files.
 edition = "2018"
 
 [dependencies]
-flate2 = { version = "1.0.0", default-features = false, optional = true }
-time = { version = "0.3", features = ["formatting", "macros" ], optional = true }
+aes = { version = "0.7.5", optional = true }
 byteorder = "1.3"
 bzip2 = { version = "0.4", optional = true }
+constant_time_eq = { version = "0.1.5", optional = true }
 crc32fast = "1.1.1"
+flate2 = { version = "1.0.0", default-features = false, optional = true }
+hmac = { version = "0.12.0", optional = true, features = ["reset"] }
+pbkdf2 = {version = "0.10.0", optional = true }
+sha1 = {version = "0.10.0", optional = true }
+time = { version = "0.3", features = ["formatting", "macros" ], optional = true }
 zstd = { version = "0.10", optional = true }
 
 [dev-dependencies]
@@ -24,11 +29,12 @@ getrandom = "0.2"
 walkdir = "2"
 
 [features]
+aes-crypto = [ "aes", "constant_time_eq", "hmac", "pbkdf2", "sha1" ]
 deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 unreserved = []
-default = ["bzip2", "deflate", "time", "zstd"]
+default = ["aes-crypto", "bzip2", "deflate", "time", "zstd"]
 
 [[bench]]
 name = "read_entry"

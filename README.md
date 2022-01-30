@@ -44,6 +44,7 @@ zip = { version = "0.5", default-features = false }
 
 The features available are:
 
+* `aes-crypto`: Enables decryption of files which were encrypted with AES. Supports AE-1 and AE-2 methods.
 * `deflate`: Enables the deflate compression algorithm, which is the default for zip files.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
