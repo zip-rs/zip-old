@@ -4,13 +4,13 @@ use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::iter::FromIterator;
 use zip::write::FileOptions;
-use zip::{CompressionMethod, SUPPORTED_METHODS};
+use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn end_to_end() {
-    for &method in SUPPORTED_METHODS {
+    for &method in SUPPORTED_COMPRESSION_METHODS {
         let file = &mut Cursor::new(Vec::new());
 
         println!("Writing file with {} compression", method);
@@ -25,7 +25,7 @@ fn end_to_end() {
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    for &method in SUPPORTED_METHODS {
+    for &method in SUPPORTED_COMPRESSION_METHODS {
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method).expect("Couldn't write to test file");
 
@@ -64,7 +64,7 @@ fn copy() {
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    for &method in SUPPORTED_METHODS {
+    for &method in SUPPORTED_COMPRESSION_METHODS {
         let mut file = &mut Cursor::new(Vec::new());
         write_test_archive(file, method).expect("Couldn't write to test file");
 
