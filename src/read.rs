@@ -45,7 +45,9 @@ struct Shared {
 
 /// ZIP archive reader
 ///
-/// This type is cheap to clone if this is the case for the reader it uses.
+/// At the moment, this type is cheap to clone if this is the case for the
+/// reader it uses. However, this is not guaranteed by this crate and it may
+/// change in the future.
 ///
 /// ```no_run
 /// use std::io::prelude::*;
