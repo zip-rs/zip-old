@@ -7,13 +7,14 @@ use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::result::{InvalidPassword, ZipError, ZipResult};
 use crate::spec;
-use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
+use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
 use std::path::{Component, Path};
+use std::sync::Arc;
 
 #[cfg(any(
     feature = "deflate",
@@ -33,7 +34,20 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
+/// Extract immutable data from `ZipArchive` to make it cheap to clone
+#[derive(Debug)]
+struct Shared {
+    files: Vec<ZipFileData>,
+    names_map: HashMap<String, usize>,
+    offset: u64,
+    comment: Vec<u8>,
+}
+
 /// ZIP archive reader
+///
+/// At the moment, this type is cheap to clone if this is the case for the
+/// reader it uses. However, this is not guaranteed by this crate and it may
+/// change in the future.
 ///
 /// ```no_run
 /// use std::io::prelude::*;
@@ -52,10 +66,7 @@ mod ffi {
 #[derive(Clone, Debug)]
 pub struct ZipArchive<R> {
     reader: R,
-    files: Vec<ZipFileData>,
-    names_map: HashMap<String, usize>,
-    offset: u64,
-    comment: Vec<u8>,
+    shared: Arc<Shared>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -171,7 +182,7 @@ pub struct ZipFile<'a> {
 }
 
 fn find_content<'a>(
-    data: &mut ZipFileData,
+    data: &ZipFileData,
     reader: &'a mut (impl Read + Seek),
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
     // Parse local header
@@ -185,9 +196,10 @@ fn find_content<'a>(
     let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
     let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
     let magic_and_header = 4 + 22 + 2 + 2;
-    data.data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+    let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+    data.data_start.store(data_start);
 
-    reader.seek(io::SeekFrom::Start(data.data_start))?;
+    reader.seek(io::SeekFrom::Start(data_start))?;
     Ok((reader as &mut dyn Read).take(data.compressed_size))
 }
 
@@ -407,13 +419,14 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             files.push(file);
         }
 
-        Ok(ZipArchive {
-            reader,
+        let shared = Arc::new(Shared {
             files,
             names_map,
             offset: archive_offset,
             comment: footer.zip_file_comment,
-        })
+        });
+
+        Ok(ZipArchive { reader, shared })
     }
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
@@ -456,7 +469,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
     /// Number of files contained in this zip.
     pub fn len(&self) -> usize {
-        self.files.len()
+        self.shared.files.len()
     }
 
     /// Whether this zip archive contains no files
@@ -469,17 +482,17 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// Normally this value is zero, but if the zip has arbitrary data prepended to it, then this value will be the size
     /// of that prepended data.
     pub fn offset(&self) -> u64 {
-        self.offset
+        self.shared.offset
     }
 
     /// Get the comment of the zip archive.
     pub fn comment(&self) -> &[u8] {
-        &self.comment
+        &self.shared.comment
     }
 
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.names_map.keys().map(|s| s.as_str())
+        self.shared.names_map.keys().map(|s| s.as_str())
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -501,7 +514,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
-        let index = match self.names_map.get(name) {
+        let index = match self.shared.names_map.get(name) {
             Some(index) => *index,
             None => {
                 return Err(ZipError::FileNotFound);
@@ -529,8 +542,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
-        self.files
-            .get_mut(file_number)
+        self.shared
+            .files
+            .get(file_number)
             .ok_or(ZipError::FileNotFound)
             .and_then(move |data| {
                 Ok(ZipFile {
@@ -546,10 +560,11 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         file_number: usize,
         mut password: Option<&[u8]>,
     ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
-        if file_number >= self.files.len() {
-            return Err(ZipError::FileNotFound);
-        }
-        let data = &mut self.files[file_number];
+        let data = self
+            .shared
+            .files
+            .get(file_number)
+            .ok_or(ZipError::FileNotFound)?;
 
         match (password, data.encrypted) {
             (None, true) => return Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)),
@@ -658,7 +673,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
         file_comment,
         header_start: offset,
         central_header_start,
-        data_start: 0,
+        data_start: AtomicU64::new(0),
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
@@ -933,7 +948,7 @@ impl<'a> ZipFile<'a> {
 
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
-        self.data.data_start
+        self.data.data_start.load()
     }
 
     /// Get the starting offset of the zip header for this file
@@ -1054,7 +1069,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
         header_start: 0,
-        data_start: 0,
+        data_start: AtomicU64::new(0),
         central_header_start: 0,
         // The external_attributes field is only available in the central directory.
         // We set this to zero, which should be valid as the docs state 'If input came
