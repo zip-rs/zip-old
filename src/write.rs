@@ -1067,11 +1067,9 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
     // version needed to extract
     writer.write_u16::<LittleEndian>(file.version_needed())?;
-    // general purpose bit flag
-    let flag = if !std::str::from_utf8(&file.file_name_raw)
-        .unwrap_or("あ")
-        .is_ascii()
-    {
+    // "General Purpose" bit flag.  When set, indicates that the
+    // name is utf8 compatible (either ascii or utf8-encoded unicode).
+    let flag = if !std::str::from_utf8(&file.file_name_raw).is_ok() {
         1u16 << 11
     } else {
         0
