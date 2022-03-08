@@ -24,11 +24,15 @@
 
 #![warn(missing_docs)]
 
-pub use crate::compression::CompressionMethod;
+pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::ZipArchive;
 pub use crate::types::DateTime;
 pub use crate::write::ZipWriter;
 
+#[cfg(feature = "aes-crypto")]
+mod aes;
+#[cfg(feature = "aes-crypto")]
+mod aes_ctr;
 mod compression;
 mod cp437;
 mod crc32;

@@ -72,6 +72,11 @@ impl CompressionMethod {
     pub const JPEG: Self = CompressionMethod::Unsupported(96);
     pub const WAVPACK: Self = CompressionMethod::Unsupported(97);
     pub const PPMD: Self = CompressionMethod::Unsupported(98);
+    /// Encrypted using AES.
+    ///
+    /// The actual compression method has to be taken from the AES extra data field
+    /// or from `ZipFileData`.
+    pub const AES: Self = CompressionMethod::Unsupported(99);
 }
 impl CompressionMethod {
     /// Converts an u16 to its corresponding CompressionMethod
@@ -93,6 +98,7 @@ impl CompressionMethod {
             12 => CompressionMethod::Bzip2,
             #[cfg(feature = "zstd")]
             93 => CompressionMethod::Zstd,
+            99 => CompressionMethod::AES,
 
             v => CompressionMethod::Unsupported(v),
         }
@@ -115,6 +121,7 @@ impl CompressionMethod {
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
             CompressionMethod::Bzip2 => 12,
+            CompressionMethod::AES => 99,
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => 93,
 
@@ -130,9 +137,24 @@ impl fmt::Display for CompressionMethod {
     }
 }
 
+/// The compression methods which have been implemented.
+pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
+    CompressionMethod::Stored,
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
+    CompressionMethod::Deflated,
+    #[cfg(feature = "bzip2")]
+    CompressionMethod::Bzip2,
+    #[cfg(feature = "zstd")]
+    CompressionMethod::Zstd,
+];
+
 #[cfg(test)]
 mod test {
-    use super::CompressionMethod;
+    use super::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 
     #[test]
     fn from_eq_to() {
@@ -143,22 +165,6 @@ mod test {
             let to = from.to_u16() as u32;
             assert_eq!(v, to);
         }
-    }
-
-    fn methods() -> Vec<CompressionMethod> {
-        vec![
-            CompressionMethod::Stored,
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            ))]
-            CompressionMethod::Deflated,
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2,
-            #[cfg(feature = "zstd")]
-            CompressionMethod::Zstd,
-        ]
     }
 
     #[test]
@@ -173,7 +179,7 @@ mod test {
             assert_eq!(to, back);
         }
 
-        for method in methods() {
+        for &method in SUPPORTED_COMPRESSION_METHODS {
             check_match(method);
         }
     }
@@ -186,7 +192,7 @@ mod test {
             assert_eq!(debug_str, display_str);
         }
 
-        for method in methods() {
+        for &method in SUPPORTED_COMPRESSION_METHODS {
             check_match(method);
         }
     }

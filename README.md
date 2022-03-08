@@ -3,6 +3,7 @@ zip-rs
 
 [![Build Status](https://img.shields.io/github/workflow/status/zip-rs/zip/CI)](https://github.com/zip-rs/zip/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
+[![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/rQ7H9cSsF4)
 
 [Documentation](https://docs.rs/zip/0.5.13/zip/)
 
@@ -43,6 +44,7 @@ zip = { version = "0.5", default-features = false }
 
 The features available are:
 
+* `aes-crypto`: Enables decryption of files which were encrypted with AES. Supports AE-1 and AE-2 methods.
 * `deflate`: Enables the deflate compression algorithm, which is the default for zip files.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
