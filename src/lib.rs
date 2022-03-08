@@ -1,7 +1,26 @@
-//! An ergonomic API for reading and writing ZIP files.
+//! A library for reading and writing ZIP archives.
+//! ZIP is a format designed for cross-platform file "archiving".
+//! That is, storing a collection of files in a single datastream
+//! to make them easier to share between computers.
+//! Additionally, ZIP is able to compress and encrypt files in its
+//! archives.
 //!
 //! The current implementation is based on [PKWARE's APPNOTE.TXT v6.3.9](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)
-// TODO(#184): Decide on the crate's bias: Do we prioritise permissiveness/correctness/speed/ergonomics?
+//!
+//! ---
+//!
+//! [`zip`](`crate`) has support for the most common ZIP archives found in common use.
+//! However, in special cases,
+//! there are some zip archives that are difficult to read or write.
+//!
+//! This is a list of supported features:
+//!
+//! |         | Reading | Writing |
+//! | ------- | ------  | ------- |
+//! | Deflate | ✅ [->](`crate::ZipArchive::by_name`)      | ✅ [->](`crate::write::FileOptions::compression_method`) |
+//!
+//!
+//!
 
 #![warn(missing_docs)]
 

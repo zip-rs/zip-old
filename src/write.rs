@@ -42,45 +42,49 @@ enum GenericZipWriter<W: Write + io::Seek> {
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, W>),
 }
-
-/// ZIP archive generator
-///
-/// Handles the bookkeeping involved in building an archive, and provides an
-/// API to edit its contents.
-///
-/// ```
-/// # fn doit() -> zip::result::ZipResult<()>
-/// # {
-/// # use zip::ZipWriter;
-/// use std::io::Write;
-/// use zip::write::FileOptions;
-///
-/// // We use a buffer here, though you'd normally use a `File`
-/// let mut buf = [0; 65536];
-/// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
-///
-/// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-/// zip.start_file("hello_world.txt", options)?;
-/// zip.write(b"Hello, World!")?;
-///
-/// // Apply the changes you've made.
-/// // Dropping the `ZipWriter` will have the same effect, but may silently fail
-/// zip.finish()?;
-///
-/// # Ok(())
-/// # }
-/// # doit().unwrap();
-/// ```
-pub struct ZipWriter<W: Write + io::Seek> {
-    inner: GenericZipWriter<W>,
-    files: Vec<ZipFileData>,
-    stats: ZipWriterStats,
-    writing_to_file: bool,
-    writing_to_extra_field: bool,
-    writing_to_central_extra_field_only: bool,
-    writing_raw: bool,
-    comment: Vec<u8>,
+// Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
+pub(crate) mod zip_writer {
+    use super::*;
+    /// ZIP archive generator
+    ///
+    /// Handles the bookkeeping involved in building an archive, and provides an
+    /// API to edit its contents.
+    ///
+    /// ```
+    /// # fn doit() -> zip::result::ZipResult<()>
+    /// # {
+    /// # use zip::ZipWriter;
+    /// use std::io::Write;
+    /// use zip::write::FileOptions;
+    ///
+    /// // We use a buffer here, though you'd normally use a `File`
+    /// let mut buf = [0; 65536];
+    /// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
+    ///
+    /// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    /// zip.start_file("hello_world.txt", options)?;
+    /// zip.write(b"Hello, World!")?;
+    ///
+    /// // Apply the changes you've made.
+    /// // Dropping the `ZipWriter` will have the same effect, but may silently fail
+    /// zip.finish()?;
+    ///
+    /// # Ok(())
+    /// # }
+    /// # doit().unwrap();
+    /// ```
+    pub struct ZipWriter<W: Write + io::Seek> {
+        pub(super) inner: GenericZipWriter<W>,
+        pub(super) files: Vec<ZipFileData>,
+        pub(super) stats: ZipWriterStats,
+        pub(super) writing_to_file: bool,
+        pub(super) writing_to_extra_field: bool,
+        pub(super) writing_to_central_extra_field_only: bool,
+        pub(super) writing_raw: bool,
+        pub(super) comment: Vec<u8>,
+    }
 }
+pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
 struct ZipWriterStats {
