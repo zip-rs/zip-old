@@ -1,0 +1,18 @@
+[package]
+name = "zip"
+version = "0.10.0-pre1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+miniz_oxide = { version = "0.5.1", optional = true }
+zip-format = { path = "zip-format" }
+
+[features]
+default = ["read", "write"]
+read = ["read-deflate"]
+write = ["write-deflate"]
+
+read-deflate = ["miniz_oxide"]
+write-deflate = ["miniz_oxide"]
