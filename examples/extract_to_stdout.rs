@@ -50,7 +50,7 @@ pub fn main() -> io::Result<()> {
         // finally, read everything out of the archive!
         let mut data = file
             // construct the decompression state
-            .into_reader(&mut decompressor)?
+            .into_data(&mut decompressor)?
             // and, if successful, seek to the file contents
             // BUF: .seek_to_data(|b| b)?;
             .seek_to_data(std::io::BufReader::new)?;
