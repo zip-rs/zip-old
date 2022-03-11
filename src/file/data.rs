@@ -17,7 +17,10 @@ impl<'a> Data<'a> {
                 zip_format::CompressionMethod::DEFLATE => ReaderImpl::Deflate {
                     disk: (),
                     remaining: header.len,
-                    decompressor: &mut decompressor.deflate,
+                    decompressor: {
+                        decompressor.deflate.0.init();
+                        &mut decompressor.deflate
+                    },
                     out_pos: 0,
                     read_cursor: 0,
                 },
