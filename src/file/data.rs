@@ -125,7 +125,9 @@ impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
                     cursor = 0;
                 }
                 let len = out.checked_sub(cursor).unwrap().min(buf.len());
-                buf[..len].copy_from_slice(&decompressed[cursor..len]);
+                buf[..len].copy_from_slice(&decompressed[cursor..][..len]);
+                *read_cursor = (cursor + len) as u16;
+                *out_pos = out as u16;
                 Ok(len)
             }
             ReaderImpl::Stored { disk, remaining } => {
