@@ -6,7 +6,7 @@ pub struct Reader<'a, D, Buffered = D>(ReaderImpl<'a, D, Buffered>);
 #[derive(Default)]
 pub struct Decompressor {
     #[cfg(feature = "read-deflate")]
-    deflate: Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
+    deflate: Option<Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>>,
 }
 
 pub struct ReaderBuilder<'a, D> {
@@ -54,8 +54,9 @@ impl<'a, D> ReaderBuilder<'a, D> {
                     disk: (),
                     remaining: header.len,
                     decompressor: {
-                        decompressor.deflate.0.init();
-                        &mut decompressor.deflate
+                        let deflate = decompressor.deflate.get_or_insert_with(Default::default);
+                        deflate.0.init();
+                        deflate
                     },
                     out_pos: 0,
                     read_cursor: 0,
