@@ -51,11 +51,11 @@ impl<'a> Footer<&'a [u8]> {
     }
 }
 impl<D> Footer<D> {
-    pub fn into_directory(self) -> Result<crate::Persisted<Directory, D>, error::DiskMismatch> {
+    pub fn into_directory(self) -> Result<Directory<D>, error::DiskMismatch> {
         (self.descriptor.directory_location_disk == self.descriptor.disk_id())
-            .then(|| crate::Persisted {
+            .then(|| Directory {
                 disk: self.disk,
-                structure: Directory {
+                span: DirectorySpan {
                     offset: self.descriptor.directory_location_offset,
                     entries: self.descriptor.directory_entries,
                 },
@@ -77,11 +77,15 @@ impl<D> Footer<D> {
         }
     }
 }
-pub struct Directory {
+pub struct Directory<D> {
+    pub disk: D,
+    pub span: DirectorySpan,
+}
+pub struct DirectorySpan {
     offset: u32,
     entries: u16,
 }
-impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
+impl<D: io::Seek + io::Read> Directory<D> {
     /// It is highly recommended to use a buffered disk for this operation
     pub fn seek_to_files<M>(
         mut self,
@@ -90,10 +94,10 @@ impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
         M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
     {
         self.disk
-            .seek(std::io::SeekFrom::Start(self.structure.offset as u64))?;
+            .seek(std::io::SeekFrom::Start(self.span.offset as u64))?;
         Ok(DirectoryIter {
             disk: self.disk,
-            entries: self.structure.entries,
+            entries: self.span.entries,
             metadata_parser: core::marker::PhantomData,
         })
     }
