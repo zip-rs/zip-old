@@ -160,14 +160,22 @@ impl<
             self.disk.read_exact(&mut buf)?;
             let entry =
                 zip_format::DirectoryEntry::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
-
+            let size = entry.compressed_size.get() as u64;
             Ok(file::File {
                 disk: (),
                 meta: M::try_from((entry, &mut self.disk))?,
-                header: file::FileHeader::new(
+                locator: file::FileLocator::new(
                     entry.offset_from_start.get() as u64,
-                    entry.compressed_size.get() as u64,
-                    entry.method,
+                    match entry.method {
+                        zip_format::CompressionMethod::STORED => crate::file::FileStorage::Stored(size),
+                        #[cfg(feature = "read-deflate")]
+                        zip_format::CompressionMethod::DEFLATE => if entry.flags.get() & 0b100 != 0 {
+                            crate::file::FileStorage::Deflated
+                        } else {
+                            crate::file::FileStorage::LimitDeflated(size)
+                        },
+                        _ => crate::file::FileStorage::Unknown,
+                    },
                     entry.disk_number.get() as _,
                 ),
             })

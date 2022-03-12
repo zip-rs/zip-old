@@ -49,29 +49,32 @@ enum ReadImpl<'a, D, Buffered> {
 impl<'a, D> ReadBuilder<'a, D> {
     pub(super) fn new(
         disk: D,
-        header: super::FileHeader,
+        header: super::FileLocator,
         st: &'a mut Store,
     ) -> Result<Self, error::MethodNotSupported> {
+        let make_deflate = move |remaining, st: &'a mut Store| ReadImpl::Deflate {
+            disk: (),
+            remaining,
+            decompressor: {
+                let deflate = st.deflate.get_or_insert_with(Default::default);
+                deflate.0.init();
+                deflate
+            },
+            out_pos: 0,
+            read_cursor: 0,
+        };
         Ok(Self {
             disk,
             start: header.start,
-            imp: match header.method {
-                zip_format::CompressionMethod::STORED => ReadImpl::Stored {
+            imp: match header.storage {
+                super::FileStorage::Stored(len) => ReadImpl::Stored {
                     disk: (),
-                    remaining: header.len,
+                    remaining: len,
                 },
                 #[cfg(feature = "read-deflate")]
-                zip_format::CompressionMethod::DEFLATE => ReadImpl::Deflate {
-                    disk: (),
-                    remaining: header.len,
-                    decompressor: {
-                        let deflate = st.deflate.get_or_insert_with(Default::default);
-                        deflate.0.init();
-                        deflate
-                    },
-                    out_pos: 0,
-                    read_cursor: 0,
-                },
+                super::FileStorage::Deflated => make_deflate(u64::MAX, st),
+                #[cfg(feature = "read-deflate")]
+                super::FileStorage::LimitDeflated(n) => make_deflate(n, st),
                 _ => return Err(error::MethodNotSupported(())),
             },
         })
