@@ -3,6 +3,7 @@ macro_rules! errors {
         $(
 
             #[derive(Debug)]
+            #[doc = $desc]
             pub struct $name(pub(crate) ());
             impl core::fmt::Display for $name {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
