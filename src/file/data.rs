@@ -1,10 +1,32 @@
 use crate::error;
 use std::io;
 
+pub struct Reader<'a, D, Buffered = D>(ReaderImpl<'a, D, Buffered>);
+
+#[derive(Default)]
+pub struct Decompressor {
+    deflate: Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
+}
+
 pub struct ReaderBuilder<'a> {
     imp: ReaderImpl<'a, (), ()>,
     start: u64,
 }
+
+enum ReaderImpl<'a, D, Buffered> {
+    Stored {
+        disk: D,
+        remaining: u64,
+    },
+    Deflate {
+        disk: Buffered,
+        remaining: u64,
+        decompressor: &'a mut (miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer),
+        out_pos: u16,
+        read_cursor: u16,
+    },
+}
+
 impl<'a> ReaderBuilder<'a> {
     pub(super) fn new(
         header: super::FileHeader,
@@ -32,6 +54,7 @@ impl<'a> ReaderBuilder<'a> {
         })
     }
 }
+
 impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
     pub fn seek_to_data<Buffered>(
         mut self,
@@ -71,30 +94,6 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
     }
 }
 
-struct InflateBuffer([u8; 32 * 1024]);
-impl Default for InflateBuffer {
-    fn default() -> Self {
-        Self([0; 32 * 1024])
-    }
-}
-#[derive(Default)]
-pub struct Decompressor {
-    deflate: Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
-}
-enum ReaderImpl<'a, D, Buffered> {
-    Stored {
-        disk: D,
-        remaining: u64,
-    },
-    Deflate {
-        disk: Buffered,
-        remaining: u64,
-        decompressor: &'a mut (miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer),
-        out_pos: u16,
-        read_cursor: u16,
-    },
-}
-pub struct Reader<'a, D, Buffered = D>(ReaderImpl<'a, D, Buffered>);
 impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
@@ -140,5 +139,12 @@ impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
                 Ok(n)
             }
         }
+    }
+}
+
+struct InflateBuffer([u8; 32 * 1024]);
+impl Default for InflateBuffer {
+    fn default() -> Self {
+        Self([0; 32 * 1024])
     }
 }
