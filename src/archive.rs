@@ -83,7 +83,7 @@ pub struct Directory {
 }
 impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
     /// It is highly recommended to use a buffered disk for this operation
-    pub fn seek_to_files<M>(mut self) -> io::Result<impl Iterator<Item = io::Result<file::File<M>>>>
+    pub fn seek_to_files<M>(mut self) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>>
     where
         M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
     {
@@ -100,6 +100,14 @@ struct DirectoryIter<M, D> {
     disk: D,
     entries: u16,
     metadata_parser: core::marker::PhantomData<fn() -> M>,
+}
+impl<M, D> ExactSizeIterator for DirectoryIter<M, D>
+where
+    Self: Iterator,
+{
+    fn len(&self) -> usize {
+        self.entries as usize
+    }
 }
 // TODO: Design an API for reading metadata from an entry
 impl<
