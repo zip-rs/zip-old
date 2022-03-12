@@ -62,17 +62,17 @@ gen! {
         offset_from_start: U32,
         comment_length: U16,
     }
-    FooterLocator: 0x06054b50 {
+    FooterLocator: 0x07064b50 {
         directory_start_disk: U32,
         footer_offset: U64,
         disk_count: U32,
     }
-    FooterV2: 0x06054b50 {
+    FooterV2: 0x06064b50 {
         footer_size: U64,
         made_by: U16,
         required_version: U16,
         disk_number: U32,
-        directory_start_disk: U64,
+        directory_start_disk: U32,
         entries_on_this_disk: U64,
         entries: U64,
         directory_size: U64,
