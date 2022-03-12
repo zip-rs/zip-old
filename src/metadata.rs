@@ -1,10 +1,15 @@
 use std::io;
+pub trait Metadata<D>:
+    for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>
+{
+}
 // TODO: Provide useful alternatives:
 //       - a `Name` that only saves the name of the file
 //       - something that decodes some well-known extra fields - maybe in another crate?
 pub struct Full {
     pub name: Vec<u8>,
 }
+impl<D: io::Seek + io::Read> Metadata<D> for Full {}
 impl<'a, 'b, D: io::Seek + io::Read> TryFrom<(&'a zip_format::DirectoryEntry, &'b mut D)> for Full {
     type Error = std::io::Error;
     fn try_from((entry, disk): (&zip_format::DirectoryEntry, &mut D)) -> io::Result<Self> {

@@ -1,4 +1,4 @@
-use crate::{error, file};
+use crate::{error, file, metadata};
 
 use std::io;
 
@@ -87,12 +87,9 @@ pub struct DirectorySpan {
 }
 impl<D: io::Seek + io::Read> Directory<D> {
     /// It is highly recommended to use a buffered disk for this operation
-    pub fn seek_to_files<M>(
+    pub fn seek_to_files<M: metadata::Metadata<D>>(
         mut self,
-    ) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>>
-    where
-        M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
-    {
+    ) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>> {
         self.disk
             .seek(std::io::SeekFrom::Start(self.span.offset as u64))?;
         Ok(DirectoryIter {
