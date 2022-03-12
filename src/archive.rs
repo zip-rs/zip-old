@@ -83,7 +83,9 @@ pub struct Directory {
 }
 impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
     /// It is highly recommended to use a buffered disk for this operation
-    pub fn seek_to_files<M>(mut self) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>>
+    pub fn seek_to_files<M>(
+        mut self,
+    ) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>>
     where
         M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
     {
@@ -125,6 +127,7 @@ impl<
                 zip_format::DirectoryEntry::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
 
             Ok(file::File {
+                disk: (),
                 meta: M::try_from((entry, &mut self.disk))?,
                 header: file::FileHeader::new(
                     entry.offset_from_start.get() as u64,
