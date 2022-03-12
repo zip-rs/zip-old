@@ -42,37 +42,46 @@ impl<'a> Footer<&'a [u8]> {
             .map(|w| u16::from_le_bytes([w[0], w[1]]))
             .enumerate()
             .filter(|(i, n)| *n as usize == *i)
-            .find_map(|(i, _)| zip_format::Footer::as_suffix(&disk[..disk.len() - i]).zip(Some(disk.len() - i)))
+            .find_map(|(i, _)| {
+                zip_format::Footer::as_suffix(&disk[..disk.len() - i]).zip(Some(disk.len() - i))
+            })
             .and_then(|(footer, i)| {
                 Some(Self {
                     disk,
-                    descriptor: if let Some(locator) = i.checked_sub(core::mem::size_of::<zip_format::Footer>() + 4)
-                        .and_then(|i| zip_format::FooterLocator::as_suffix(&disk[..i])) {
-                        if locator.directory_start_disk.get() != footer.disk_number.get() as u32 {
-                            return None;
-                        }
-                        
-                        // FIXME: This will fail when `from_io` is called on an archive with a large comment
-                        let offset = locator.footer_offset.get().checked_sub(offset)? as usize;
-                        let footer = zip_format::FooterV2::as_prefix(&disk[offset..])?;
-                        DiskDescriptor {
-                            disk_id: footer.disk_number.get(),
-                            directory_location_disk: footer.directory_start_disk.get(),
-                            directory_location_offset: footer.offset_from_start.get(),
-                            directory_entries: footer.entries.get(),
-                        }
-                    } else { 
-                        DiskDescriptor {
-                            disk_id: footer.disk_number.get() as _,
-                            directory_location_disk: footer.directory_start_disk.get() as _,
-                            directory_location_offset: footer.offset_from_start.get() as _,
-                            directory_entries: footer.entries.get() as _,
-                        }
-                    }
+                    descriptor: i
+                        .checked_sub(core::mem::size_of::<zip_format::Footer>() + 4)
+                        .and_then(|i| zip_format::FooterLocator::as_suffix(&disk[..i]))
+                        .map_or_else(
+                            || {
+                                Some(DiskDescriptor {
+                                    disk_id: footer.disk_number.get() as _,
+                                    directory_location_disk: footer.directory_start_disk.get() as _,
+                                    directory_location_offset: footer.offset_from_start.get() as _,
+                                    directory_entries: footer.entries.get() as _,
+                                })
+                            },
+                            |locator| {
+                                if locator.directory_start_disk.get()
+                                    != footer.disk_number.get() as u32
+                                {
+                                    return None;
+                                }
+
+                                // FIXME: This will fail when `from_io` is called on an archive with a large comment
+                                let offset =
+                                    locator.footer_offset.get().checked_sub(offset)? as usize;
+                                let footer = zip_format::FooterV2::as_prefix(&disk[offset..])?;
+                                Some(DiskDescriptor {
+                                    disk_id: footer.disk_number.get(),
+                                    directory_location_disk: footer.directory_start_disk.get(),
+                                    directory_location_offset: footer.offset_from_start.get(),
+                                    directory_entries: footer.entries.get(),
+                                })
+                            },
+                        )?,
                 })
             })
             .ok_or(error::NotAnArchive(()))
-            
     }
 }
 impl<D> Footer<D> {
