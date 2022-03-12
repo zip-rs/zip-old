@@ -3,7 +3,7 @@ use crate::error;
 mod data;
 pub use data::{Decompressor, Reader, ReaderBuilder};
 
-pub struct File<M> {
+pub struct File<M = crate::metadata::Full> {
     pub meta: M,
     pub header: FileHeader,
 }
