@@ -8,13 +8,13 @@ pub struct Footer<D> {
 }
 #[derive(Copy, Clone)]
 pub struct DiskDescriptor {
-    disk_id: u16,
-    directory_location_disk: u16,
-    directory_location_offset: u32,
-    directory_entries: u16,
+    disk_id: u32,
+    directory_location_disk: u32,
+    directory_location_offset: u64,
+    directory_entries: u64,
 }
 impl DiskDescriptor {
-    pub fn disk_id(&self) -> u16 {
+    pub fn disk_id(&self) -> u32 {
         self.disk_id
     }
 }
@@ -23,31 +23,54 @@ impl<D: io::Read + io::Seek> Footer<D> {
         // TODO: optimize this
         let mut buf = vec![];
         let n = disk.seek(std::io::SeekFrom::End(0))?;
-        disk.seek(std::io::SeekFrom::Start(n.saturating_sub(64 * 1024)))?;
+        let offset = disk.seek(std::io::SeekFrom::Start(n.saturating_sub(64 * 1024 + core::mem::size_of::<zip_format::Footer>() as u64 + 4 - 2)))?;
         disk.read_to_end(&mut buf)?;
-        Ok(Footer::from_buf(&buf).map(move |v| v.with_disk(disk))?)
+        Ok(Footer::from_buf_at_offset(&buf, offset)?.with_disk(disk))
     }
 }
 impl<'a> Footer<&'a [u8]> {
     /// Load a zip central directory from a buffer
     pub fn from_buf(disk: &'a [u8]) -> Result<Self, error::NotAnArchive> {
+        Self::from_buf_at_offset(disk, 0)
+    }
+    pub fn from_buf_at_offset(disk: &'a [u8], offset: u64) -> Result<Self, error::NotAnArchive> {
         disk.windows(2)
             .rev()
             .take(u16::MAX as _)
             .map(|w| u16::from_le_bytes([w[0], w[1]]))
             .enumerate()
             .filter(|(i, n)| *n as usize == *i)
-            .find_map(|(i, _)| zip_format::Footer::as_suffix(&disk[..disk.len() - i]))
-            .map(|footer| Self {
-                disk,
-                descriptor: DiskDescriptor {
-                    disk_id: footer.disk_number.get(),
-                    directory_location_disk: footer.directory_start_disk.get(),
-                    directory_location_offset: footer.offset_from_start.get(),
-                    directory_entries: footer.entries.get(),
-                },
+            .find_map(|(i, _)| zip_format::Footer::as_suffix(&disk[..disk.len() - i]).zip(Some(disk.len() - i)))
+            .and_then(|(footer, i)| {
+                Some(Self {
+                    disk,
+                    descriptor: if let Some(locator) = i.checked_sub(core::mem::size_of::<zip_format::Footer>() + 4)
+                        .and_then(|i| zip_format::FooterLocator::as_suffix(&disk[..i])) {
+                        if locator.directory_start_disk.get() != footer.disk_number.get() as u32 {
+                            return None;
+                        }
+                        
+                        // FIXME: This will fail when `from_io` is called on an archive with a large comment
+                        let offset = locator.footer_offset.get().checked_sub(offset)? as usize;
+                        let footer = zip_format::FooterV2::as_prefix(&disk[offset..])?;
+                        DiskDescriptor {
+                            disk_id: footer.disk_number.get(),
+                            directory_location_disk: footer.directory_start_disk.get(),
+                            directory_location_offset: footer.offset_from_start.get(),
+                            directory_entries: footer.entries.get(),
+                        }
+                    } else { 
+                        DiskDescriptor {
+                            disk_id: footer.disk_number.get() as _,
+                            directory_location_disk: footer.directory_start_disk.get() as _,
+                            directory_location_offset: footer.offset_from_start.get() as _,
+                            directory_entries: footer.entries.get() as _,
+                        }
+                    }
+                })
             })
             .ok_or(error::NotAnArchive(()))
+            
     }
 }
 impl<D> Footer<D> {
@@ -82,8 +105,8 @@ pub struct Directory<D> {
     pub span: DirectorySpan,
 }
 pub struct DirectorySpan {
-    offset: u32,
-    entries: u16,
+    offset: u64,
+    entries: u64,
 }
 impl<D: io::Seek + io::Read> Directory<D> {
     /// It is highly recommended to use a buffered disk for this operation
@@ -101,7 +124,7 @@ impl<D: io::Seek + io::Read> Directory<D> {
 }
 struct DirectoryIter<M, D> {
     disk: D,
-    entries: u16,
+    entries: u64,
     metadata_parser: core::marker::PhantomData<fn() -> M>,
 }
 impl<M, D> ExactSizeIterator for DirectoryIter<M, D>
@@ -134,7 +157,7 @@ impl<
                     entry.offset_from_start.get() as u64,
                     entry.compressed_size.get() as u64,
                     entry.method,
-                    entry.disk_number.get(),
+                    entry.disk_number.get() as _,
                 ),
             })
         })

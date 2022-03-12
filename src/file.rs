@@ -13,14 +13,14 @@ pub struct FileHeader {
     start: u64,
     len: u64,
     method: zip_format::CompressionMethod,
-    disk_id: u16,
+    disk_id: u32,
 }
 impl FileHeader {
     pub(crate) fn new(
         start: u64,
         len: u64,
         method: zip_format::CompressionMethod,
-        disk_id: u16,
+        disk_id: u32,
     ) -> Self {
         Self {
             start,
