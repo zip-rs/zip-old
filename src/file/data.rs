@@ -1,11 +1,11 @@
 use crate::error;
 use std::io;
 
-pub struct Data<'a> {
+pub struct ReaderBuilder<'a> {
     imp: ReaderImpl<'a, (), ()>,
     start: u64,
 }
-impl<'a> Data<'a> {
+impl<'a> ReaderBuilder<'a> {
     pub(super) fn new(
         header: super::FileHeader,
         decompressor: &'a mut Decompressor,
@@ -32,7 +32,7 @@ impl<'a> Data<'a> {
         })
     }
 }
-impl<'a, D: io::Seek + io::Read> crate::Persisted<Data<'a>, D> {
+impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
     pub fn seek_to_data<Buffered>(
         mut self,
         into_buffered: impl FnOnce(D) -> Buffered,

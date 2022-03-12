@@ -14,7 +14,7 @@ pub fn main() -> io::Result<()> {
     let path = std::env::args().nth(1).expect("Usage: zip-extract <path>");
 
     // open up the zip archive and prepare an extra file handle to read the file directory
-    let mut footer = zip::Footer::read_from_io(std::fs::File::open(&path)?)?;
+    let mut footer = zip::Footer::from_io(std::fs::File::open(&path)?)?;
     let mut reader = footer
         .as_mut()
         .cloned()
@@ -35,7 +35,7 @@ pub fn main() -> io::Result<()> {
 
         // construct the decompression state and seek to the file contents
         let mut data = file
-            .into_data(&mut decompressor)?
+            .reader(&mut decompressor)?
             .seek_to_data(std::io::BufReader::new)?;
         // finally, read everything out of the archive!
         std::io::copy(&mut data, &mut std::io::stdout().lock())?;

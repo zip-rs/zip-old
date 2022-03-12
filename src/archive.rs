@@ -14,20 +14,16 @@ impl Footer {
     }
 }
 impl Footer {
-    pub fn read_from_io<D: io::Read + io::Seek>(
-        mut disk: D,
-    ) -> io::Result<crate::Persisted<Self, D>> {
+    pub fn from_io<D: io::Read + io::Seek>(mut disk: D) -> io::Result<crate::Persisted<Self, D>> {
         // TODO: optimize this
         let mut buf = vec![];
         let n = disk.seek(std::io::SeekFrom::End(0))?;
         disk.seek(std::io::SeekFrom::Start(n.saturating_sub(64 * 1024)))?;
         disk.read_to_end(&mut buf)?;
-        Ok(Self::read_from_buf(&buf).map(move |persisted| persisted.map_disk(move |_| disk))?)
+        Ok(Self::from_buf(&buf).map(move |persisted| persisted.map_disk(move |_| disk))?)
     }
     /// Load a zip central directory from a buffer
-    pub fn read_from_buf(
-        disk: &[u8],
-    ) -> Result<crate::Persisted<Footer, &[u8]>, error::NotAnArchive> {
+    pub fn from_buf(disk: &[u8]) -> Result<crate::Persisted<Footer, &[u8]>, error::NotAnArchive> {
         disk.windows(2)
             .rev()
             .take(u16::MAX as _)
