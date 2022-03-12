@@ -14,11 +14,8 @@ pub fn main() -> io::Result<()> {
     let path = std::env::args().nth(1).expect("Usage: zip-extract <path>");
 
     // open up the zip archive and prepare an extra file handle to read the file directory
-    let mut footer = zip::Footer::from_io(std::fs::File::open(&path)?)?;
-    let mut reader = footer
-        .as_mut()
-        .cloned()
-        .with_disk(std::fs::File::open(&path)?);
+    let footer = zip::Footer::from_io(std::fs::File::open(&path)?)?;
+    let mut reader = footer.with_disk(std::fs::File::open(&path)?);
 
     // also, allocate the structures we will use for decompression
     let mut decompressor = zip::file::Decompressor::default();
@@ -30,7 +27,7 @@ pub fn main() -> io::Result<()> {
     for file in files {
         // resolve the files within the open archive
         // NOTE: `in_disk` could be pointed at another file for multi-file archives
-        let file = file?.in_disk(reader.as_mut().cloned())?;
+        let file = file?.in_disk(reader.as_mut())?;
         println!("{}", String::from_utf8_lossy(&file.name));
 
         // construct the decompression state and seek to the file contents

@@ -1,29 +1,36 @@
 use crate::{error, file};
 
 use std::io;
+
+pub struct Footer<D> {
+    pub disk: D,
+    pub descriptor: DiskDescriptor,
+}
 #[derive(Copy, Clone)]
-pub struct Footer {
+pub struct DiskDescriptor {
     disk_id: u16,
     directory_location_disk: u16,
     directory_location_offset: u32,
     directory_entries: u16,
 }
-impl Footer {
+impl DiskDescriptor {
     pub fn disk_id(&self) -> u16 {
         self.disk_id
     }
 }
-impl Footer {
-    pub fn from_io<D: io::Read + io::Seek>(mut disk: D) -> io::Result<crate::Persisted<Self, D>> {
+impl<D: io::Read + io::Seek> Footer<D> {
+    pub fn from_io(mut disk: D) -> io::Result<Self> {
         // TODO: optimize this
         let mut buf = vec![];
         let n = disk.seek(std::io::SeekFrom::End(0))?;
         disk.seek(std::io::SeekFrom::Start(n.saturating_sub(64 * 1024)))?;
         disk.read_to_end(&mut buf)?;
-        Ok(Self::from_buf(&buf).map(move |persisted| persisted.map_disk(move |_| disk))?)
+        Ok(Footer::from_buf(&buf).map(move |v| v.with_disk(disk))?)
     }
+}
+impl<'a> Footer<&'a [u8]> {
     /// Load a zip central directory from a buffer
-    pub fn from_buf(disk: &[u8]) -> Result<crate::Persisted<Footer, &[u8]>, error::NotAnArchive> {
+    pub fn from_buf(disk: &'a [u8]) -> Result<Self, error::NotAnArchive> {
         disk.windows(2)
             .rev()
             .take(u16::MAX as _)
@@ -31,9 +38,9 @@ impl Footer {
             .enumerate()
             .filter(|(i, n)| *n as usize == *i)
             .find_map(|(i, _)| zip_format::Footer::as_suffix(&disk[..disk.len() - i]))
-            .map(|footer| crate::Persisted {
+            .map(|footer| Self {
                 disk,
-                structure: Self {
+                descriptor: DiskDescriptor {
                     disk_id: footer.disk_number.get(),
                     directory_location_disk: footer.directory_start_disk.get(),
                     directory_location_offset: footer.offset_from_start.get(),
@@ -43,16 +50,31 @@ impl Footer {
             .ok_or(error::NotAnArchive(()))
     }
 }
-impl<D> crate::Persisted<Footer, D> {
+impl<D> Footer<D> {
     pub fn into_directory(self) -> Result<crate::Persisted<Directory, D>, error::DiskMismatch> {
-        (self.structure.directory_location_disk == self.structure.disk_id)
-            .then(|| {
-                self.map(|footer| Directory {
-                    offset: footer.directory_location_offset,
-                    entries: footer.directory_entries,
-                })
+        (self.descriptor.directory_location_disk == self.descriptor.disk_id())
+            .then(|| crate::Persisted {
+                disk: self.disk,
+                structure: Directory {
+                    offset: self.descriptor.directory_location_offset,
+                    entries: self.descriptor.directory_entries,
+                },
             })
             .ok_or(error::DiskMismatch(()))
+    }
+}
+impl<D> Footer<D> {
+    pub fn with_disk<U>(&self, disk: U) -> Footer<U> {
+        Footer {
+            disk,
+            descriptor: self.descriptor.clone(),
+        }
+    }
+    pub fn as_mut(&mut self) -> Footer<&mut D> {
+        Footer {
+            disk: &mut self.disk,
+            descriptor: self.descriptor.clone(),
+        }
     }
 }
 pub struct Directory {

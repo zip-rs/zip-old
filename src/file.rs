@@ -33,10 +33,13 @@ impl FileHeader {
 impl<M> File<M> {
     pub fn in_disk<D>(
         self,
-        disk: crate::Persisted<crate::Footer, D>,
+        disk: crate::Footer<D>,
     ) -> Result<crate::Persisted<File<M>, D>, error::DiskMismatch> {
-        (self.header.disk_id == disk.structure.disk_id())
-            .then(move || disk.map(move |_| self))
+        (self.header.disk_id == disk.descriptor.disk_id())
+            .then(move || crate::Persisted {
+                disk: disk.disk,
+                structure: self,
+            })
             .ok_or(error::DiskMismatch(()))
     }
 }
