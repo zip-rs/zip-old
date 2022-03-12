@@ -5,6 +5,7 @@ pub struct Reader<'a, D, Buffered = D>(ReaderImpl<'a, D, Buffered>);
 
 #[derive(Default)]
 pub struct Decompressor {
+    #[cfg(feature = "read-deflate")]
     deflate: Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
 }
 
@@ -14,10 +15,16 @@ pub struct ReaderBuilder<'a> {
 }
 
 enum ReaderImpl<'a, D, Buffered> {
+    Never {
+        never: core::convert::Infallible,
+        b: Buffered,
+        stored: &'a mut (),
+    },
     Stored {
         disk: D,
         remaining: u64,
     },
+    #[cfg(feature = "read-deflate")]
     Deflate {
         disk: Buffered,
         remaining: u64,
@@ -39,6 +46,7 @@ impl<'a> ReaderBuilder<'a> {
                     disk: (),
                     remaining: header.len,
                 },
+                #[cfg(feature = "read-deflate")]
                 zip_format::CompressionMethod::DEFLATE => ReaderImpl::Deflate {
                     disk: (),
                     remaining: header.len,
@@ -70,6 +78,7 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
             header.name_len.get() as i64 + header.metadata_len.get() as i64,
         ))?;
         Ok(Reader(match self.structure.imp {
+            ReaderImpl::Never { never, .. } => match never {},
             ReaderImpl::Stored {
                 remaining,
                 disk: (),
@@ -77,6 +86,7 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
                 remaining,
                 disk: self.disk,
             },
+            #[cfg(feature = "read-deflate")]
             ReaderImpl::Deflate {
                 remaining,
                 decompressor,
@@ -97,6 +107,14 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
 impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
+            
+            ReaderImpl::Never { never, .. } => match *never {},
+            ReaderImpl::Stored { disk, remaining } => {
+                let n = disk.take(*remaining).read(buf)?;
+                *remaining -= n as u64;
+                Ok(n)
+            }
+            #[cfg(feature = "read-deflate")]
             ReaderImpl::Deflate {
                 disk,
                 decompressor,
@@ -132,11 +150,6 @@ impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
                 *read_cursor = (cursor + len) as u16;
                 *out_pos = out as u16;
                 Ok(len)
-            }
-            ReaderImpl::Stored { disk, remaining } => {
-                let n = disk.take(*remaining).read(buf)?;
-                *remaining -= n as u64;
-                Ok(n)
             }
         }
     }
