@@ -1,4 +1,4 @@
-use crate::{file, error};
+use crate::{error, file};
 
 use std::io;
 #[derive(Copy, Clone)]
@@ -9,7 +9,9 @@ pub struct Footer {
     directory_entries: u16,
 }
 impl Footer {
-    pub fn read_from_io<D: io::Read + io::Seek>(mut disk: D) -> io::Result<crate::Persisted<Self, D>> {
+    pub fn read_from_io<D: io::Read + io::Seek>(
+        mut disk: D,
+    ) -> io::Result<crate::Persisted<Self, D>> {
         // TODO: optimize this
         let mut buf = vec![];
         let n = disk.seek(std::io::SeekFrom::End(0))?;
@@ -18,7 +20,9 @@ impl Footer {
         Ok(Self::read_from_buf(&buf).map(move |persisted| persisted.map_disk(move |_| disk))?)
     }
     /// Load a zip central directory from a buffer
-    pub fn read_from_buf(disk: &[u8]) -> Result<crate::Persisted<Footer, &[u8]>, error::NotAnArchive> {
+    pub fn read_from_buf(
+        disk: &[u8],
+    ) -> Result<crate::Persisted<Footer, &[u8]>, error::NotAnArchive> {
         disk.windows(2)
             .rev()
             .take(u16::MAX as _)
@@ -58,7 +62,7 @@ impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
     /// It is highly recommended to use a buffered disk for this operation
     pub fn seek_to_files<M>(mut self) -> io::Result<impl Iterator<Item = io::Result<file::File<M>>>>
     where
-    M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
+        M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
     {
         self.disk
             .seek(std::io::SeekFrom::Start(self.structure.offset as u64))?;

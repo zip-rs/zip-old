@@ -1,12 +1,15 @@
-use std::io;
 use crate::error;
+use std::io;
 
 pub struct Data<'a> {
     imp: ReaderImpl<'a, (), ()>,
     start: u64,
 }
 impl<'a> Data<'a> {
-    pub(super) fn new(header: super::FileHeader, decompressor: &'a mut Decompressor) -> Result<Self, error::MethodNotSupported> {
+    pub(super) fn new(
+        header: super::FileHeader,
+        decompressor: &'a mut Decompressor,
+    ) -> Result<Self, error::MethodNotSupported> {
         Ok(Self {
             start: header.start,
             imp: match header.method {
@@ -25,7 +28,7 @@ impl<'a> Data<'a> {
                     read_cursor: 0,
                 },
                 _ => return Err(error::MethodNotSupported(())),
-            }
+            },
         })
     }
 }
@@ -44,7 +47,10 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<Data<'a>, D> {
             header.name_len.get() as i64 + header.metadata_len.get() as i64,
         ))?;
         Ok(Reader(match self.structure.imp {
-            ReaderImpl::Stored { remaining, disk: () } => ReaderImpl::Stored {
+            ReaderImpl::Stored {
+                remaining,
+                disk: (),
+            } => ReaderImpl::Stored {
                 remaining,
                 disk: self.disk,
             },
@@ -53,7 +59,7 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<Data<'a>, D> {
                 decompressor,
                 out_pos,
                 read_cursor,
-                disk: ()
+                disk: (),
             } => ReaderImpl::Deflate {
                 disk: into_buffered(self.disk),
                 remaining,
@@ -64,8 +70,6 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<Data<'a>, D> {
         }))
     }
 }
-
-
 
 struct InflateBuffer([u8; 32 * 1024]);
 impl Default for InflateBuffer {

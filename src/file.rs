@@ -1,7 +1,7 @@
 use crate::error;
 
 mod data;
-pub use data::{Decompressor, Data, Reader};
+pub use data::{Data, Decompressor, Reader};
 
 pub struct File<M> {
     pub meta: M,
@@ -47,7 +47,7 @@ impl<D, M> crate::Persisted<File<M>, D> {
     ) -> Result<crate::Persisted<Data<'_>, D>, error::MethodNotSupported> {
         Ok(crate::Persisted {
             disk: self.disk,
-            structure: Data::new(self.structure.header, decompressor)?
+            structure: Data::new(self.structure.header, decompressor)?,
         })
     }
 }
