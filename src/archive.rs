@@ -3,10 +3,15 @@ use crate::{error, file};
 use std::io;
 #[derive(Copy, Clone)]
 pub struct Footer {
-    pub(crate) disk_id: u16,
+    disk_id: u16,
     directory_location_disk: u16,
     directory_location_offset: u32,
     directory_entries: u16,
+}
+impl Footer {
+    pub fn disk_id(&self) -> u16 {
+        self.disk_id
+    }
 }
 impl Footer {
     pub fn read_from_io<D: io::Read + io::Seek>(

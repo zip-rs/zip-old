@@ -35,7 +35,7 @@ impl<M> File<M> {
         self,
         disk: crate::Persisted<crate::Footer, D>,
     ) -> Result<crate::Persisted<File<M>, D>, error::DiskMismatch> {
-        (self.header.disk_id == disk.structure.disk_id)
+        (self.header.disk_id == disk.structure.disk_id())
             .then(move || disk.map(move |_| self))
             .ok_or(error::DiskMismatch(()))
     }
