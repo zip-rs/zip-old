@@ -89,13 +89,15 @@ impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
     {
         self.disk
             .seek(std::io::SeekFrom::Start(self.structure.offset as u64))?;
-        Ok(self.map(|dir| DirectoryIter {
-            entries: dir.entries,
+        Ok(DirectoryIter {
+            disk: self.disk,
+            entries: self.structure.entries,
             metadata_parser: core::marker::PhantomData,
-        }))
+        })
     }
 }
-struct DirectoryIter<M> {
+struct DirectoryIter<M, D> {
+    disk: D,
     entries: u16,
     metadata_parser: core::marker::PhantomData<fn() -> M>,
 }
@@ -103,12 +105,12 @@ struct DirectoryIter<M> {
 impl<
         D: io::Read + io::Seek,
         M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
-    > Iterator for crate::Persisted<DirectoryIter<M>, D>
+    > Iterator for DirectoryIter<M, D>
 {
     type Item = io::Result<file::File<M>>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.structure.entries.checked_sub(1).map(|rem| {
-            self.structure.entries = rem;
+        self.entries.checked_sub(1).map(|rem| {
+            self.entries = rem;
             let mut buf = [0; core::mem::size_of::<zip_format::DirectoryEntry>() + 4];
             self.disk.read_exact(&mut buf)?;
             let entry =
