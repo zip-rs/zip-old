@@ -95,7 +95,7 @@ impl<D: io::Seek + io::Read> crate::Persisted<Directory, D> {
         }))
     }
 }
-pub struct DirectoryIter<M> {
+struct DirectoryIter<M> {
     entries: u16,
     metadata_parser: core::marker::PhantomData<fn() -> M>,
 }
