@@ -126,29 +126,24 @@ impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
             } => {
                 // TODO: track `remaining`
                 // TODO: Check the CRC of the decompressed data
-                let decompressed = &mut (decompressor.1).0;
+                let (decompressor, InflateBuffer(backbuf)) = decompressor;
                 let mut out = *out_pos as usize;
                 let mut cursor = *read_cursor as usize;
                 if read_cursor == out_pos {
                     let data = disk.fill_buf()?;
-                    if out == decompressed.len() {
+                    if out == backbuf.len() {
                         out = 0;
                     }
-                    let (_status, consumed, written) = miniz_oxide::inflate::core::decompress(
-                        &mut decompressor.0,
-                        data,
-                        decompressed,
-                        out,
-                        0,
-                    );
+                    let (_status, consumed, written) =
+                        miniz_oxide::inflate::core::decompress(decompressor, data, backbuf, out, 0);
                     out += written;
                     disk.consume(consumed);
                 }
-                if cursor == decompressed.len() {
+                if cursor == backbuf.len() {
                     cursor = 0;
                 }
                 let len = out.checked_sub(cursor).unwrap().min(buf.len());
-                buf[..len].copy_from_slice(&decompressed[cursor..][..len]);
+                buf[..len].copy_from_slice(&backbuf[cursor..][..len]);
                 *read_cursor = (cursor + len) as u16;
                 *out_pos = out as u16;
                 Ok(len)
