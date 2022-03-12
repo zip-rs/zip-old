@@ -23,7 +23,9 @@ impl<D: io::Read + io::Seek> Footer<D> {
         // TODO: optimize this
         let mut buf = vec![];
         let n = disk.seek(std::io::SeekFrom::End(0))?;
-        let offset = disk.seek(std::io::SeekFrom::Start(n.saturating_sub(64 * 1024 + core::mem::size_of::<zip_format::Footer>() as u64 + 4 - 2)))?;
+        let offset = disk.seek(std::io::SeekFrom::Start(n.saturating_sub(
+            64 * 1024 + core::mem::size_of::<zip_format::Footer>() as u64 + 4 - 2,
+        )))?;
         disk.read_to_end(&mut buf)?;
         Ok(Footer::from_buf_at_offset(&buf, offset)?.with_disk(disk))
     }
