@@ -18,7 +18,7 @@ pub fn main() -> io::Result<()> {
     let mut reader = footer.with_disk(std::fs::File::open(&path)?);
 
     // also, allocate the structures we will use for decompression
-    let mut decompressor = zip::file::Decompressor::default();
+    let mut datastore = zip::file::Store::default();
 
     // look for the directory in this disk, and start scanning it
     let files = footer
@@ -32,7 +32,7 @@ pub fn main() -> io::Result<()> {
 
         // construct the decompression state and seek to the file contents
         let mut data = file
-            .reader(&mut decompressor)?
+            .reader(&mut datastore)?
             .seek_to_data(std::io::BufReader::new)?;
         // finally, read everything out of the archive!
         std::io::copy(&mut data, &mut std::io::stdout().lock())?;

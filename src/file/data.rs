@@ -1,21 +1,32 @@
 use crate::error;
 use std::io;
 
-pub struct Reader<'a, D, Buffered = D>(ReaderImpl<'a, D, Buffered>);
+/// An [`io::Read`] implementation for files stored in a ZIP archive.
+///
+/// Can be created using [`super::File::reader`]
+pub struct Read<'a, D, Buffered = D>(ReadImpl<'a, D, Buffered>);
 
+/// A cache for the state of [`Read`]s
+///
+/// When a [`super::File`] is being extracted, it uses large buffers to keep
+/// track of the decompression dictionary.
+///
+/// To avoid the cost of initializing these buffers, you can preallocate them
+/// with [`Store::default`] and feed it into [`super::File::reader`] when
+/// extracting your files.
 #[derive(Default)]
-pub struct Decompressor {
+pub struct Store {
     #[cfg(feature = "read-deflate")]
     deflate: Option<Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>>,
 }
 
-pub struct ReaderBuilder<'a, D> {
+pub struct ReadBuilder<'a, D> {
     disk: D,
-    imp: ReaderImpl<'a, (), ()>,
+    imp: ReadImpl<'a, (), ()>,
     start: u64,
 }
 
-enum ReaderImpl<'a, D, Buffered> {
+enum ReadImpl<'a, D, Buffered> {
     Never {
         never: core::convert::Infallible,
         b: Buffered,
@@ -35,26 +46,26 @@ enum ReaderImpl<'a, D, Buffered> {
     },
 }
 
-impl<'a, D> ReaderBuilder<'a, D> {
+impl<'a, D> ReadBuilder<'a, D> {
     pub(super) fn new(
         disk: D,
         header: super::FileHeader,
-        decompressor: &'a mut Decompressor,
+        st: &'a mut Store,
     ) -> Result<Self, error::MethodNotSupported> {
         Ok(Self {
             disk,
             start: header.start,
             imp: match header.method {
-                zip_format::CompressionMethod::STORED => ReaderImpl::Stored {
+                zip_format::CompressionMethod::STORED => ReadImpl::Stored {
                     disk: (),
                     remaining: header.len,
                 },
                 #[cfg(feature = "read-deflate")]
-                zip_format::CompressionMethod::DEFLATE => ReaderImpl::Deflate {
+                zip_format::CompressionMethod::DEFLATE => ReadImpl::Deflate {
                     disk: (),
                     remaining: header.len,
                     decompressor: {
-                        let deflate = decompressor.deflate.get_or_insert_with(Default::default);
+                        let deflate = st.deflate.get_or_insert_with(Default::default);
                         deflate.0.init();
                         deflate
                     },
@@ -67,11 +78,11 @@ impl<'a, D> ReaderBuilder<'a, D> {
     }
 }
 
-impl<'a, D: io::Seek + io::Read> ReaderBuilder<'a, D> {
+impl<'a, D: io::Seek + io::Read> ReadBuilder<'a, D> {
     pub fn seek_to_data<Buffered>(
         mut self,
         into_buffered: impl FnOnce(D) -> Buffered,
-    ) -> io::Result<Reader<'a, D, Buffered>> {
+    ) -> io::Result<Read<'a, D, Buffered>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
         self.disk.seek(std::io::SeekFrom::Start(self.start))?;
         let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
@@ -80,23 +91,23 @@ impl<'a, D: io::Seek + io::Read> ReaderBuilder<'a, D> {
         self.disk.seek(std::io::SeekFrom::Current(
             header.name_len.get() as i64 + header.metadata_len.get() as i64,
         ))?;
-        Ok(Reader(match self.imp {
-            ReaderImpl::Never { never, .. } => match never {},
-            ReaderImpl::Stored {
+        Ok(Read(match self.imp {
+            ReadImpl::Never { never, .. } => match never {},
+            ReadImpl::Stored {
                 remaining,
                 disk: (),
-            } => ReaderImpl::Stored {
+            } => ReadImpl::Stored {
                 remaining,
                 disk: self.disk,
             },
             #[cfg(feature = "read-deflate")]
-            ReaderImpl::Deflate {
+            ReadImpl::Deflate {
                 remaining,
                 decompressor,
                 out_pos,
                 read_cursor,
                 disk: (),
-            } => ReaderImpl::Deflate {
+            } => ReadImpl::Deflate {
                 disk: into_buffered(self.disk),
                 remaining,
                 decompressor,
@@ -107,17 +118,17 @@ impl<'a, D: io::Seek + io::Read> ReaderBuilder<'a, D> {
     }
 }
 
-impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
+impl<D: io::Read, Buffered: io::BufRead> io::Read for Read<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
-            ReaderImpl::Never { never, .. } => match *never {},
-            ReaderImpl::Stored { disk, remaining } => {
+            ReadImpl::Never { never, .. } => match *never {},
+            ReadImpl::Stored { disk, remaining } => {
                 let n = disk.take(*remaining).read(buf)?;
                 *remaining -= n as u64;
                 Ok(n)
             }
             #[cfg(feature = "read-deflate")]
-            ReaderImpl::Deflate {
+            ReadImpl::Deflate {
                 disk,
                 decompressor,
                 out_pos,
