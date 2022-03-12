@@ -9,7 +9,8 @@ pub struct Decompressor {
     deflate: Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
 }
 
-pub struct ReaderBuilder<'a> {
+pub struct ReaderBuilder<'a, D> {
+    disk: D,
     imp: ReaderImpl<'a, (), ()>,
     start: u64,
 }
@@ -34,12 +35,14 @@ enum ReaderImpl<'a, D, Buffered> {
     },
 }
 
-impl<'a> ReaderBuilder<'a> {
+impl<'a, D> ReaderBuilder<'a, D> {
     pub(super) fn new(
+        disk: D,
         header: super::FileHeader,
         decompressor: &'a mut Decompressor,
     ) -> Result<Self, error::MethodNotSupported> {
         Ok(Self {
+            disk,
             start: header.start,
             imp: match header.method {
                 zip_format::CompressionMethod::STORED => ReaderImpl::Stored {
@@ -63,21 +66,20 @@ impl<'a> ReaderBuilder<'a> {
     }
 }
 
-impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
+impl<'a, D: io::Seek + io::Read> ReaderBuilder<'a, D> {
     pub fn seek_to_data<Buffered>(
         mut self,
         into_buffered: impl FnOnce(D) -> Buffered,
     ) -> io::Result<Reader<'a, D, Buffered>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
-        self.disk
-            .seek(std::io::SeekFrom::Start(self.structure.start))?;
+        self.disk.seek(std::io::SeekFrom::Start(self.start))?;
         let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
         self.disk.read_exact(&mut buf)?;
         let header = zip_format::Header::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
         self.disk.seek(std::io::SeekFrom::Current(
             header.name_len.get() as i64 + header.metadata_len.get() as i64,
         ))?;
-        Ok(Reader(match self.structure.imp {
+        Ok(Reader(match self.imp {
             ReaderImpl::Never { never, .. } => match never {},
             ReaderImpl::Stored {
                 remaining,
@@ -107,7 +109,6 @@ impl<'a, D: io::Seek + io::Read> crate::Persisted<ReaderBuilder<'a>, D> {
 impl<D: io::Read, Buffered: io::BufRead> io::Read for Reader<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
-            
             ReaderImpl::Never { never, .. } => match *never {},
             ReaderImpl::Stored { disk, remaining } => {
                 let n = disk.take(*remaining).read(buf)?;

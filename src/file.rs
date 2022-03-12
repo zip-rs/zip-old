@@ -44,11 +44,12 @@ impl<D, M> crate::Persisted<File<M>, D> {
     pub fn reader(
         self,
         decompressor: &mut Decompressor,
-    ) -> Result<crate::Persisted<ReaderBuilder<'_>, D>, error::MethodNotSupported> {
-        Ok(crate::Persisted {
-            disk: self.disk,
-            structure: ReaderBuilder::new(self.structure.header, decompressor)?,
-        })
+    ) -> Result<ReaderBuilder<'_, D>, error::MethodNotSupported> {
+        Ok(ReaderBuilder::new(
+            self.disk,
+            self.structure.header,
+            decompressor,
+        )?)
     }
 }
 
