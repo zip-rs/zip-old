@@ -173,6 +173,7 @@ impl<
                 kind,
                 encrypted: flags & 0b1 != 0,
                 unknown_size: flags & 0b100 != 0,
+                crc32: entry.crc32.get(),
                 len: entry.compressed_size.get() as u64,
                 start: entry.offset_from_start.get() as u64,
             });

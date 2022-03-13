@@ -2,6 +2,9 @@ use crate::error;
 use core::marker::PhantomData;
 use std::io;
 
+mod decrypt;
+pub use decrypt::{Decrypt, DecryptBuilder};
+
 /// An [`io::Read`] implementation for files stored in a ZIP archive.
 ///
 /// Can be created using [`super::File::reader`]
@@ -63,8 +66,8 @@ impl<D> ReadBuilder<D> {
     }
 }
 
-impl<D, F> ReadBuilder<D, (Not<Decrypted>, F)> {
-    pub fn without_encryption(self) -> Result<ReadBuilder<D, (Decrypted, F)>, error::FileLocked> {
+impl<D> ReadBuilder<D, (Not<Decrypted>, Not<Found>)> {
+    pub fn without_encryption(self) -> Result<ReadBuilder<D, (Decrypted, Not<Found>)>, error::FileLocked> {
         (!self.storage.encrypted)
             .then(|| ReadBuilder {
                 disk: self.disk,
@@ -91,6 +94,19 @@ impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
             storage: self.storage,
             state: PhantomData,
         })
+    }
+}
+impl<D: io::Read> ReadBuilder<D, (Not<Decrypted>, Found)> {
+    pub fn decrypt(self) -> io::Result<Result<ReadBuilder<D, (Decrypted, Found)>, decrypt::DecryptBuilder<D>>> {
+        if !self.storage.encrypted {
+            Ok(Ok(ReadBuilder {
+                disk: self.disk,
+                storage: self.storage,
+                state: PhantomData,
+            }))
+        } else {
+            decrypt::DecryptBuilder::new(self).map(Err)
+        }
     }
 }
 impl<D> ReadBuilder<D, (Decrypted, Found)> {
@@ -180,6 +196,7 @@ impl Default for InflateBuffer {
 pub(crate) struct FileStorage {
     pub(crate) start: u64,
     pub(crate) len: u64,
+    pub(crate) crc32: u32,
     pub(crate) encrypted: bool,
     pub(crate) unknown_size: bool,
     pub(crate) kind: FileStorageKind,

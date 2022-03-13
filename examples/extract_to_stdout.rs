@@ -33,8 +33,13 @@ pub fn main() -> io::Result<()> {
         // construct the decompression state and seek to the file contents
         let mut data = file
             .reader()?
-            .without_encryption()?
             .seek_to_data()?
+            .decrypt()?
+            .map(|d| Ok(d.into()))
+            .unwrap_or_else(|d| {
+                // If the file is locked, try to decrypt it with this password
+                d.try_password(b"password")
+            })?
             .build_io(&mut datastore, std::io::BufReader::new);
         // finally, read everything out of the archive!
         std::io::copy(&mut data, &mut std::io::stdout().lock())?;
