@@ -1,5 +1,6 @@
 use crate::error;
 use std::io;
+use core::marker::PhantomData;
 
 /// An [`io::Read`] implementation for files stored in a ZIP archive.
 ///
@@ -20,9 +21,12 @@ pub struct Store {
     deflate: Option<Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>>,
 }
 
-pub struct ReadBuilder<D> {
+pub struct Decrypted(());
+pub struct Not<T>(T);
+pub struct ReadBuilder<D, St = (Not<Decrypted>,)> {
     disk: D,
     storage: FileStorage,
+    state: PhantomData<St>,
 }
 
 enum ReadImpl<'a, D, Buffered> {
@@ -52,20 +56,22 @@ impl<D> ReadBuilder<D> {
     ) -> Result<Self, error::MethodNotSupported> {
         Ok(Self {
             disk,
-            storage: header.storage.ok_or(error::MethodNotSupported(()))?
+            storage: header.storage.ok_or(error::MethodNotSupported(()))?,
+            state: PhantomData,
         })
     }
-    pub fn without_encryption(self) -> Result<ReadBuilder<D>, error::FileLocked> {
+    pub fn without_encryption(self) -> Result<ReadBuilder<D, (Decrypted,)>, error::FileLocked> {
         (!self.storage.encrypted)
             .then(|| ReadBuilder {
                 disk: self.disk,
                 storage: self.storage,
+                state: PhantomData
             })
             .ok_or(error::FileLocked(()))
     }
 }
 
-impl<D: io::Seek + io::Read> ReadBuilder<D> {
+impl<D: io::Seek + io::Read> ReadBuilder<D, (Decrypted,)> {
     pub fn seek_to_data<Buffered>(
         mut self,
         store: &mut Store,
