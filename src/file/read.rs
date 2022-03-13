@@ -64,18 +64,19 @@ impl<'a, D> ReadBuilder<'a, D> {
             out_pos: 0,
             read_cursor: 0,
         };
+        let storage = header.storage.ok_or(error::MethodNotSupported(()))?;
         Ok(Self {
             disk,
-            start: header.start,
-            imp: match header.storage.ok_or(error::MethodNotSupported(()))? {
-                super::FileStorage::Stored(len) => ReadImpl::Stored {
+            start: storage.start,
+            imp: match storage.kind {
+                FileStorageKind::Stored => ReadImpl::Stored {
                     disk: (),
-                    remaining: len,
+                    remaining: storage.len,
                 },
                 #[cfg(feature = "read-deflate")]
-                super::FileStorage::Deflated => make_deflate(u64::MAX, st),
+                FileStorageKind::Deflated => make_deflate(u64::MAX, st),
                 #[cfg(feature = "read-deflate")]
-                super::FileStorage::LimitDeflated(n) => make_deflate(n, st),
+                FileStorageKind::LimitDeflated => make_deflate(storage.len, st),
             },
         })
     }
@@ -171,4 +172,20 @@ impl Default for InflateBuffer {
     fn default() -> Self {
         Self([0; 32 * 1024])
     }
+}
+
+/// We use an `Option<FileStorage>` in [`super::FileLocator`] to represent files that we might not be able to read.
+pub(crate) struct FileStorage {
+    pub(crate) start: u64,
+    pub(crate) len: u64,
+    pub(crate) kind: FileStorageKind,
+}
+
+/// List of available [`zip_format::CompressionMethod`] implementations.
+pub(crate) enum FileStorageKind {
+    Stored,
+    #[cfg(feature = "read-deflate")]
+    Deflated,
+    #[cfg(feature = "read-deflate")]
+    LimitDeflated,
 }

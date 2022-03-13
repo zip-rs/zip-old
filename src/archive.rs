@@ -160,24 +160,28 @@ impl<
             self.disk.read_exact(&mut buf)?;
             let entry =
                 zip_format::DirectoryEntry::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
-            let size = entry.compressed_size.get() as u64;
+            let storage_kind = match entry.method {
+                zip_format::CompressionMethod::STORED => Some(crate::file::FileStorageKind::Stored),
+                #[cfg(feature = "read-deflate")]
+                zip_format::CompressionMethod::DEFLATE => Some(if entry.flags.get() & 0b100 != 0 {
+                    crate::file::FileStorageKind::Deflated
+                } else {
+                    crate::file::FileStorageKind::LimitDeflated
+                }),
+                _ => None,
+            };
+            let storage = storage_kind.map(|kind| crate::file::FileStorage {
+                kind,
+                len: entry.compressed_size.get() as u64,
+                start: entry.offset_from_start.get() as u64,
+            });
             Ok(file::File {
                 disk: (),
                 meta: M::try_from((entry, &mut self.disk))?,
-                locator: file::FileLocator::new(
-                    entry.offset_from_start.get() as u64,
-                    match entry.method {
-                        zip_format::CompressionMethod::STORED => Some(crate::file::FileStorage::Stored(size)),
-                        #[cfg(feature = "read-deflate")]
-                        zip_format::CompressionMethod::DEFLATE => Some(if entry.flags.get() & 0b100 != 0 {
-                            crate::file::FileStorage::Deflated
-                        } else {
-                            crate::file::FileStorage::LimitDeflated(size)
-                        }),
-                        _ => None,
-                    },
-                    entry.disk_number.get() as _,
-                ),
+                locator: file::FileLocator {
+                    storage,
+                    disk_id: entry.disk_number.get() as _,
+                },
             })
         })
     }
