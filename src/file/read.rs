@@ -55,6 +55,14 @@ impl<D> ReadBuilder<D> {
             storage: header.storage.ok_or(error::MethodNotSupported(()))?
         })
     }
+    pub fn without_encryption(self) -> Result<ReadBuilder<D>, error::FileLocked> {
+        (!self.storage.encrypted)
+            .then(|| ReadBuilder {
+                disk: self.disk,
+                storage: self.storage,
+            })
+            .ok_or(error::FileLocked(()))
+    }
 }
 
 impl<D: io::Seek + io::Read> ReadBuilder<D> {
@@ -148,6 +156,7 @@ impl Default for InflateBuffer {
 pub(crate) struct FileStorage {
     pub(crate) start: u64,
     pub(crate) len: u64,
+    pub(crate) encrypted: bool,
     pub(crate) unknown_size: bool,
     pub(crate) kind: FileStorageKind,
 }

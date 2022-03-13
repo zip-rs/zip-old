@@ -166,18 +166,20 @@ impl<
                 zip_format::CompressionMethod::DEFLATE => Some(crate::file::FileStorageKind::Deflated),
                 _ => None,
             };
+            let flags = entry.flags.get();
             let storage = storage_kind.map(|kind| crate::file::FileStorage {
                 kind,
+                encrypted: flags & 0b1 != 0,
+                unknown_size: flags & 0b100 != 0,
                 len: entry.compressed_size.get() as u64,
                 start: entry.offset_from_start.get() as u64,
-                unknown_size: entry.flags.get() & 0b100 != 0,
             });
             Ok(file::File {
                 disk: (),
                 meta: M::try_from((entry, &mut self.disk))?,
                 locator: file::FileLocator {
                     storage,
-                    disk_id: entry.disk_number.get() as _,
+                    disk_id: entry.disk_number.get() as u32,
                 },
             })
         })

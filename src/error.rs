@@ -23,4 +23,5 @@ errors! {
     NotAnArchive InvalidData "the source data is not a zip archive"
     DiskMismatch NotFound "the requested resource was located on another disk"
     MethodNotSupported Unsupported "the requested resource used an unsupported compression method"
+    FileLocked PermissionDenied "the zip file must be decrypted with a password before being read"
 }
