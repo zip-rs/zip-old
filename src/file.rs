@@ -1,7 +1,7 @@
 use crate::error::{self, MethodNotSupported};
 
-mod data;
-pub use data::{Read, ReadBuilder, Store};
+mod read;
+pub use read::{Read, ReadBuilder, Store};
 
 pub struct File<M = crate::metadata::Full, D = ()> {
     pub disk: D,
@@ -11,19 +11,22 @@ pub struct File<M = crate::metadata::Full, D = ()> {
 
 pub struct FileLocator {
     start: u64,
-    storage: FileStorage,
+    storage: Option<FileStorage>,
     disk_id: u32,
 }
+/// List of available [`zip_format::CompressionMethod`] implementations.
+/// We use an `Option<FileStorage>` in [`FileLocator`] to represent files that we might not be able to read.
 pub(crate) enum FileStorage {
     Stored(u64),
+    #[cfg(feature = "read-deflate")]
     Deflated,
+    #[cfg(feature = "read-deflate")]
     LimitDeflated(u64),
-    Unknown
 }
 impl FileLocator {
     pub(crate) fn new(
         start: u64,
-        storage: FileStorage,
+        storage: Option<FileStorage>,
         disk_id: u32,
     ) -> Self {
         Self {

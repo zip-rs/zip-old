@@ -52,6 +52,7 @@ impl<'a, D> ReadBuilder<'a, D> {
         header: super::FileLocator,
         st: &'a mut Store,
     ) -> Result<Self, error::MethodNotSupported> {
+        #[cfg(feature = "read-deflate")]
         let make_deflate = move |remaining, st: &'a mut Store| ReadImpl::Deflate {
             disk: (),
             remaining,
@@ -66,7 +67,7 @@ impl<'a, D> ReadBuilder<'a, D> {
         Ok(Self {
             disk,
             start: header.start,
-            imp: match header.storage {
+            imp: match header.storage.ok_or(error::MethodNotSupported(()))? {
                 super::FileStorage::Stored(len) => ReadImpl::Stored {
                     disk: (),
                     remaining: len,
@@ -75,7 +76,6 @@ impl<'a, D> ReadBuilder<'a, D> {
                 super::FileStorage::Deflated => make_deflate(u64::MAX, st),
                 #[cfg(feature = "read-deflate")]
                 super::FileStorage::LimitDeflated(n) => make_deflate(n, st),
-                _ => return Err(error::MethodNotSupported(())),
             },
         })
     }

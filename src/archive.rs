@@ -167,14 +167,14 @@ impl<
                 locator: file::FileLocator::new(
                     entry.offset_from_start.get() as u64,
                     match entry.method {
-                        zip_format::CompressionMethod::STORED => crate::file::FileStorage::Stored(size),
+                        zip_format::CompressionMethod::STORED => Some(crate::file::FileStorage::Stored(size)),
                         #[cfg(feature = "read-deflate")]
-                        zip_format::CompressionMethod::DEFLATE => if entry.flags.get() & 0b100 != 0 {
+                        zip_format::CompressionMethod::DEFLATE => Some(if entry.flags.get() & 0b100 != 0 {
                             crate::file::FileStorage::Deflated
                         } else {
                             crate::file::FileStorage::LimitDeflated(size)
-                        },
-                        _ => crate::file::FileStorage::Unknown,
+                        }),
+                        _ => None,
                     },
                     entry.disk_number.get() as _,
                 ),
