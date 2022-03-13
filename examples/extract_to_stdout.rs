@@ -32,8 +32,8 @@ pub fn main() -> io::Result<()> {
 
         // construct the decompression state and seek to the file contents
         let mut data = file
-            .reader(&mut datastore)?
-            .seek_to_data(std::io::BufReader::new)?;
+            .reader()?
+            .seek_to_data(&mut datastore, std::io::BufReader::new)?;
         // finally, read everything out of the archive!
         std::io::copy(&mut data, &mut std::io::stdout().lock())?;
     }

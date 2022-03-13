@@ -35,8 +35,8 @@ impl<D, M> File<M, D> {
     ///
     /// If the file uses a [`zip_format::CompressionMethod`] that isn't enabled in the
     /// crate features, a [`MethodNotSupported`] is returned instead.
-    pub fn reader(self, st: &mut Store) -> Result<ReadBuilder<'_, D>, MethodNotSupported> {
-        Ok(ReadBuilder::new(self.disk, self.locator, st)?)
+    pub fn reader(self) -> Result<ReadBuilder<D>, MethodNotSupported> {
+        Ok(ReadBuilder::new(self.disk, self.locator)?)
     }
 }
 

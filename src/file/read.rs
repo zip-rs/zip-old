@@ -20,10 +20,9 @@ pub struct Store {
     deflate: Option<Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>>,
 }
 
-pub struct ReadBuilder<'a, D> {
+pub struct ReadBuilder<D> {
     disk: D,
-    imp: ReadImpl<'a, (), ()>,
-    start: u64,
+    storage: FileStorage,
 }
 
 enum ReadImpl<'a, D, Buffered> {
@@ -46,77 +45,48 @@ enum ReadImpl<'a, D, Buffered> {
     },
 }
 
-impl<'a, D> ReadBuilder<'a, D> {
+impl<D> ReadBuilder<D> {
     pub(super) fn new(
         disk: D,
         header: super::FileLocator,
-        st: &'a mut Store,
     ) -> Result<Self, error::MethodNotSupported> {
-        #[cfg(feature = "read-deflate")]
-        let make_deflate = move |remaining, st: &'a mut Store| ReadImpl::Deflate {
-            disk: (),
-            remaining,
-            decompressor: {
-                let deflate = st.deflate.get_or_insert_with(Default::default);
-                deflate.0.init();
-                deflate
-            },
-            out_pos: 0,
-            read_cursor: 0,
-        };
-        let storage = header.storage.ok_or(error::MethodNotSupported(()))?;
         Ok(Self {
             disk,
-            start: storage.start,
-            imp: match storage.kind {
-                FileStorageKind::Stored => ReadImpl::Stored {
-                    disk: (),
-                    remaining: storage.len,
-                },
-                #[cfg(feature = "read-deflate")]
-                FileStorageKind::Deflated => make_deflate(u64::MAX, st),
-                #[cfg(feature = "read-deflate")]
-                FileStorageKind::LimitDeflated => make_deflate(storage.len, st),
-            },
+            storage: header.storage.ok_or(error::MethodNotSupported(()))?
         })
     }
 }
 
-impl<'a, D: io::Seek + io::Read> ReadBuilder<'a, D> {
+impl<D: io::Seek + io::Read> ReadBuilder<D> {
     pub fn seek_to_data<Buffered>(
         mut self,
+        store: &mut Store,
         into_buffered: impl FnOnce(D) -> Buffered,
-    ) -> io::Result<Read<'a, D, Buffered>> {
+    ) -> io::Result<Read<'_, D, Buffered>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
-        self.disk.seek(std::io::SeekFrom::Start(self.start))?;
+        self.disk.seek(std::io::SeekFrom::Start(self.storage.start))?;
         let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
         self.disk.read_exact(&mut buf)?;
         let header = zip_format::Header::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
         self.disk.seek(std::io::SeekFrom::Current(
             header.name_len.get() as i64 + header.metadata_len.get() as i64,
         ))?;
-        Ok(Read(match self.imp {
-            ReadImpl::Never { never, .. } => match never {},
-            ReadImpl::Stored {
-                remaining,
-                disk: (),
-            } => ReadImpl::Stored {
-                remaining,
+        Ok(Read(match self.storage.kind {
+            FileStorageKind::Stored => ReadImpl::Stored {
+                remaining: self.storage.len,
                 disk: self.disk,
             },
             #[cfg(feature = "read-deflate")]
-            ReadImpl::Deflate {
-                remaining,
-                decompressor,
-                out_pos,
-                read_cursor,
-                disk: (),
-            } => ReadImpl::Deflate {
+            FileStorageKind::Deflated => ReadImpl::Deflate {
                 disk: into_buffered(self.disk),
-                remaining,
-                decompressor,
-                out_pos,
-                read_cursor,
+                remaining: if self.storage.unknown_size { u64::MAX } else { self.storage.len },
+                decompressor: {
+                    let deflate = store.deflate.get_or_insert_with(Default::default);
+                    deflate.0.init();
+                    deflate
+                },
+                out_pos: 0,
+                read_cursor: 0,
             },
         }))
     }
@@ -178,6 +148,7 @@ impl Default for InflateBuffer {
 pub(crate) struct FileStorage {
     pub(crate) start: u64,
     pub(crate) len: u64,
+    pub(crate) unknown_size: bool,
     pub(crate) kind: FileStorageKind,
 }
 
@@ -186,6 +157,4 @@ pub(crate) enum FileStorageKind {
     Stored,
     #[cfg(feature = "read-deflate")]
     Deflated,
-    #[cfg(feature = "read-deflate")]
-    LimitDeflated,
 }

@@ -163,17 +163,14 @@ impl<
             let storage_kind = match entry.method {
                 zip_format::CompressionMethod::STORED => Some(crate::file::FileStorageKind::Stored),
                 #[cfg(feature = "read-deflate")]
-                zip_format::CompressionMethod::DEFLATE => Some(if entry.flags.get() & 0b100 != 0 {
-                    crate::file::FileStorageKind::Deflated
-                } else {
-                    crate::file::FileStorageKind::LimitDeflated
-                }),
+                zip_format::CompressionMethod::DEFLATE => Some(crate::file::FileStorageKind::Deflated),
                 _ => None,
             };
             let storage = storage_kind.map(|kind| crate::file::FileStorage {
                 kind,
                 len: entry.compressed_size.get() as u64,
                 start: entry.offset_from_start.get() as u64,
+                unknown_size: entry.flags.get() & 0b100 != 0,
             });
             Ok(file::File {
                 disk: (),
