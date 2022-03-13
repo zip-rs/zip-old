@@ -1,6 +1,6 @@
 use crate::error;
-use std::io;
 use core::marker::PhantomData;
+use std::io;
 
 /// An [`io::Read`] implementation for files stored in a ZIP archive.
 ///
@@ -22,8 +22,9 @@ pub struct Store {
 }
 
 pub struct Decrypted(());
+pub struct Found(());
 pub struct Not<T>(T);
-pub struct ReadBuilder<D, St = (Not<Decrypted>,)> {
+pub struct ReadBuilder<D, St = (Not<Decrypted>, Not<Found>)> {
     disk: D,
     storage: FileStorage,
     state: PhantomData<St>,
@@ -60,40 +61,57 @@ impl<D> ReadBuilder<D> {
             state: PhantomData,
         })
     }
-    pub fn without_encryption(self) -> Result<ReadBuilder<D, (Decrypted,)>, error::FileLocked> {
+}
+
+impl<D, F> ReadBuilder<D, (Not<Decrypted>, F)> {
+    pub fn without_encryption(self) -> Result<ReadBuilder<D, (Decrypted, F)>, error::FileLocked> {
         (!self.storage.encrypted)
             .then(|| ReadBuilder {
                 disk: self.disk,
                 storage: self.storage,
-                state: PhantomData
+                state: PhantomData,
             })
             .ok_or(error::FileLocked(()))
     }
 }
 
-impl<D: io::Seek + io::Read> ReadBuilder<D, (Decrypted,)> {
-    pub fn seek_to_data<Buffered>(
-        mut self,
-        store: &mut Store,
-        into_buffered: impl FnOnce(D) -> Buffered,
-    ) -> io::Result<Read<'_, D, Buffered>> {
+impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
+    pub fn seek_to_data(mut self) -> io::Result<ReadBuilder<D, (E, Found)>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
-        self.disk.seek(std::io::SeekFrom::Start(self.storage.start))?;
+        self.disk
+            .seek(std::io::SeekFrom::Start(self.storage.start))?;
         let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
         self.disk.read_exact(&mut buf)?;
         let header = zip_format::Header::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
         self.disk.seek(std::io::SeekFrom::Current(
             header.name_len.get() as i64 + header.metadata_len.get() as i64,
         ))?;
-        Ok(Read(match self.storage.kind {
+        Ok(ReadBuilder {
+            disk: self.disk,
+            storage: self.storage,
+            state: PhantomData,
+        })
+    }
+}
+impl<D> ReadBuilder<D, (Decrypted, Found)> {
+    pub fn build_io<Buffered>(
+        self,
+        store: &mut Store,
+        f: impl FnOnce(D) -> Buffered,
+    ) -> Read<'_, D, Buffered> {
+        Read(match self.storage.kind {
             FileStorageKind::Stored => ReadImpl::Stored {
                 remaining: self.storage.len,
                 disk: self.disk,
             },
             #[cfg(feature = "read-deflate")]
             FileStorageKind::Deflated => ReadImpl::Deflate {
-                disk: into_buffered(self.disk),
-                remaining: if self.storage.unknown_size { u64::MAX } else { self.storage.len },
+                disk: f(self.disk),
+                remaining: if self.storage.unknown_size {
+                    u64::MAX
+                } else {
+                    self.storage.len
+                },
                 decompressor: {
                     let deflate = store.deflate.get_or_insert_with(Default::default);
                     deflate.0.init();
@@ -102,7 +120,7 @@ impl<D: io::Seek + io::Read> ReadBuilder<D, (Decrypted,)> {
                 out_pos: 0,
                 read_cursor: 0,
             },
-        }))
+        })
     }
 }
 

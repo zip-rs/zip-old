@@ -34,7 +34,8 @@ pub fn main() -> io::Result<()> {
         let mut data = file
             .reader()?
             .without_encryption()?
-            .seek_to_data(&mut datastore, std::io::BufReader::new)?;
+            .seek_to_data()?
+            .build_io(&mut datastore, std::io::BufReader::new);
         // finally, read everything out of the archive!
         std::io::copy(&mut data, &mut std::io::stdout().lock())?;
     }

@@ -163,7 +163,9 @@ impl<
             let storage_kind = match entry.method {
                 zip_format::CompressionMethod::STORED => Some(crate::file::FileStorageKind::Stored),
                 #[cfg(feature = "read-deflate")]
-                zip_format::CompressionMethod::DEFLATE => Some(crate::file::FileStorageKind::Deflated),
+                zip_format::CompressionMethod::DEFLATE => {
+                    Some(crate::file::FileStorageKind::Deflated)
+                }
                 _ => None,
             };
             let flags = entry.flags.get();
