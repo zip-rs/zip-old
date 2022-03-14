@@ -149,7 +149,7 @@ where
 // TODO: Design an API for reading metadata from an entry
 impl<
         D: io::Read + io::Seek,
-        M: for<'a> TryFrom<(&'a zip_format::DirectoryEntry, &'a mut D), Error = io::Error>,
+        M: metadata::Metadata<D>,
     > Iterator for DirectoryIter<M, D>
 {
     type Item = io::Result<file::File<M>>;
@@ -179,7 +179,7 @@ impl<
             });
             Ok(file::File {
                 disk: (),
-                meta: M::try_from((entry, &mut self.disk))?,
+                meta: M::from_entry(entry, &mut self.disk)?,
                 locator: file::FileLocator {
                     storage,
                     disk_id: entry.disk_number.get() as u32,
