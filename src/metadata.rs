@@ -9,25 +9,27 @@ pub trait Metadata<D>: Sized {
 //       - a `Name` that only saves the name of the file
 //       - something that decodes some well-known extra fields - maybe in another crate?
 pub struct Full {
-    pub name: Vec<u8>,
+    buf: Vec<u8>,
+    name_len: u16,
 }
-impl<D: io::Seek + Read> Metadata<D> for Full {
+impl Full {
+    pub fn name(&self) -> &[u8] {
+        &self.buf[..self.name_len as usize]
+    }
+}
+impl<D: Read> Metadata<D> for Full {
     fn from_entry(entry: &zip_format::DirectoryEntry, disk: &mut D) -> io::Result<Self> {
-        let mut name = vec![];
-        disk.take(entry.name_len.get() as u64)
-            .read_to_end(&mut name)?;
-        disk.seek(std::io::SeekFrom::Current(
-            entry.metadata_len.get() as i64 + entry.comment_len.get() as i64,
-        ))?;
-        Ok(Self { name })
+        let mut buf = vec![];
+        let name_len = entry.name_len.get();
+        disk.take(name_len as u64 + entry.metadata_len.get() as u64 + entry.comment_len.get() as u64)
+            .read_to_end(&mut buf)?;
+        Ok(Self { buf, name_len })
     }
     fn from_header(header: &zip_format::Header, disk: &mut D) -> io::Result<Self> {
-        let mut name = vec![];
-        disk.take(header.name_len.get() as u64)
-            .read_to_end(&mut name)?;
-        disk.seek(std::io::SeekFrom::Current(
-            header.metadata_len.get() as i64,
-        ))?;
-        Ok(Self { name })
+        let mut buf = vec![];
+        let name_len = header.name_len.get();
+        disk.take(name_len as u64 + header.metadata_len.get() as u64)
+            .read_to_end(&mut buf)?;
+        Ok(Self { buf, name_len })
     }
 }

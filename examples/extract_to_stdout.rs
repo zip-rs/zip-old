@@ -28,7 +28,7 @@ pub fn main() -> io::Result<()> {
         // resolve the files within the open archive
         // NOTE: `in_disk` could be pointed at another file for multi-file archives
         let file = file?.in_disk(reader.as_mut())?;
-        println!("{}", String::from_utf8_lossy(&file.name));
+        println!("{}", String::from_utf8_lossy(file.name()));
 
         // construct the decompression state and seek to the file contents
         let mut data = file
