@@ -135,6 +135,8 @@ enum ZipFileReader<'a> {
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "zstd")]
     Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
+    #[cfg(feature = "lzma")]
+    Lzma(Crc32Reader<lzma::Reader<CryptoReader<'a>>>),
 }
 
 impl<'a> Read for ZipFileReader<'a> {
@@ -153,6 +155,8 @@ impl<'a> Read for ZipFileReader<'a> {
             ZipFileReader::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
             ZipFileReader::Zstd(r) => r.read(buf),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => r.read(buf),
         }
     }
 }
@@ -174,6 +178,8 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "zstd")]
             ZipFileReader::Zstd(r) => r.into_inner().finish().into_inner().into_inner(),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => r.into_inner().into_inner().into_inner(),
         }
     }
 }
@@ -262,9 +268,13 @@ fn make_crypto_reader<'a>(
 fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
+    uncompressed_size: u64,
     reader: CryptoReader,
 ) -> ZipFileReader {
     let ae2_encrypted = reader.is_ae2_encrypted();
+
+    #[cfg(not(feature = "lzma"))]
+    let _ = uncompressed_size;
 
     match compression_method {
         CompressionMethod::Stored => {
@@ -289,8 +299,50 @@ fn make_reader(
             let zstd_reader = ZstdDecoder::new(reader).unwrap();
             ZipFileReader::Zstd(Crc32Reader::new(zstd_reader, crc32, ae2_encrypted))
         }
+        #[cfg(feature = "lzma")]
+        CompressionMethod::Lzma => {
+            let mut reader = reader;
+            let properties = read_lzma_zip_header(&mut reader, uncompressed_size).unwrap();
+            let lzma_reader = lzma::Reader::new(reader, properties).unwrap();
+            ZipFileReader::Lzma(Crc32Reader::new(lzma_reader, crc32, ae2_encrypted))
+        }
         _ => panic!("Compression method not supported"),
     }
+}
+
+#[cfg(feature = "lzma")]
+fn read_lzma_zip_header<R: Read>(
+    mut reader: R,
+    uncompressed_size: u64,
+) -> Result<lzma::Properties, ZipError> {
+    let _lzma_version = reader.read_u16::<LittleEndian>()?;
+    let properties_size = reader.read_u16::<LittleEndian>()?;
+    if properties_size != 5 {
+        return Err(ZipError::InvalidArchive("invalid LZMA properties size"));
+    }
+    let d = reader.read_u8().unwrap();
+
+    if d >= (9 * 5 * 5) {
+        return Err(ZipError::InvalidArchive("invalid LZMA properties"));
+    }
+
+    let lc = d % 9;
+    let d = d / 9;
+    let pb = d / 5;
+    let lp = d % 5;
+
+    let dictionary = match reader.read_u32::<LittleEndian>().unwrap() {
+        n if n < 1 << 12 => 1 << 12,
+        n => n,
+    };
+    let properties = lzma::Properties {
+        lc,
+        lp,
+        pb,
+        dictionary,
+        uncompressed: Some(uncompressed_size),
+    };
+    Ok(properties)
 }
 
 impl<R: Read + io::Seek> ZipArchive<R> {
@@ -777,9 +829,14 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 impl<'a> ZipFile<'a> {
     fn get_reader(&mut self) -> &mut ZipFileReader<'a> {
         if let ZipFileReader::NoReader = self.reader {
-            let data = &self.data;
+            let data = self.data.as_ref();
             let crypto_reader = self.crypto_reader.take().expect("Invalid reader state");
-            self.reader = make_reader(data.compression_method, data.crc32, crypto_reader)
+            self.reader = make_reader(
+                data.compression_method,
+                data.crc32,
+                data.uncompressed_size,
+                crypto_reader,
+            )
         }
         &mut self.reader
     }
@@ -1115,7 +1172,12 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     Ok(Some(ZipFile {
         data: Cow::Owned(result),
         crypto_reader: None,
-        reader: make_reader(result_compression_method, result_crc32, crypto_reader),
+        reader: make_reader(
+            result_compression_method,
+            result_crc32,
+            uncompressed_size.into(),
+            crypto_reader,
+        ),
     }))
 }
 
