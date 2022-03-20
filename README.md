@@ -5,7 +5,7 @@ zip-rs
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 [![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/rQ7H9cSsF4)
 
-[Documentation](https://docs.rs/zip/0.5.13/zip/)
+[Documentation](https://docs.rs/zip/0.6.0/zip/)
 
 
 Info
@@ -32,14 +32,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "0.5"
+zip = "0.6"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "0.5", default-features = false }
+zip = { version = "0.6", default-features = false }
 ```
 
 The features available are:
