@@ -38,7 +38,7 @@ mod ffi {
 pub(crate) mod zip_archive {
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
-    pub struct Shared {
+    pub(crate) struct Shared {
         pub(super) files: Vec<super::ZipFileData>,
         pub(super) names_map: super::HashMap<String, usize>,
         pub(super) offset: u64,
@@ -72,7 +72,7 @@ pub(crate) mod zip_archive {
     }
 }
 
-pub use zip_archive::{Shared, ZipArchive};
+pub use zip_archive::ZipArchive;
 #[allow(clippy::large_enum_variant)]
 enum CryptoReader<'a> {
     Plaintext(io::Take<&'a mut dyn Read>),
@@ -423,7 +423,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             files.push(file);
         }
 
-        let shared = Arc::new(Shared {
+        let shared = Arc::new(zip_archive::Shared {
             files,
             names_map,
             offset: archive_offset,
