@@ -500,9 +500,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name, decrypt with given password
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// The implementation of the cryptographic algorithms has not
     /// gone through a correctness review, and you should assume it is insecure:
     /// passwords used with this API may be compromised.
@@ -534,9 +534,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index, decrypt with given password
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// The implementation of the cryptographic algorithms has not
     /// gone through a correctness review, and you should assume it is insecure:
     /// passwords used with this API may be compromised.
