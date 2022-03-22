@@ -500,9 +500,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name, decrypt with given password
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// The implementation of the cryptographic algorithms has not
     /// gone through a correctness review, and you should assume it is insecure:
     /// passwords used with this API may be compromised.
@@ -534,9 +534,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 
     /// Get a contained file by index, decrypt with given password
-    /// 
+    ///
     /// # Warning
-    /// 
+    ///
     /// The implementation of the cryptographic algorithms has not
     /// gone through a correctness review, and you should assume it is insecure:
     /// passwords used with this API may be compromised.
@@ -679,6 +679,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
             #[allow(deprecated)]
             CompressionMethod::from_u16(compression_method)
         },
+        compression_level: None,
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32,
         compressed_size: compressed_size as u64,
@@ -1074,6 +1075,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         encrypted,
         using_data_descriptor,
         compression_method,
+        compression_level: None,
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32,
         compressed_size: compressed_size as u64,
