@@ -2,7 +2,36 @@
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
+#[cfg(not(any(target_arch = "mips", target_arch = "powerpc")))]
 use std::sync::atomic;
+
+#[cfg(any(target_arch = "mips", target_arch = "powerpc"))]
+mod atomic {
+    use crossbeam_utils::sync::ShardedLock;
+    pub use std::sync::atomic::Ordering;
+
+    #[derive(Debug, Default)]
+    pub struct AtomicU64 {
+        value: ShardedLock<u64>,
+    }
+
+    impl AtomicU64 {
+        pub fn new(v: u64) -> Self {
+            Self {
+                value: ShardedLock::new(v),
+            }
+        }
+        pub fn get_mut(&mut self) -> &mut u64 {
+            self.value.get_mut().unwrap()
+        }
+        pub fn load(&self, _: Ordering) -> u64 {
+            *self.value.read().unwrap()
+        }
+        pub fn store(&self, value: u64, _: Ordering) {
+            *self.value.write().unwrap() = value;
+        }
+    }
+}
 
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
