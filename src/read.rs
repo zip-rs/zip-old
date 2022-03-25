@@ -691,6 +691,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
             #[allow(deprecated)]
             CompressionMethod::from_u16(compression_method)
         },
+        compression_level: None,
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32,
         compressed_size: compressed_size as u64,
@@ -1086,6 +1087,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         encrypted,
         using_data_descriptor,
         compression_method,
+        compression_level: None,
         last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
         crc32,
         compressed_size: compressed_size as u64,

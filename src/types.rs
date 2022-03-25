@@ -2,7 +2,36 @@
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
+#[cfg(not(any(target_arch = "mips", target_arch = "powerpc")))]
 use std::sync::atomic;
+
+#[cfg(any(target_arch = "mips", target_arch = "powerpc"))]
+mod atomic {
+    use crossbeam_utils::sync::ShardedLock;
+    pub use std::sync::atomic::Ordering;
+
+    #[derive(Debug, Default)]
+    pub struct AtomicU64 {
+        value: ShardedLock<u64>,
+    }
+
+    impl AtomicU64 {
+        pub fn new(v: u64) -> Self {
+            Self {
+                value: ShardedLock::new(v),
+            }
+        }
+        pub fn get_mut(&mut self) -> &mut u64 {
+            self.value.get_mut().unwrap()
+        }
+        pub fn load(&self, _: Ordering) -> u64 {
+            *self.value.read().unwrap()
+        }
+        pub fn store(&self, value: u64, _: Ordering) {
+            *self.value.write().unwrap() = value;
+        }
+    }
+}
 
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
@@ -265,6 +294,8 @@ pub struct ZipFileData {
     pub using_data_descriptor: bool,
     /// Compression method used to store the file
     pub compression_method: crate::compression::CompressionMethod,
+    /// Compression level to store the file
+    pub compression_level: Option<i32>,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: DateTime,
     /// CRC32 checksum
@@ -396,6 +427,7 @@ mod test {
             encrypted: false,
             using_data_descriptor: false,
             compression_method: crate::compression::CompressionMethod::Stored,
+            compression_level: None,
             last_modified_time: DateTime::default(),
             crc32: 0,
             compressed_size: 0,

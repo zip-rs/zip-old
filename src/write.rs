@@ -11,6 +11,7 @@ use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
+use std::ops::RangeInclusive;
 
 #[cfg(any(
     feature = "deflate",
@@ -103,6 +104,7 @@ struct ZipRawValues {
 #[derive(Copy, Clone)]
 pub struct FileOptions {
     compression_method: CompressionMethod,
+    compression_level: Option<i32>,
     last_modified_time: DateTime,
     permissions: Option<u32>,
     large_file: bool,
@@ -124,6 +126,7 @@ impl FileOptions {
                 feature = "deflate-zlib"
             )))]
             compression_method: CompressionMethod::Stored,
+            compression_level: None,
             #[cfg(feature = "time")]
             last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
             #[cfg(not(feature = "time"))]
@@ -140,6 +143,21 @@ impl FileOptions {
     #[must_use]
     pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
         self.compression_method = method;
+        self
+    }
+
+    /// Set the compression level for the new file
+    ///
+    /// `None` value specifies default compression level.
+    ///
+    /// Range of values depends on compression method:
+    /// * `Deflated`: 0 - 9. Default is 6
+    /// * `Bzip2`: 0 - 9. Default is 6
+    /// * `Zstd`: -7 - 22, with zero being mapped to default level. Default is 3
+    /// * others: only `None` is allowed
+    #[must_use]
+    pub fn compression_level(mut self, level: Option<i32>) -> FileOptions {
+        self.compression_level = level;
         self
     }
 
@@ -340,6 +358,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 encrypted: false,
                 using_data_descriptor: false,
                 compression_method: options.compression_method,
+                compression_level: options.compression_level,
                 last_modified_time: options.last_modified_time,
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
@@ -375,7 +394,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             // Implicitly calling [`ZipWriter::end_extra_data`] for empty files.
             self.end_extra_data()?;
         }
-        self.inner.switch_to(CompressionMethod::Stored)?;
+        self.inner.switch_to(CompressionMethod::Stored, None)?;
         let writer = self.inner.get_plain();
 
         if !self.writing_raw {
@@ -410,7 +429,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
         self.start_entry(name, options, None)?;
-        self.inner.switch_to(options.compression_method)?;
+        self.inner
+            .switch_to(options.compression_method, options.compression_level)?;
         self.writing_to_file = true;
         Ok(())
     }
@@ -587,7 +607,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             writer.write_u16::<LittleEndian>(extra_field_length)?;
             writer.seek(io::SeekFrom::Start(header_end))?;
 
-            self.inner.switch_to(file.compression_method)?;
+            self.inner
+                .switch_to(file.compression_method, file.compression_level)?;
         }
 
         self.writing_to_extra_field = false;
@@ -803,7 +824,11 @@ impl<W: Write + io::Seek> Drop for ZipWriter<W> {
 }
 
 impl<W: Write + io::Seek> GenericZipWriter<W> {
-    fn switch_to(&mut self, compression: CompressionMethod) -> ZipResult<()> {
+    fn switch_to(
+        &mut self,
+        compression: CompressionMethod,
+        compression_level: Option<i32>,
+    ) -> ZipResult<()> {
         match self.current_compression() {
             Some(method) if method == compression => return Ok(()),
             None => {
@@ -840,7 +865,15 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
         *self = {
             #[allow(deprecated)]
             match compression {
-                CompressionMethod::Stored => GenericZipWriter::Storer(bare),
+                CompressionMethod::Stored => {
+                    if let Some(_) = compression_level {
+                        return Err(ZipError::UnsupportedArchive(
+                            "Unsupported compression level",
+                        ));
+                    }
+
+                    GenericZipWriter::Storer(bare)
+                }
                 #[cfg(any(
                     feature = "deflate",
                     feature = "deflate-miniz",
@@ -848,21 +881,50 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                 ))]
                 CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
                     bare,
-                    flate2::Compression::default(),
+                    flate2::Compression::new(
+                        clamp_opt(
+                            compression_level
+                                .unwrap_or(flate2::Compression::default().level() as i32),
+                            deflate_compression_level_range(),
+                        )
+                        .ok_or(ZipError::UnsupportedArchive(
+                            "Unsupported compression level",
+                        ))? as u32,
+                    ),
                 )),
                 #[cfg(feature = "bzip2")]
-                CompressionMethod::Bzip2 => {
-                    GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::default()))
-                }
+                CompressionMethod::Bzip2 => GenericZipWriter::Bzip2(BzEncoder::new(
+                    bare,
+                    bzip2::Compression::new(
+                        clamp_opt(
+                            compression_level
+                                .unwrap_or(bzip2::Compression::default().level() as i32),
+                            bzip2_compression_level_range(),
+                        )
+                        .ok_or(ZipError::UnsupportedArchive(
+                            "Unsupported compression level",
+                        ))? as u32,
+                    ),
+                )),
                 CompressionMethod::AES => {
                     return Err(ZipError::UnsupportedArchive(
                         "AES compression is not supported for writing",
                     ))
                 }
                 #[cfg(feature = "zstd")]
-                CompressionMethod::Zstd => {
-                    GenericZipWriter::Zstd(ZstdEncoder::new(bare, 0).unwrap())
-                }
+                CompressionMethod::Zstd => GenericZipWriter::Zstd(
+                    ZstdEncoder::new(
+                        bare,
+                        clamp_opt(
+                            compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL),
+                            zstd::compression_level_range().clone(),
+                        )
+                        .ok_or(ZipError::UnsupportedArchive(
+                            "Unsupported compression level",
+                        ))?,
+                    )
+                    .unwrap(),
+                ),
                 CompressionMethod::Unsupported(..) => {
                     return Err(ZipError::UnsupportedArchive("Unsupported compression"))
                 }
@@ -922,6 +984,26 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             GenericZipWriter::Storer(w) => w,
             _ => panic!("Should have switched to stored beforehand"),
         }
+    }
+}
+
+fn deflate_compression_level_range() -> RangeInclusive<i32> {
+    let min = flate2::Compression::none().level() as i32;
+    let max = flate2::Compression::best().level() as i32;
+    min..=max
+}
+
+fn bzip2_compression_level_range() -> RangeInclusive<i32> {
+    let min = bzip2::Compression::none().level() as i32;
+    let max = bzip2::Compression::best().level() as i32;
+    min..=max
+}
+
+fn clamp_opt<T: Ord + Copy>(value: T, range: RangeInclusive<T>) -> Option<T> {
+    if range.contains(&value) {
+        Some(value)
+    } else {
+        None
     }
 }
 
@@ -1258,6 +1340,7 @@ mod test {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
         let options = FileOptions {
             compression_method: CompressionMethod::Stored,
+            compression_level: None,
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
             large_file: false,
