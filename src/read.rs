@@ -739,17 +739,17 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         match kind {
             // Zip64 extended information extra field
             0x0001 => {
-                if file.uncompressed_size == 0xFFFFFFFF {
+                if file.uncompressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
                     file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
                     len_left -= 8;
                 }
-                if file.compressed_size == 0xFFFFFFFF {
+                if file.compressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
                     file.compressed_size = reader.read_u64::<LittleEndian>()?;
                     len_left -= 8;
                 }
-                if file.header_start == 0xFFFFFFFF {
+                if file.header_start == spec::ZIP64_BYTES_THR {
                     file.header_start = reader.read_u64::<LittleEndian>()?;
                     len_left -= 8;
                 }
