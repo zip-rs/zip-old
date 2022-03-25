@@ -14,7 +14,7 @@ pub const DATA_DESCRIPTOR_SIGNATURE: u32 = 0x08074b50;
 pub const ZIP64_BYTES_THR: u64 = u32::MAX as u64;
 pub const ZIP64_ENTRY_THR: usize = u16::MAX as usize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CentralDirectoryEnd {
     pub disk_number: u16,
     pub disk_with_central_directory: u16,
@@ -213,7 +213,7 @@ impl Zip64CentralDirectoryEnd {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GeneralPurposeBitFlags(pub u16);
 
 impl GeneralPurposeBitFlags {
@@ -241,7 +241,7 @@ impl GeneralPurposeBitFlags {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CentralDirectoryHeader {
     pub version_made_by: u16,
     pub version_to_extract: u16,
@@ -339,7 +339,7 @@ impl CentralDirectoryHeader {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LocalFileHeader {
     pub version_to_extract: u16,
     pub flags: GeneralPurposeBitFlags,
@@ -412,7 +412,7 @@ impl LocalFileHeader {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DataDescriptor {
     pub crc32: u32,
     pub compressed_size: u32,
@@ -434,5 +434,93 @@ impl DataDescriptor {
             compressed_size,
             uncompressed_size,
         })
+    }
+
+    pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
+        writer.write_u32::<LittleEndian>(DATA_DESCRIPTOR_SIGNATURE)?;
+        writer.write_u32::<LittleEndian>(self.crc32)?;
+        writer.write_u32::<LittleEndian>(self.compressed_size)?;
+        writer.write_u32::<LittleEndian>(self.uncompressed_size)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{
+        CentralDirectoryHeader, DataDescriptor, GeneralPurposeBitFlags, LocalFileHeader, ZipResult,
+    };
+    use std::io::Cursor;
+    #[test]
+    fn test_cdh_roundtrip() -> ZipResult<()> {
+        let cdh1 = CentralDirectoryHeader {
+            version_made_by: 1,
+            version_to_extract: 2,
+            flags: GeneralPurposeBitFlags(3),
+            compression_method: 4,
+            last_mod_time: 5,
+            last_mod_date: 6,
+            crc32: 7,
+            compressed_size: 8,
+            uncompressed_size: 9,
+            disk_number: 10,
+            internal_file_attributes: 11,
+            external_file_attributes: 12,
+            offset: 13,
+            file_name_raw: b"a".to_vec(),
+            extra_field: b"bb".to_vec(),
+            file_comment_raw: b"ccc".to_vec(),
+        };
+        let mut bytes = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut bytes);
+            cdh1.write(&mut cursor)?;
+        }
+        let cdh2 = CentralDirectoryHeader::parse(&mut &bytes[..])?;
+        assert_eq!(cdh1, cdh2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_lfh_roundtrip() -> ZipResult<()> {
+        let lfh1 = LocalFileHeader {
+            version_to_extract: 1,
+            flags: GeneralPurposeBitFlags(2),
+            compression_method: 3,
+            last_mod_time: 4,
+            last_mod_date: 5,
+            crc32: 6,
+            compressed_size: 7,
+            uncompressed_size: 8,
+            file_name_raw: b"a".to_vec(),
+            extra_field: b"bb".to_vec(),
+        };
+        let mut bytes = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut bytes);
+            lfh1.write(&mut cursor)?;
+        }
+        let lfh2 = LocalFileHeader::parse(&mut &bytes[..])?;
+        assert_eq!(lfh1, lfh2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_dd_roundtrip() -> ZipResult<()> {
+        let dd1 = DataDescriptor {
+            crc32: 1,
+            compressed_size: 2,
+            uncompressed_size: 3,
+        };
+        let mut bytes = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut bytes);
+            dd1.write(&mut cursor)?;
+        }
+        let dd2 = DataDescriptor::read(&mut &bytes[..])?;
+        assert_eq!(dd1, dd2);
+        let dd3 = DataDescriptor::read(&mut &bytes[4..])?;
+        assert_eq!(dd1, dd3);
+        Ok(())
     }
 }
