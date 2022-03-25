@@ -647,6 +647,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         S: Into<String>,
     {
         let mut options = FileOptions::default()
+            .large_file(file.compressed_size().max(file.size()) > 0xFFFFFFFF)
             .last_modified_time(file.last_modified())
             .compression_method(file.compression());
         if let Some(perms) = file.unix_mode() {
@@ -866,7 +867,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             #[allow(deprecated)]
             match compression {
                 CompressionMethod::Stored => {
-                    if let Some(_) = compression_level {
+                    if compression_level.is_some() {
                         return Err(ZipError::UnsupportedArchive(
                             "Unsupported compression level",
                         ));
@@ -917,7 +918,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                         bare,
                         clamp_opt(
                             compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL),
-                            zstd::compression_level_range().clone(),
+                            zstd::compression_level_range(),
                         )
                         .ok_or(ZipError::UnsupportedArchive(
                             "Unsupported compression level",
@@ -1027,18 +1028,14 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     writer.write_u16::<LittleEndian>(file.last_modified_time.datepart())?;
     // crc-32
     writer.write_u32::<LittleEndian>(file.crc32)?;
-    // compressed size
-    writer.write_u32::<LittleEndian>(if file.compressed_size > 0xFFFFFFFF {
-        0xFFFFFFFF
+    // compressed size and uncompressed size
+    if file.large_file {
+        writer.write_u32::<LittleEndian>(0xFFFFFFFF)?;
+        writer.write_u32::<LittleEndian>(0xFFFFFFFF)?;
     } else {
-        file.compressed_size as u32
-    })?;
-    // uncompressed size
-    writer.write_u32::<LittleEndian>(if file.uncompressed_size > 0xFFFFFFFF {
-        0xFFFFFFFF
-    } else {
-        file.uncompressed_size as u32
-    })?;
+        writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
+        writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+    }
     // file name length
     writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
@@ -1061,27 +1058,19 @@ fn update_local_file_header<T: Write + io::Seek>(
     const CRC32_OFFSET: u64 = 14;
     writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32::<LittleEndian>(file.crc32)?;
-    writer.write_u32::<LittleEndian>(if file.compressed_size > 0xFFFFFFFF {
-        if file.large_file {
-            0xFFFFFFFF
-        } else {
-            // compressed size can be slightly larger than uncompressed size
+    if file.large_file {
+        update_local_zip64_extra_field(writer, file)?;
+    } else {
+        // check compressed size as well as it can also be slightly larger than uncompressed size
+        if file.compressed_size > 0xFFFFFFFF {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "Large file option has not been set",
             )));
         }
-    } else {
-        file.compressed_size as u32
-    })?;
-    writer.write_u32::<LittleEndian>(if file.uncompressed_size > 0xFFFFFFFF {
-        // uncompressed size is checked on write to catch it as soon as possible
-        0xFFFFFFFF
-    } else {
-        file.uncompressed_size as u32
-    })?;
-    if file.large_file {
-        update_local_zip64_extra_field(writer, file)?;
+        writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
+        // uncompressed size is already checked on write to catch it as soon as possible
+        writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
     }
     Ok(())
 }
