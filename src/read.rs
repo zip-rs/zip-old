@@ -640,7 +640,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
     let central_header_start = reader.seek(io::SeekFrom::Current(0))?;
-	let central_header = spec::CentralDirectoryHeader::parse(reader)?;
+    let central_header = spec::CentralDirectoryHeader::parse(reader)?;
 
     let file_name = match central_header.flags.is_utf8() {
         true => String::from_utf8_lossy(&*central_header.file_name_raw).into_owned(),
@@ -662,14 +662,17 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
             CompressionMethod::from_u16(central_header.compression_method)
         },
         compression_level: None,
-        last_modified_time: DateTime::from_msdos(central_header.last_mod_date, central_header.last_mod_time),
+        last_modified_time: DateTime::from_msdos(
+            central_header.last_mod_date,
+            central_header.last_mod_time,
+        ),
         crc32: central_header.crc32,
         compressed_size: central_header.compressed_size as u64,
         uncompressed_size: central_header.uncompressed_size as u64,
-        file_name: file_name,
+        file_name,
         file_name_raw: central_header.file_name_raw,
         extra_field: central_header.extra_field,
-        file_comment: file_comment,
+        file_comment,
         header_start: central_header.offset as u64,
         central_header_start,
         data_start: AtomicU64::new(0),

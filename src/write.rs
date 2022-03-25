@@ -1008,28 +1008,28 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     let compressed_size = file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32;
     let uncompressed_size = file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32;
 
-	let mut extra_field = if file.large_file {
-		let mut zip64_extra_field = vec![0; 20];
-		write_local_zip64_extra_field(&mut zip64_extra_field, file)?;
-		zip64_extra_field
-	} else {
-		Vec::new()
-	};
-	extra_field.extend_from_slice(&file.extra_field[..]);
+    let mut extra_field = if file.large_file {
+        let mut zip64_extra_field = vec![0; 20];
+        write_local_zip64_extra_field(&mut zip64_extra_field, file)?;
+        zip64_extra_field
+    } else {
+        Vec::new()
+    };
+    extra_field.extend_from_slice(&file.extra_field[..]);
 
-	let local_file_header = spec::LocalFileHeader {
-		version_to_extract: file.version_needed(),
-		flags: spec::GeneralPurposeBitFlags(flags),
-		compression_method,
-		last_mod_time: file.last_modified_time.timepart(),
-		last_mod_date: file.last_modified_time.datepart(),
-		crc32: file.crc32,
-		compressed_size,
-		uncompressed_size,
-		file_name_raw: file.file_name.as_bytes().to_vec(),
-		extra_field,
-	};
-	local_file_header.write(writer)?;
+    let local_file_header = spec::LocalFileHeader {
+        version_to_extract: file.version_needed(),
+        flags: spec::GeneralPurposeBitFlags(flags),
+        compression_method,
+        last_mod_time: file.last_modified_time.timepart(),
+        last_mod_date: file.last_modified_time.datepart(),
+        crc32: file.crc32,
+        compressed_size,
+        uncompressed_size,
+        file_name_raw: file.file_name.as_bytes().to_vec(),
+        extra_field,
+    };
+    local_file_header.write(writer)?;
 
     Ok(())
 }
@@ -1075,29 +1075,29 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let uncompressed_size = file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32;
     let offset = file.header_start.min(spec::ZIP64_BYTES_THR) as u32;
 
-	let mut extra_field = zip64_extra_field[..zip64_extra_field_length as usize].to_vec();
-	extra_field.extend_from_slice(&file.extra_field[..]);
-	
-	let header = spec::CentralDirectoryHeader {
-		version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
-		version_to_extract: file.version_needed(),
-		flags: spec::GeneralPurposeBitFlags(flags),
-		compression_method,
-		last_mod_time: file.last_modified_time.timepart(),
-		last_mod_date: file.last_modified_time.datepart(),
-		crc32: file.crc32,
-		compressed_size,
-		uncompressed_size,
-		disk_number: 0,
-		internal_file_attributes: 0,
-		external_file_attributes: file.external_attributes,
-		offset,
-		file_name_raw: file.file_name.as_bytes().to_vec(),
-		extra_field,
-		file_comment_raw: Vec::new(),
-	};
+    let mut extra_field = zip64_extra_field[..zip64_extra_field_length as usize].to_vec();
+    extra_field.extend_from_slice(&file.extra_field[..]);
 
-	header.write(writer)
+    let header = spec::CentralDirectoryHeader {
+        version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
+        version_to_extract: file.version_needed(),
+        flags: spec::GeneralPurposeBitFlags(flags),
+        compression_method,
+        last_mod_time: file.last_modified_time.timepart(),
+        last_mod_date: file.last_modified_time.datepart(),
+        crc32: file.crc32,
+        compressed_size,
+        uncompressed_size,
+        disk_number: 0,
+        internal_file_attributes: 0,
+        external_file_attributes: file.external_attributes,
+        offset,
+        file_name_raw: file.file_name.as_bytes().to_vec(),
+        extra_field,
+        file_comment_raw: Vec::new(),
+    };
+
+    header.write(writer)
 }
 
 fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
