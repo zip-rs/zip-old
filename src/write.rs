@@ -998,38 +998,44 @@ fn clamp_opt<T: Ord + Copy>(value: T, range: RangeInclusive<T>) -> Option<T> {
 }
 
 fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
-    let flags = if !file.file_name.is_ascii() {
+    // local file header signature
+    writer.write_u32::<LittleEndian>(spec::LOCAL_FILE_HEADER_SIGNATURE)?;
+    // version needed to extract
+    writer.write_u16::<LittleEndian>(file.version_needed())?;
+    // general purpose bit flag
+    let flag = if !file.file_name.is_ascii() {
         1u16 << 11
     } else {
         0
     };
+    writer.write_u16::<LittleEndian>(flag)?;
+    // Compression method
     #[allow(deprecated)]
-    let compression_method = file.compression_method.to_u16();
-    let compressed_size = file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32;
-    let uncompressed_size = file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32;
-
-    let mut extra_field = if file.large_file {
-        let mut zip64_extra_field = vec![0; 20];
-        write_local_zip64_extra_field(&mut zip64_extra_field, file)?;
-        zip64_extra_field
+    writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
+    // last mod file time and last mod file date
+    writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
+    writer.write_u16::<LittleEndian>(file.last_modified_time.datepart())?;
+    // crc-32
+    writer.write_u32::<LittleEndian>(file.crc32)?;
+    // compressed size and uncompressed size
+    if file.large_file {
+        writer.write_u32::<LittleEndian>(spec::ZIP64_BYTES_THR as u32)?;
+        writer.write_u32::<LittleEndian>(spec::ZIP64_BYTES_THR as u32)?;
     } else {
-        Vec::new()
-    };
-    extra_field.extend_from_slice(&file.extra_field[..]);
-
-    let local_file_header = spec::LocalFileHeader {
-        version_to_extract: file.version_needed(),
-        flags: spec::GeneralPurposeBitFlags(flags),
-        compression_method,
-        last_mod_time: file.last_modified_time.timepart(),
-        last_mod_date: file.last_modified_time.datepart(),
-        crc32: file.crc32,
-        compressed_size,
-        uncompressed_size,
-        file_name_raw: file.file_name.as_bytes().to_vec(),
-        extra_field,
-    };
-    local_file_header.write(writer)?;
+        writer.write_u32::<LittleEndian>(file.compressed_size as u32)?;
+        writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
+    }
+    // file name length
+    writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
+    // extra field length
+    let extra_field_length = if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
+    writer.write_u16::<LittleEndian>(extra_field_length)?;
+    // file name
+    writer.write_all(file.file_name.as_bytes())?;
+    // zip64 extra field
+    if file.large_file {
+        write_local_zip64_extra_field(writer, file)?;
+    }
 
     Ok(())
 }
@@ -1064,40 +1070,56 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     let zip64_extra_field_length =
         write_central_zip64_extra_field(&mut zip64_extra_field.as_mut(), file)?;
 
-    let flags = if !file.file_name.is_ascii() {
+    // central file header signature
+    writer.write_u32::<LittleEndian>(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)?;
+    // version made by
+    let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
+    writer.write_u16::<LittleEndian>(version_made_by)?;
+    // version needed to extract
+    writer.write_u16::<LittleEndian>(file.version_needed())?;
+    // general puprose bit flag
+    let flag = if !file.file_name.is_ascii() {
         1u16 << 11
     } else {
         0
     };
+    writer.write_u16::<LittleEndian>(flag)?;
+    // compression method
     #[allow(deprecated)]
-    let compression_method = file.compression_method.to_u16();
-    let compressed_size = file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32;
-    let uncompressed_size = file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32;
-    let offset = file.header_start.min(spec::ZIP64_BYTES_THR) as u32;
+    writer.write_u16::<LittleEndian>(file.compression_method.to_u16())?;
+    // last mod file time + date
+    writer.write_u16::<LittleEndian>(file.last_modified_time.timepart())?;
+    writer.write_u16::<LittleEndian>(file.last_modified_time.datepart())?;
+    // crc-32
+    writer.write_u32::<LittleEndian>(file.crc32)?;
+    // compressed size
+    writer.write_u32::<LittleEndian>(file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
+    // uncompressed size
+    writer.write_u32::<LittleEndian>(file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
+    // file name length
+    writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
+    // extra field length
+    writer.write_u16::<LittleEndian>(zip64_extra_field_length + file.extra_field.len() as u16)?;
+    // file comment length
+    writer.write_u16::<LittleEndian>(0)?;
+    // disk number start
+    writer.write_u16::<LittleEndian>(0)?;
+    // internal file attribytes
+    writer.write_u16::<LittleEndian>(0)?;
+    // external file attributes
+    writer.write_u32::<LittleEndian>(file.external_attributes)?;
+    // relative offset of local header
+    writer.write_u32::<LittleEndian>(file.header_start.min(spec::ZIP64_BYTES_THR) as u32)?;
+    // file name
+    writer.write_all(file.file_name.as_bytes())?;
+    // zip64 extra field
+    writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
+    // extra field
+    writer.write_all(&file.extra_field)?;
+    // file comment
+    // <none>
 
-    let mut extra_field = zip64_extra_field[..zip64_extra_field_length as usize].to_vec();
-    extra_field.extend_from_slice(&file.extra_field[..]);
-
-    let header = spec::CentralDirectoryHeader {
-        version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
-        version_to_extract: file.version_needed(),
-        flags: spec::GeneralPurposeBitFlags(flags),
-        compression_method,
-        last_mod_time: file.last_modified_time.timepart(),
-        last_mod_date: file.last_modified_time.datepart(),
-        crc32: file.crc32,
-        compressed_size,
-        uncompressed_size,
-        disk_number: 0,
-        internal_file_attributes: 0,
-        external_file_attributes: file.external_attributes,
-        offset,
-        file_name_raw: file.file_name.as_bytes().to_vec(),
-        extra_field,
-        file_comment_raw: Vec::new(),
-    };
-
-    header.write(writer)
+    Ok(())
 }
 
 fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {

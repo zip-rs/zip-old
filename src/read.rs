@@ -640,43 +640,70 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
     let central_header_start = reader.seek(io::SeekFrom::Current(0))?;
-    let central_header = spec::CentralDirectoryHeader::parse(reader)?;
+    // Parse central header
+    let signature = reader.read_u32::<LittleEndian>()?;
+    if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+        return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
+    }
 
-    let file_name = match central_header.flags.is_utf8() {
-        true => String::from_utf8_lossy(&*central_header.file_name_raw).into_owned(),
-        false => central_header.file_name_raw.clone().from_cp437(),
+    let version_made_by = reader.read_u16::<LittleEndian>()?;
+    let _version_to_extract = reader.read_u16::<LittleEndian>()?;
+    let flags = reader.read_u16::<LittleEndian>()?;
+    let encrypted = flags & 1 == 1;
+    let is_utf8 = flags & (1 << 11) != 0;
+    let using_data_descriptor = flags & (1 << 3) != 0;
+    let compression_method = reader.read_u16::<LittleEndian>()?;
+    let last_mod_time = reader.read_u16::<LittleEndian>()?;
+    let last_mod_date = reader.read_u16::<LittleEndian>()?;
+    let crc32 = reader.read_u32::<LittleEndian>()?;
+    let compressed_size = reader.read_u32::<LittleEndian>()?;
+    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
+    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
+    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
+    let file_comment_length = reader.read_u16::<LittleEndian>()? as usize;
+    let _disk_number = reader.read_u16::<LittleEndian>()?;
+    let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
+    let external_file_attributes = reader.read_u32::<LittleEndian>()?;
+    let offset = reader.read_u32::<LittleEndian>()? as u64;
+    let mut file_name_raw = vec![0; file_name_length];
+    reader.read_exact(&mut file_name_raw)?;
+    let mut extra_field = vec![0; extra_field_length];
+    reader.read_exact(&mut extra_field)?;
+    let mut file_comment_raw = vec![0; file_comment_length];
+    reader.read_exact(&mut file_comment_raw)?;
+
+    let file_name = match is_utf8 {
+        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
+        false => file_name_raw.clone().from_cp437(),
     };
-    let file_comment = match central_header.flags.is_utf8() {
-        true => String::from_utf8_lossy(&*central_header.file_comment_raw).into_owned(),
-        false => central_header.file_comment_raw.clone().from_cp437(),
+    let file_comment = match is_utf8 {
+        true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
+        false => file_comment_raw.from_cp437(),
     };
 
     // Construct the result
     let mut result = ZipFileData {
-        system: System::from_u8((central_header.version_made_by >> 8) as u8),
-        version_made_by: central_header.version_made_by as u8,
-        encrypted: central_header.flags.encrypted(),
-        using_data_descriptor: central_header.flags.using_data_descriptor(),
+        system: System::from_u8((version_made_by >> 8) as u8),
+        version_made_by: version_made_by as u8,
+        encrypted,
+        using_data_descriptor,
         compression_method: {
             #[allow(deprecated)]
-            CompressionMethod::from_u16(central_header.compression_method)
+            CompressionMethod::from_u16(compression_method)
         },
         compression_level: None,
-        last_modified_time: DateTime::from_msdos(
-            central_header.last_mod_date,
-            central_header.last_mod_time,
-        ),
-        crc32: central_header.crc32,
-        compressed_size: central_header.compressed_size as u64,
-        uncompressed_size: central_header.uncompressed_size as u64,
+        last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
+        crc32,
+        compressed_size: compressed_size as u64,
+        uncompressed_size: uncompressed_size as u64,
         file_name,
-        file_name_raw: central_header.file_name_raw,
-        extra_field: central_header.extra_field,
+        file_name_raw,
+        extra_field,
         file_comment,
-        header_start: central_header.offset as u64,
+        header_start: offset,
         central_header_start,
         data_start: AtomicU64::new(0),
-        external_attributes: central_header.external_file_attributes,
+        external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
     };
