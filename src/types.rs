@@ -357,9 +357,7 @@ impl ZipFileData {
     }
 
     pub fn zip64_extension(&self) -> bool {
-        self.uncompressed_size > 0xFFFFFFFF
-            || self.compressed_size > 0xFFFFFFFF
-            || self.header_start > 0xFFFFFFFF
+        self.large_file || self.header_start > crate::spec::ZIP64_BYTES_THR
     }
 
     pub fn version_needed(&self) -> u16 {
