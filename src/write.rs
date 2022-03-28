@@ -11,7 +11,6 @@ use std::default::Default;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
-use std::ops::RangeInclusive;
 
 #[cfg(any(
     feature = "deflate",
@@ -977,19 +976,32 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
     }
 }
 
-fn deflate_compression_level_range() -> RangeInclusive<i32> {
+#[cfg(any(
+    feature = "deflate",
+    feature = "deflate-miniz",
+    feature = "deflate-zlib"
+))]
+fn deflate_compression_level_range() -> std::ops::RangeInclusive<i32> {
     let min = flate2::Compression::none().level() as i32;
     let max = flate2::Compression::best().level() as i32;
     min..=max
 }
 
-fn bzip2_compression_level_range() -> RangeInclusive<i32> {
+#[cfg(feature = "bzip2")]
+fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i32> {
     let min = bzip2::Compression::none().level() as i32;
     let max = bzip2::Compression::best().level() as i32;
     min..=max
 }
 
-fn clamp_opt<T: Ord + Copy>(value: T, range: RangeInclusive<T>) -> Option<T> {
+#[cfg(any(
+    feature = "deflate",
+    feature = "deflate-miniz",
+    feature = "deflate-zlib",
+    feature = "bzip2",
+    feature = "zstd"
+))]
+fn clamp_opt<T: Ord + Copy>(value: T, range: std::ops::RangeInclusive<T>) -> Option<T> {
     if range.contains(&value) {
         Some(value)
     } else {
