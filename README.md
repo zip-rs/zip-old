@@ -5,7 +5,7 @@ zip-rs
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 [![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/rQ7H9cSsF4)
 
-[Documentation](https://docs.rs/zip/0.6.0/zip/)
+[Documentation](https://docs.rs/zip/0.6.1/zip/)
 
 > PSA: This version of the ZIP crate will not gain any new features,
 >      and will only be updated if major security issues are found.
@@ -35,14 +35,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "0.6"
+zip = "0.6.1"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "0.6", default-features = false }
+zip = { version = "0.6.1", default-features = false }
 ```
 
 The features available are:
