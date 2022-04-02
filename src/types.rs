@@ -2,10 +2,18 @@
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
-#[cfg(not(any(target_arch = "mips", target_arch = "powerpc")))]
+#[cfg(not(any(
+    all(target_arch = "arm", target_pointer_width = "32"),
+    target_arch = "mips",
+    target_arch = "powerpc"
+)))]
 use std::sync::atomic;
 
-#[cfg(any(target_arch = "mips", target_arch = "powerpc"))]
+#[cfg(any(
+    all(target_arch = "arm", target_pointer_width = "32"),
+    target_arch = "mips",
+    target_arch = "powerpc"
+))]
 mod atomic {
     use crossbeam_utils::sync::ShardedLock;
     pub use std::sync::atomic::Ordering;
