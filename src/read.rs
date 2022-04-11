@@ -408,8 +408,8 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let (archive_offset, directory_start, number_of_files) =
             Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
 
-        let mut files = Vec::new();
-        let mut names_map = HashMap::new();
+        let mut files = Vec::with_capacity(number_of_files);
+        let mut names_map = HashMap::with_capacity(number_of_files);
 
         if reader.seek(io::SeekFrom::Start(directory_start)).is_err() {
             return Err(ZipError::InvalidArchive(
