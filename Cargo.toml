@@ -42,3 +42,7 @@ default = ["aes-crypto", "bzip2", "deflate", "time", "zstd"]
 [[bench]]
 name = "read_entry"
 harness = false
+
+[[bench]]
+name = "read_metadata"
+harness = false
