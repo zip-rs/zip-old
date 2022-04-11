@@ -639,7 +639,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     reader: &mut R,
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
-    let central_header_start = reader.seek(io::SeekFrom::Current(0))?;
+    let central_header_start = reader.stream_position()?;
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
