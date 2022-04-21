@@ -429,7 +429,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
         self.start_entry(name.into().as_bytes(), options, None)?;
-        self.inner.switch_to(options.compression_method, options.compression_level)?;
+        self.inner
+            .switch_to(options.compression_method, options.compression_level)?;
         self.writing_to_file = true;
         Ok(())
     }
@@ -1145,11 +1146,9 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     writer.write_u16::<LittleEndian>(version_made_by)?;
     // version needed to extract
     writer.write_u16::<LittleEndian>(file.version_needed())?;
-    // general puprose bit flag
-    let flag = if !std::str::from_utf8(&file.file_name_raw)
-        .unwrap_or("あ")
-        .is_ascii()
-    {
+    // "General Purpose" bit flag.  When set, indicates that the
+    // name is utf8 compatible (either ascii or utf8-encoded unicode).
+    let flag = if !std::str::from_utf8(&file.file_name_raw).is_ok() {
         1u16 << 11
     } else {
         0
