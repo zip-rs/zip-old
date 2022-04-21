@@ -429,12 +429,14 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
         self.start_entry(name.into().as_bytes(), options, None)?;
-        self.inner.switch_to(options.compression_method)?;
+        self.inner.switch_to(options.compression_method, options.compression_level)?;
         self.writing_to_file = true;
         Ok(())
     }
 
-    /// Create a file in the archive with a raw-bytes-name and start writing its contents.
+    /// Create a file in the archive with a raw-bytes name and start writing its contents.
+    ///
+    /// Note: when your file name is valid utf8, prefer using `start_file()`.
     ///
     /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
     pub fn start_file_raw_name(&mut self, name: &[u8], mut options: FileOptions) -> ZipResult<()> {
@@ -792,7 +794,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = CompressionMethod::Stored;
 
-        self.start_entry(name, options, None)?;
+        self.start_entry(name.into().as_bytes(), options, None)?;
         self.writing_to_file = true;
         self.write_all(target.into().as_bytes())?;
         self.writing_to_file = false;
