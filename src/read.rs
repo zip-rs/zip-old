@@ -419,7 +419,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
         for _ in 0..number_of_files {
             let file = central_header_to_zip_file(&mut reader, archive_offset)?;
-            names_map.insert(file.file_name.clone(), files.len());
+            names_map.insert(file.file_name.to_string_lossy().into(), files.len());
             files.push(file);
         }
 
@@ -672,9 +672,13 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     let mut file_comment_raw = vec![0; file_comment_length];
     reader.read_exact(&mut file_comment_raw)?;
 
-    let file_name = match is_utf8 {
+    let file_name_utf8 = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
         false => file_name_raw.clone().from_cp437(),
+    };
+    let file_name = match is_utf8 {
+        true => String::from_utf8_lossy(&*file_name_raw).into(),
+        false => file_name_raw.into(),
     };
     let file_comment = match is_utf8 {
         true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
@@ -697,7 +701,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
         file_name,
-        file_name_raw,
+        file_name_utf8,
         extra_field,
         file_comment,
         header_start: offset,
@@ -838,14 +842,14 @@ impl<'a> ZipFile<'a> {
     /// You can use the [`ZipFile::enclosed_name`] method to validate the name
     /// as a safe path.
     pub fn name(&self) -> &str {
-        &self.data.file_name
+        &self.data.file_name_utf8
     }
 
     /// Get the name of the file, in the raw (internal) byte representation.
     ///
     /// The encoding of this data is currently undefined.
     pub fn name_raw(&self) -> &[u8] {
-        &self.data.file_name_raw
+        self.data.file_name.as_bytes()
     }
 
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
@@ -886,10 +890,10 @@ impl<'a> ZipFile<'a> {
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
     pub fn enclosed_name(&self) -> Option<&Path> {
-        if self.data.file_name.contains('\0') {
+        if self.data.file_name_utf8.contains('\0') {
             return None;
         }
-        let path = Path::new(&self.data.file_name);
+        let path = Path::new(&self.data.file_name_utf8);
         let mut depth = 0usize;
         for component in path.components() {
             match component {
@@ -1076,9 +1080,21 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     let mut extra_field = vec![0; extra_field_length];
     reader.read_exact(&mut extra_field)?;
 
-    let file_name = match is_utf8 {
+    let file_name_utf8 = match is_utf8 {
         true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
         false => file_name_raw.clone().from_cp437(),
+    };
+    let file_name = match is_utf8 {
+        true => {
+            if let Ok(name) = String::from_utf8(file_name_raw.clone()) {
+                name.into()
+            } else {
+                // If it's not actually UTF8 as claimed, fall back to storing
+                // it raw.
+                file_name_raw.into()
+            }
+        }
+        false => file_name_raw.into(),
     };
 
     let mut result = ZipFileData {
@@ -1093,7 +1109,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
         file_name,
-        file_name_raw,
+        file_name_utf8,
         extra_field,
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is

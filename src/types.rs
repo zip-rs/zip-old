@@ -1,4 +1,7 @@
 //! Types that specify what is contained in a ZIP.
+
+use std::borrow::Cow;
+
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
@@ -60,6 +63,74 @@ impl System {
             3 => Unix,
             _ => Unknown,
         }
+    }
+}
+
+/// Stores either a UTF8 string or raw bytes.
+///
+/// The reason for using this (rather than e.g. just always using raw
+/// bytes and attempting a conversion to string when needed) is to
+/// communicate intent: the `Raw` variant means that the data is
+/// explicitly not meant to be valid utf8, even if it can coincidentally
+/// be interpreted that way.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum MaybeUtf8 {
+    Utf8(String),
+    Raw(Vec<u8>),
+}
+
+impl MaybeUtf8 {
+    pub fn is_utf8(&self) -> bool {
+        match *self {
+            MaybeUtf8::Utf8(_) => false,
+            MaybeUtf8::Raw(_) => true,
+        }
+    }
+
+    // pub fn as_str(&self) -> Option<&str> {
+    //     match *self {
+    //         MaybeUtf8::Utf8(ref string) => Some(string),
+    //         MaybeUtf8::Raw(_) => None,
+    //     }
+    // }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match *self {
+            MaybeUtf8::Utf8(ref string) => string.as_bytes(),
+            MaybeUtf8::Raw(ref bytes) => &bytes,
+        }
+    }
+
+    pub fn to_string_lossy(&self) -> Cow<str> {
+        match *self {
+            MaybeUtf8::Utf8(ref string) => string.into(),
+            MaybeUtf8::Raw(ref bytes) => String::from_utf8_lossy(&bytes),
+        }
+    }
+}
+impl From<&str> for MaybeUtf8 {
+    fn from(other: &str) -> Self {
+        MaybeUtf8::Utf8(other.into())
+    }
+}
+impl From<Cow<'_, str>> for MaybeUtf8 {
+    fn from(other: Cow<str>) -> Self {
+        MaybeUtf8::Utf8(other.into_owned())
+    }
+}
+impl From<String> for MaybeUtf8 {
+    fn from(other: String) -> Self {
+        MaybeUtf8::Utf8(other)
+    }
+}
+impl From<&[u8]> for MaybeUtf8 {
+    fn from(other: &[u8]) -> Self {
+        MaybeUtf8::Raw(other.to_vec())
+    }
+}
+impl From<Vec<u8>> for MaybeUtf8 {
+    fn from(other: Vec<u8>) -> Self {
+        MaybeUtf8::Raw(other)
     }
 }
 
@@ -312,10 +383,10 @@ pub struct ZipFileData {
     pub compressed_size: u64,
     /// Size of the file when extracted
     pub uncompressed_size: u64,
-    /// Name of the file
-    pub file_name: String,
-    /// Raw file name. To be used when file_name was incorrectly decoded.
-    pub file_name_raw: Vec<u8>,
+    /// Name of the file.
+    pub file_name: MaybeUtf8,
+    /// File name represented (possibly lossily) as UTF8.
+    pub file_name_utf8: String,
     /// Extra field usually used for storage expansion
     pub extra_field: Vec<u8>,
     /// File comment
@@ -338,9 +409,9 @@ pub struct ZipFileData {
 
 impl ZipFileData {
     pub fn file_name_sanitized(&self) -> ::std::path::PathBuf {
-        let no_null_filename = match self.file_name.find('\0') {
-            Some(index) => &self.file_name[0..index],
-            None => &self.file_name,
+        let no_null_filename = match self.file_name_utf8.find('\0') {
+            Some(index) => &self.file_name_utf8[0..index],
+            None => &self.file_name_utf8,
         }
         .to_string();
 
@@ -440,8 +511,8 @@ mod test {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.clone(),
-            file_name_raw: file_name.into_bytes(),
+            file_name: file_name.clone().into(),
+            file_name_utf8: file_name,
             extra_field: Vec::new(),
             file_comment: String::new(),
             header_start: 0,

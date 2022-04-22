@@ -4,7 +4,7 @@ use crate::compression::CompressionMethod;
 use crate::read::{central_header_to_zip_file, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
-use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::types::{AtomicU64, DateTime, MaybeUtf8, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
 use std::default::Default;
@@ -27,41 +27,6 @@ use time::OffsetDateTime;
 
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
-
-/// Stores either a UTF8 string or raw bytes.
-///
-/// The reason for using this rather than just always using raw bytes
-/// is to communicate intent: the `Raw` variant means that the data
-/// is explicitly not meant to be valid utf8, even if it can
-/// coincidentally be interpreted that way.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum MaybeUtf8<'a> {
-    Utf8(&'a str),
-    Raw(&'a [u8]),
-}
-
-impl<'a> MaybeUtf8<'a> {
-    // fn as_str(&self) -> Option<&str> {
-    //     match *self {
-    //         MaybeUtf8::Utf8(string) => Some(string),
-    //         MaybeUtf8::Raw(_) => None,
-    //     }
-    // }
-
-    fn as_bytes(&self) -> &[u8] {
-        match *self {
-            MaybeUtf8::Utf8(string) => string.as_bytes(),
-            MaybeUtf8::Raw(bytes) => bytes,
-        }
-    }
-
-    fn to_string_lossy(&self) -> std::borrow::Cow<str> {
-        match *self {
-            MaybeUtf8::Utf8(string) => string.into(),
-            MaybeUtf8::Raw(bytes) => String::from_utf8_lossy(bytes),
-        }
-    }
-}
 
 enum GenericZipWriter<W: Write + io::Seek> {
     Closed,
@@ -398,8 +363,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
-                file_name: name.to_string_lossy().into(),
-                file_name_raw: name.as_bytes().to_vec(),
+                file_name: name.clone(),
+                file_name_utf8: name.to_string_lossy().into(),
                 extra_field: Vec::new(),
                 file_comment: String::new(),
                 header_start,
@@ -463,7 +428,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(MaybeUtf8::Utf8(&name.into()), options, None)?;
+        self.start_entry(name.into().into(), options, None)?;
         self.inner
             .switch_to(options.compression_method, options.compression_level)?;
         self.writing_to_file = true;
@@ -480,7 +445,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(MaybeUtf8::Raw(name), options, None)?;
+        self.start_entry(name.into(), options, None)?;
         self.inner
             .switch_to(options.compression_method, options.compression_level)?;
         self.writing_to_file = true;
@@ -607,7 +572,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             options.permissions = Some(0o644);
         }
         *options.permissions.as_mut().unwrap() |= 0o100000;
-        self.start_entry(MaybeUtf8::Utf8(&name.into()), options, None)?;
+        self.start_entry(name.into().into(), options, None)?;
         self.writing_to_file = true;
         self.writing_to_extra_field = true;
         Ok(self.files.last().unwrap().data_start.load())
@@ -712,7 +677,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             uncompressed_size: file.size(),
         };
 
-        self.start_entry(MaybeUtf8::Utf8(&name.into()), options, Some(raw_values))?;
+        self.start_entry(name.into().into(), options, Some(raw_values))?;
         self.writing_to_file = true;
         self.writing_raw = true;
 
@@ -769,7 +734,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             _ => name_as_string + "/",
         };
 
-        self.start_entry(MaybeUtf8::Utf8(&name_with_slash), options, None)?;
+        self.start_entry(name_with_slash.into(), options, None)?;
         self.writing_to_file = false;
         Ok(())
     }
@@ -830,7 +795,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = CompressionMethod::Stored;
 
-        self.start_entry(MaybeUtf8::Utf8(&name.into()), options, None)?;
+        self.start_entry(name.into().into(), options, None)?;
         self.writing_to_file = true;
         self.write_all(target.into().as_bytes())?;
         self.writing_to_file = false;
@@ -1107,7 +1072,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     writer.write_u16::<LittleEndian>(file.version_needed())?;
     // "General Purpose" bit flag.  When set, indicates that the
     // name is utf8 compatible (either ascii or utf8-encoded unicode).
-    let flag = if std::str::from_utf8(&file.file_name_raw).is_ok() {
+    let flag = if file.file_name.is_utf8() {
         1u16 << 11
     } else {
         0
@@ -1130,12 +1095,12 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
         writer.write_u32::<LittleEndian>(file.uncompressed_size as u32)?;
     }
     // file name length
-    writer.write_u16::<LittleEndian>(file.file_name_raw.len() as u16)?;
+    writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
     let extra_field_length = if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
     writer.write_u16::<LittleEndian>(extra_field_length)?;
     // file name
-    writer.write_all(&file.file_name_raw)?;
+    writer.write_all(file.file_name.as_bytes())?;
     // zip64 extra field
     if file.large_file {
         write_local_zip64_extra_field(writer, file)?;
@@ -1183,7 +1148,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     writer.write_u16::<LittleEndian>(file.version_needed())?;
     // "General Purpose" bit flag.  When set, indicates that the
     // name is utf8 compatible (either ascii or utf8-encoded unicode).
-    let flag = if std::str::from_utf8(&file.file_name_raw).is_ok() {
+    let flag = if file.file_name.is_utf8() {
         1u16 << 11
     } else {
         0
@@ -1202,7 +1167,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // uncompressed size
     writer.write_u32::<LittleEndian>(file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32)?;
     // file name length
-    writer.write_u16::<LittleEndian>(file.file_name_raw.len() as u16)?;
+    writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
     writer.write_u16::<LittleEndian>(zip64_extra_field_length + file.extra_field.len() as u16)?;
     // file comment length
@@ -1216,7 +1181,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // relative offset of local header
     writer.write_u32::<LittleEndian>(file.header_start.min(spec::ZIP64_BYTES_THR) as u32)?;
     // file name
-    writer.write_all(&file.file_name_raw)?;
+    writer.write_all(file.file_name.as_bytes())?;
     // zip64 extra field
     writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
     // extra field
@@ -1298,7 +1263,7 @@ fn update_local_zip64_extra_field<T: Write + io::Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
-    let zip64_extra_field = file.header_start + 30 + file.file_name_raw.len() as u64;
+    let zip64_extra_field = file.header_start + 30 + file.file_name.as_bytes().len() as u64;
     writer.seek(io::SeekFrom::Start(zip64_extra_field + 4))?;
     writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
     writer.write_u64::<LittleEndian>(file.compressed_size)?;
