@@ -40,7 +40,8 @@ pub(crate) mod zip_archive {
     #[derive(Debug)]
     pub(crate) struct Shared {
         pub(super) files: Vec<super::ZipFileData>,
-        pub(super) names_map: super::HashMap<String, usize>,
+        pub(super) names_map_utf8: super::HashMap<String, usize>,
+        pub(super) names_map_raw: super::HashMap<Vec<u8>, usize>,
         pub(super) offset: u64,
         pub(super) comment: Vec<u8>,
     }
@@ -409,7 +410,8 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
 
         let mut files = Vec::with_capacity(number_of_files);
-        let mut names_map = HashMap::with_capacity(number_of_files);
+        let mut names_map_utf8 = HashMap::with_capacity(number_of_files);
+        let mut names_map_raw = HashMap::with_capacity(number_of_files);
 
         if reader.seek(io::SeekFrom::Start(directory_start)).is_err() {
             return Err(ZipError::InvalidArchive(
@@ -419,13 +421,15 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
         for _ in 0..number_of_files {
             let file = central_header_to_zip_file(&mut reader, archive_offset)?;
-            names_map.insert(file.file_name.to_string_lossy().into(), files.len());
+            names_map_utf8.insert(file.file_name.to_string_lossy().into(), files.len());
+            names_map_raw.insert(file.file_name.as_bytes().to_vec(), files.len());
             files.push(file);
         }
 
         let shared = Arc::new(zip_archive::Shared {
             files,
-            names_map,
+            names_map_utf8,
+            names_map_raw,
             offset: archive_offset,
             comment: footer.zip_file_comment,
         });
@@ -496,7 +500,12 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.names_map.keys().map(|s| s.as_str())
+        self.shared.names_map_utf8.keys().map(|s| s.as_str())
+    }
+
+    /// Returns an iterator over all the file and directory raw names in this archive.
+    pub fn file_raw_names(&self) -> impl Iterator<Item = &[u8]> {
+        self.shared.names_map_raw.keys().map(|b| &b[..])
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -525,12 +534,23 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         Ok(self.by_name_with_optional_password(name, None)?.unwrap())
     }
 
+    /// Search for a file entry by raw name
+    pub fn by_raw_name<'a>(&'a mut self, name: &[u8]) -> ZipResult<ZipFile<'a>> {
+        let index = match self.shared.names_map_raw.get(name) {
+            Some(index) => *index,
+            None => {
+                return Err(ZipError::FileNotFound);
+            }
+        };
+        self.by_index(index)
+    }
+
     fn by_name_with_optional_password<'a>(
         &'a mut self,
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
-        let index = match self.shared.names_map.get(name) {
+        let index = match self.shared.names_map_utf8.get(name) {
             Some(index) => *index,
             None => {
                 return Err(ZipError::FileNotFound);
