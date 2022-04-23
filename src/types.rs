@@ -97,14 +97,14 @@ impl MaybeUtf8 {
     pub fn as_bytes(&self) -> &[u8] {
         match *self {
             MaybeUtf8::Utf8(ref string) => string.as_bytes(),
-            MaybeUtf8::Raw(ref bytes) => &bytes,
+            MaybeUtf8::Raw(ref bytes) => bytes,
         }
     }
 
     pub fn to_string_lossy(&self) -> Cow<str> {
         match *self {
             MaybeUtf8::Utf8(ref string) => string.into(),
-            MaybeUtf8::Raw(ref bytes) => String::from_utf8_lossy(&bytes),
+            MaybeUtf8::Raw(ref bytes) => String::from_utf8_lossy(bytes),
         }
     }
 }
