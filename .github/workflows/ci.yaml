@@ -74,3 +74,19 @@ jobs:
 
     - name: Docs
       run: cargo doc
+
+  fuzz:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - run: cargo install cargo-fuzz
+      - name: compile fuzz
+        run: |
+          cargo fuzz build fuzz_read

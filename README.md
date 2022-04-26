@@ -75,3 +75,24 @@ See the [examples directory](examples) for:
    * How to extract a zip file.
    * How to extract a single file from a zip.
    * How to read a zip from the standard input.
+
+Fuzzing
+-------
+
+Fuzzing support is through [cargo fuzz](https://github.com/rust-fuzz/cargo-fuzz). To install cargo fuzz:
+
+```bash
+cargo install cargo-fuzz
+```
+
+To list fuzz targets:
+
+```bash
+cargo +nightly fuzz list
+```
+
+To start fuzzing zip extraction:
+
+```bash
+cargo +nightly fuzz run fuzz_read
+```
