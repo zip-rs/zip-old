@@ -408,8 +408,16 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         let (archive_offset, directory_start, number_of_files) =
             Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
 
-        let mut files = Vec::with_capacity(number_of_files);
-        let mut names_map = HashMap::with_capacity(number_of_files);
+        // If the parsed number of files is greater than the offset then
+        // something fishy is going on and we shouldn't trust number_of_files.
+        let file_capacity = if number_of_files > cde_start_pos as usize {
+            0
+        } else {
+            number_of_files
+        };
+
+        let mut files = Vec::with_capacity(file_capacity);
+        let mut names_map = HashMap::with_capacity(file_capacity);
 
         if reader.seek(io::SeekFrom::Start(directory_start)).is_err() {
             return Err(ZipError::InvalidArchive(
@@ -1266,5 +1274,37 @@ mod test {
                     || (file_name.starts_with("file") && zip_file.is_file())
             );
         }
+    }
+
+    /// test case to ensure we don't preemptively over allocate based on the
+    /// declared number of files in the CDE of an invalid zip when the number of
+    /// files declared is more than the alleged offset in the CDE
+    #[test]
+    fn invalid_cde_number_of_files_allocation_smaller_offset() {
+        use super::ZipArchive;
+        use std::io;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!(
+            "../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
+        ));
+        let reader = ZipArchive::new(io::Cursor::new(v));
+        assert!(reader.is_err());
+    }
+
+    /// test case to ensure we don't preemptively over allocate based on the
+    /// declared number of files in the CDE of an invalid zip when the number of
+    /// files declared is less than the alleged offset in the CDE
+    #[test]
+    fn invalid_cde_number_of_files_allocation_greater_offset() {
+        use super::ZipArchive;
+        use std::io;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!(
+            "../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
+        ));
+        let reader = ZipArchive::new(io::Cursor::new(v));
+        assert!(reader.is_err());
     }
 }
