@@ -727,7 +727,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
     /// Add a directory entry, taking a Path as argument.
     ///
-    /// This function ensures that the '/' path seperator is used. It also ignores all non 'Normal'
+    /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
     #[deprecated(
         since = "0.5.7",

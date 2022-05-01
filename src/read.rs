@@ -957,7 +957,7 @@ impl<'a> ZipFile<'a> {
         match self.data.system {
             System::Unix => Some(self.data.external_attributes >> 16),
             System::Dos => {
-                // Interpret MSDOS directory bit
+                // Interpret MS-DOS directory bit
                 let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
                     ffi::S_IFDIR | 0o0775
                 } else {
