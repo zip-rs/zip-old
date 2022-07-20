@@ -29,11 +29,6 @@ use bzip2::read::BzDecoder;
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-mod ffi {
-    pub const S_IFDIR: u32 = 0o0040000;
-    pub const S_IFREG: u32 = 0o0100000;
-}
-
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
@@ -949,27 +944,7 @@ impl<'a> ZipFile<'a> {
 
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
-        if self.data.external_attributes == 0 {
-            return None;
-        }
-
-        match self.data.system {
-            System::Unix => Some(self.data.external_attributes >> 16),
-            System::Dos => {
-                // Interpret MS-DOS directory bit
-                let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
-                    ffi::S_IFDIR | 0o0775
-                } else {
-                    ffi::S_IFREG | 0o0664
-                };
-                if 0x01 == (self.data.external_attributes & 0x01) {
-                    // Read-only bit; strip write permissions
-                    mode &= 0o0555;
-                }
-                Some(mode)
-            }
-            _ => None,
-        }
+        self.data.unix_mode()
     }
 
     /// Get the CRC32 hash of the original file
