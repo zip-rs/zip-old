@@ -1,6 +1,5 @@
 //! Types that specify what is contained in a ZIP.
-#[cfg(feature = "time")]
-use std::convert::{TryFrom, TryInto};
+use std::path;
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
@@ -373,6 +372,23 @@ impl ZipFileData {
                 path.push(cur.as_os_str());
                 path
             })
+    }
+
+    pub fn enclosed_name(&self) -> Option<&path::Path> {
+        if self.file_name.contains('\0') {
+            return None;
+        }
+        let path = path::Path::new(&self.file_name);
+        let mut depth = 0usize;
+        for component in path.components() {
+            match component {
+                path::Component::Prefix(_) | path::Component::RootDir => return None,
+                path::Component::ParentDir => depth = depth.checked_sub(1)?,
+                path::Component::Normal(_) => depth += 1,
+                path::Component::CurDir => (),
+            }
+        }
+        Some(path)
     }
 
     pub fn zip64_extension(&self) -> bool {

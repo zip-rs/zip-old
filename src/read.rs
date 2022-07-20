@@ -13,7 +13,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
-use std::path::{Component, Path};
+use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(any(
@@ -906,20 +906,7 @@ impl<'a> ZipFile<'a> {
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
     pub fn enclosed_name(&self) -> Option<&Path> {
-        if self.data.file_name.contains('\0') {
-            return None;
-        }
-        let path = Path::new(&self.data.file_name);
-        let mut depth = 0usize;
-        for component in path.components() {
-            match component {
-                Component::Prefix(_) | Component::RootDir => return None,
-                Component::ParentDir => depth = depth.checked_sub(1)?,
-                Component::Normal(_) => depth += 1,
-                Component::CurDir => (),
-            }
-        }
-        Some(path)
+        self.data.enclosed_name()
     }
 
     /// Get the comment of the file
