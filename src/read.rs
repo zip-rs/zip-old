@@ -448,37 +448,40 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
 
-        fn inner(this: &mut ZipArchive<impl Read + io::Seek>, directory: &Path) -> ZipResult<()> {
-            for i in 0..this.len() {
-                let mut file = this.by_index(i)?;
-                let filepath = file
-                    .enclosed_name()
-                    .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+        fn inner(file: &mut ZipFile<'_>, directory: &Path) -> ZipResult<()> {
+            let filepath = file
+                .enclosed_name()
+                .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
 
-                let outpath = directory.join(filepath);
+            let outpath = directory.join(filepath);
 
-                if file.name().ends_with('/') {
-                    fs::create_dir_all(&outpath)?;
-                } else {
-                    if let Some(p) = outpath.parent() {
-                        fs::create_dir_all(&p)?;
-                    }
-                    let mut outfile = fs::File::create(&outpath)?;
-                    io::copy(&mut file, &mut outfile)?;
+            if file.name().ends_with('/') {
+                fs::create_dir_all(&outpath)?;
+            } else {
+                if let Some(p) = outpath.parent() {
+                    fs::create_dir_all(&p)?;
                 }
-                // Get and Set permissions
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Some(mode) = file.unix_mode() {
-                        fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
-                    }
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(file, &mut outfile)?;
+            }
+            // Get and Set permissions
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Some(mode) = file.unix_mode() {
+                    fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
                 }
             }
             Ok(())
         }
 
-        inner(self, directory.as_ref())
+        for i in 0..self.len() {
+            let mut file = self.by_index(i)?;
+
+            inner(&mut file, directory.as_ref())?;
+        }
+
+        Ok(())
     }
 
     /// Number of files contained in this zip.
