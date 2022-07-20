@@ -663,8 +663,8 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
 /// Parse a central directory entry to collect the information for the file.
 fn central_header_to_zip_file_inner<R: Read>(
     reader: &mut R,
-    central_header_start: u64,
     archive_offset: u64,
+    central_header_start: u64,
 ) -> ZipResult<ZipFileData> {
     let version_made_by = reader.read_u16::<LittleEndian>()?;
     let _version_to_extract = reader.read_u16::<LittleEndian>()?;
