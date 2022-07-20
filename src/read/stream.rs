@@ -1,9 +1,10 @@
-use std::io::Read;
+use std::fs;
+use std::io::{self, Read};
 use std::path::Path;
 
 use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipFile, ZipFileData,
-    ZipResult,
+    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
+    ZipFileData, ZipResult,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -49,6 +50,61 @@ impl<R: Read> ZipStreamReader<R> {
         }
 
         Ok(())
+    }
+
+    /// Extract a Zip archive into a directory, overwriting files if they
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    ///
+    /// Extraction is not atomic; If an error is encountered, some of the files
+    /// may be left on disk.
+    pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
+        struct Extracter<'a>(&'a Path);
+        impl ZipStreamVisitor for Extracter<'_> {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
+                let filepath = file
+                    .enclosed_name()
+                    .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+
+                let outpath = self.0.join(filepath);
+
+                if file.name().ends_with('/') {
+                    fs::create_dir_all(&outpath)?;
+                } else {
+                    if let Some(p) = outpath.parent() {
+                        if !p.exists() {
+                            fs::create_dir_all(&p)?;
+                        }
+                    }
+                    let mut outfile = fs::File::create(&outpath)?;
+                    io::copy(file, &mut outfile)?;
+                }
+
+                Ok(())
+            }
+
+            fn visit_additional_metadata(
+                &mut self,
+                metadata: &ZipStreamFileMetadata,
+            ) -> ZipResult<()> {
+                #[cfg(unix)]
+                {
+                    let filepath = metadata
+                        .enclosed_name()
+                        .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+
+                    let outpath = self.0.join(filepath);
+
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Some(mode) = metadata.unix_mode() {
+                        fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
+
+        self.visit(&mut Extracter(directory.as_ref()))
     }
 }
 
