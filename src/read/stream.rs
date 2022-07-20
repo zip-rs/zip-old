@@ -68,6 +68,7 @@ pub trait ZipStreamVisitor {
 }
 
 /// Additional metadata for the file.
+#[derive(Debug)]
 pub struct ZipStreamFileMetadata(ZipFileData);
 
 impl ZipStreamFileMetadata {
