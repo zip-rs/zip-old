@@ -181,6 +181,20 @@ impl ZipStreamFileMetadata {
         self.0.enclosed_name()
     }
 
+    /// Returns whether the file is actually a directory
+    pub fn is_dir(&self) -> bool {
+        self.name()
+            .chars()
+            .rev()
+            .next()
+            .map_or(false, |c| c == '/' || c == '\\')
+    }
+
+    /// Returns whether the file is a regular file
+    pub fn is_file(&self) -> bool {
+        !self.is_dir()
+    }
+
     /// Get the comment of the file
     pub fn comment(&self) -> &str {
         &self.0.file_comment
