@@ -265,33 +265,6 @@ mod test {
     }
 
     #[test]
-    fn zip_contents() {
-        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
-            "../../tests/data/mimetype.zip"
-        )));
-
-        struct V(bool);
-        impl ZipStreamVisitor for V {
-            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
-                if !self.0 {
-                    self.0 = true;
-                    assert_eq!(file.central_header_start(), 77);
-                }
-
-                Ok(())
-            }
-            fn visit_additional_metadata(
-                &mut self,
-                _metadata: &ZipStreamFileMetadata,
-            ) -> ZipResult<()> {
-                Ok(())
-            }
-        }
-
-        reader.visit(&mut V(false)).unwrap();
-    }
-
-    #[test]
     fn zip_read_streaming() {
         let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
             "../../tests/data/mimetype.zip"
