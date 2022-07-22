@@ -116,6 +116,8 @@ pub trait ZipStreamVisitor {
     fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()>;
 
     /// This function is guranteed to be called after all `visit_file`s.
+    /// For every file, there must be corresponding visit_additional_metadata
+    /// unless the input is incomplete.
     ///
     ///  * `metadata` - Provides missing metadata in `visit_file`.
     fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()>;
