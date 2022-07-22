@@ -116,8 +116,6 @@ pub trait ZipStreamVisitor {
     fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()>;
 
     /// This function is guranteed to be called after all `visit_file`s.
-    /// For every file, there must be corresponding visit_additional_metadata
-    /// unless the input is incomplete.
     ///
     ///  * `metadata` - Provides missing metadata in `visit_file`.
     fn visit_additional_metadata(&mut self, metadata: &ZipStreamFileMetadata) -> ZipResult<()>;
@@ -214,7 +212,7 @@ impl ZipStreamFileMetadata {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
     use std::io;
 
     struct DummyVisitor;
@@ -301,12 +299,12 @@ mod test {
 
         #[derive(Default)]
         struct V {
-            filenames: BTreeMap<Box<str>, u8>,
+            filenames: BTreeSet<Box<str>>,
         }
         impl ZipStreamVisitor for V {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 if file.is_file() {
-                    self.filenames.insert(file.name().into(), 1);
+                    self.filenames.insert(file.name().into());
                 }
 
                 Ok(())
@@ -316,19 +314,18 @@ mod test {
                 metadata: &ZipStreamFileMetadata,
             ) -> ZipResult<()> {
                 if metadata.is_file() {
-                    let v = self.filenames.get_mut(metadata.name()).unwrap();
-                    *v += 1;
+                    assert!(
+                        self.filenames.contains(metadata.name()),
+                        "{} is missing its file content",
+                        metadata.name()
+                    );
                 }
 
                 Ok(())
             }
         }
 
-        let mut visitor = V::default();
-        reader.visit(&mut visitor).unwrap();
-        for (filename, cnt) in visitor.filenames {
-            assert_eq!(cnt, 2, "{filename} does not have visit_additional_metadata");
-        }
+        reader.visit(&mut V::default()).unwrap();
     }
 
     #[test]
@@ -339,7 +336,7 @@ mod test {
 
         #[derive(Default)]
         struct V {
-            filenames: BTreeMap<Box<str>, u8>,
+            filenames: BTreeSet<Box<str>>,
         }
         impl ZipStreamVisitor for V {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
@@ -351,7 +348,7 @@ mod test {
                 );
 
                 if file.is_file() {
-                    self.filenames.insert(file.name().into(), 1);
+                    self.filenames.insert(file.name().into());
                 }
 
                 Ok(())
@@ -361,19 +358,18 @@ mod test {
                 metadata: &ZipStreamFileMetadata,
             ) -> ZipResult<()> {
                 if metadata.is_file() {
-                    let v = self.filenames.get_mut(metadata.name()).unwrap();
-                    *v += 1;
+                    assert!(
+                        self.filenames.contains(metadata.name()),
+                        "{} is missing its file content",
+                        metadata.name()
+                    );
                 }
 
                 Ok(())
             }
         }
 
-        let mut visitor = V::default();
-        reader.visit(&mut visitor).unwrap();
-        for (filename, cnt) in visitor.filenames {
-            assert_eq!(cnt, 2, "{filename} does not have visit_additional_metadata");
-        }
+        reader.visit(&mut V::default()).unwrap();
     }
 
     /// test case to ensure we don't preemptively over allocate based on the
