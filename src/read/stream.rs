@@ -210,3 +210,204 @@ impl ZipStreamFileMetadata {
         self.0.unix_mode()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::io;
+
+    struct DummyVisitor;
+    impl ZipStreamVisitor for DummyVisitor {
+        fn visit_file(&mut self, _file: &mut ZipFile<'_>) -> ZipResult<()> {
+            Ok(())
+        }
+
+        fn visit_additional_metadata(
+            &mut self,
+            _metadata: &ZipStreamFileMetadata,
+        ) -> ZipResult<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default, Debug, Eq, PartialEq)]
+    struct CounterVisitor(u64, u64);
+    impl ZipStreamVisitor for CounterVisitor {
+        fn visit_file(&mut self, _file: &mut ZipFile<'_>) -> ZipResult<()> {
+            self.0 += 1;
+            Ok(())
+        }
+
+        fn visit_additional_metadata(
+            &mut self,
+            _metadata: &ZipStreamFileMetadata,
+        ) -> ZipResult<()> {
+            self.1 += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn invalid_offset() {
+        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/invalid_offset.zip"
+        )))
+        .visit(&mut DummyVisitor)
+        .unwrap_err();
+    }
+
+    #[test]
+    fn invalid_offset2() {
+        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/invalid_offset2.zip"
+        )))
+        .visit(&mut DummyVisitor)
+        .unwrap_err();
+    }
+
+    #[test]
+    fn zip64_with_leading_junk() {
+        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/zip64_demo.zip"
+        )));
+        let mut v = CounterVisitor::default();
+        reader.visit(&mut v).unwrap();
+
+        assert_eq!(v, CounterVisitor(1, 1));
+    }
+
+    #[test]
+    fn zip_contents() {
+        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/mimetype.zip"
+        )));
+
+        struct V(bool);
+        impl ZipStreamVisitor for V {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
+                if !self.0 {
+                    self.0 = true;
+                    assert_eq!(file.central_header_start(), 77);
+                }
+
+                Ok(())
+            }
+            fn visit_additional_metadata(
+                &mut self,
+                _metadata: &ZipStreamFileMetadata,
+            ) -> ZipResult<()> {
+                Ok(())
+            }
+        }
+
+        reader.visit(&mut V(false)).unwrap();
+    }
+
+    #[test]
+    fn zip_read_streaming() {
+        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/mimetype.zip"
+        )));
+
+        #[derive(Default)]
+        struct V {
+            filenames: BTreeMap<Box<str>, u8>,
+        }
+        impl ZipStreamVisitor for V {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
+                if file.is_file() {
+                    self.filenames.insert(file.name().into(), 1);
+                }
+
+                Ok(())
+            }
+            fn visit_additional_metadata(
+                &mut self,
+                metadata: &ZipStreamFileMetadata,
+            ) -> ZipResult<()> {
+                if metadata.is_file() {
+                    let v = self.filenames.get_mut(metadata.name()).unwrap();
+                    *v += 1;
+                }
+
+                Ok(())
+            }
+        }
+
+        let mut visitor = V::default();
+        reader.visit(&mut visitor).unwrap();
+        for (filename, cnt) in visitor.filenames {
+            assert_eq!(cnt, 2, "{filename} does not have visit_additional_metadata");
+        }
+    }
+
+    #[test]
+    fn file_and_dir_predicates() {
+        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/files_and_dirs.zip"
+        )));
+
+        #[derive(Default)]
+        struct V {
+            filenames: BTreeMap<Box<str>, u8>,
+        }
+        impl ZipStreamVisitor for V {
+            fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
+                let full_name = file.enclosed_name().unwrap();
+                let file_name = full_name.file_name().unwrap().to_str().unwrap();
+                assert!(
+                    (file_name.starts_with("dir") && file.is_dir())
+                        || (file_name.starts_with("file") && file.is_file())
+                );
+
+                if file.is_file() {
+                    self.filenames.insert(file.name().into(), 1);
+                }
+
+                Ok(())
+            }
+            fn visit_additional_metadata(
+                &mut self,
+                metadata: &ZipStreamFileMetadata,
+            ) -> ZipResult<()> {
+                if metadata.is_file() {
+                    let v = self.filenames.get_mut(metadata.name()).unwrap();
+                    *v += 1;
+                }
+
+                Ok(())
+            }
+        }
+
+        let mut visitor = V::default();
+        reader.visit(&mut visitor).unwrap();
+        for (filename, cnt) in visitor.filenames {
+            assert_eq!(cnt, 2, "{filename} does not have visit_additional_metadata");
+        }
+    }
+
+    /// test case to ensure we don't preemptively over allocate based on the
+    /// declared number of files in the CDE of an invalid zip when the number of
+    /// files declared is more than the alleged offset in the CDE
+    #[test]
+    fn invalid_cde_number_of_files_allocation_smaller_offset() {
+        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
+        )))
+        .visit(&mut DummyVisitor)
+        .unwrap_err();
+    }
+
+    /// test case to ensure we don't preemptively over allocate based on the
+    /// declared number of files in the CDE of an invalid zip when the number of
+    /// files declared is less than the alleged offset in the CDE
+    #[test]
+    fn invalid_cde_number_of_files_allocation_greater_offset() {
+        ZipStreamReader::new(io::Cursor::new(include_bytes!(
+            "../../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
+        )))
+        .visit(&mut DummyVisitor)
+        .unwrap_err();
+    }
+}
