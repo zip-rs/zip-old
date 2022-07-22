@@ -267,17 +267,6 @@ mod test {
     }
 
     #[test]
-    fn zip64_with_leading_junk() {
-        let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
-            "../../tests/data/zip64_demo.zip"
-        )));
-        let mut v = CounterVisitor::default();
-        reader.visit(&mut v).unwrap();
-
-        assert_eq!(v, CounterVisitor(1, 1));
-    }
-
-    #[test]
     fn zip_contents() {
         let reader = ZipStreamReader::new(io::Cursor::new(include_bytes!(
             "../../tests/data/mimetype.zip"
