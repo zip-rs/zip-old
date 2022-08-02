@@ -80,6 +80,7 @@ impl<R: Read> ZipStreamReader<R> {
                 Ok(())
             }
 
+            #[allow(unused)]
             fn visit_additional_metadata(
                 &mut self,
                 metadata: &ZipStreamFileMetadata,
