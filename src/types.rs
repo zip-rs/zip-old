@@ -44,7 +44,7 @@ mod atomic {
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum System {
     Dos = 0,
     Unix = 3,
@@ -143,10 +143,8 @@ impl DateTime {
         second: u8,
     ) -> Result<DateTime, ()> {
         if (1980..=2107).contains(&year)
-            && month >= 1
-            && month <= 12
-            && day >= 1
-            && day <= 31
+            && (1..=12).contains(&month)
+            && (1..=31).contains(&day)
             && hour <= 23
             && minute <= 59
             && second <= 60
