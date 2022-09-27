@@ -461,7 +461,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             } else {
                 if let Some(p) = outpath.parent() {
                     if !p.exists() {
-                        fs::create_dir_all(&p)?;
+                        fs::create_dir_all(p)?;
                     }
                 }
                 let mut outfile = fs::File::create(&outpath)?;
@@ -681,11 +681,11 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     reader.read_exact(&mut file_comment_raw)?;
 
     let file_name = match is_utf8 {
-        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
+        true => String::from_utf8_lossy(&file_name_raw).into_owned(),
         false => file_name_raw.clone().from_cp437(),
     };
     let file_comment = match is_utf8 {
-        true => String::from_utf8_lossy(&*file_comment_raw).into_owned(),
+        true => String::from_utf8_lossy(&file_comment_raw).into_owned(),
         false => file_comment_raw.from_cp437(),
     };
 
@@ -1085,7 +1085,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
     reader.read_exact(&mut extra_field)?;
 
     let file_name = match is_utf8 {
-        true => String::from_utf8_lossy(&*file_name_raw).into_owned(),
+        true => String::from_utf8_lossy(&file_name_raw).into_owned(),
         false => file_name_raw.clone().from_cp437(),
     };
 
