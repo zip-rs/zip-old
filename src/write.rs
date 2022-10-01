@@ -842,6 +842,29 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
         Ok(())
     }
+
+    /// Deletes a file currently in memory
+    pub fn remove_file<N>(&mut self, name: N) -> ZipResult<()>
+    where
+        N: Into<String>,
+    {
+        let name = name.into();
+
+        if self.writing_to_file {
+            return ZipResult::Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                "Cannot delete file while writing currently writing a new file!",
+            )));
+        }
+
+        return match self.files.iter().position(|f| f.file_name == name) {
+            Some(index) => {
+                self.files.remove(index);
+                ZipResult::Ok(())
+            }
+            None => ZipResult::Err(ZipError::FileNotFound),
+        };
+    }
 }
 
 impl<W: Write + io::Seek> Drop for ZipWriter<W> {
