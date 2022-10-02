@@ -37,6 +37,7 @@ deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 unreserved = []
+zstd-pkg-config = ["zstd/pkg-config"]
 default = ["aes-crypto", "bzip2", "deflate", "time", "zstd"]
 
 [[bench]]
