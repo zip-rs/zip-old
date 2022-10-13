@@ -448,21 +448,24 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
         use std::fs;
 
-        fn inner(file: &mut ZipFile<'_>, directory: &Path) -> ZipResult<()> {
+        for i in 0..self.len() {
+            let mut file = self.by_index(i)?;
             let filepath = file
                 .enclosed_name()
                 .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
 
-            let outpath = directory.join(filepath);
+            let outpath = directory.as_ref().join(filepath);
 
             if file.name().ends_with('/') {
                 fs::create_dir_all(&outpath)?;
             } else {
                 if let Some(p) = outpath.parent() {
-                    fs::create_dir_all(p)?;
+                    if !p.exists() {
+                        fs::create_dir_all(p)?;
+                    }
                 }
                 let mut outfile = fs::File::create(&outpath)?;
-                io::copy(file, &mut outfile)?;
+                io::copy(&mut file, &mut outfile)?;
             }
             // Get and Set permissions
             #[cfg(unix)]
@@ -472,15 +475,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
                     fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
                 }
             }
-            Ok(())
         }
-
-        for i in 0..self.len() {
-            let mut file = self.by_index(i)?;
-
-            inner(&mut file, directory.as_ref())?;
-        }
-
         Ok(())
     }
 
