@@ -23,7 +23,7 @@ fn real_main() -> i32 {
 
 fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let path = std::path::Path::new(filename);
-    let file = std::fs::File::create(&path).unwrap();
+    let file = std::fs::File::create(path).unwrap();
 
     let mut zip = zip::ZipWriter::new(file);
 

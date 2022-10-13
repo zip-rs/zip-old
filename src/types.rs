@@ -115,7 +115,7 @@ impl DateTime {
         let years = (datepart & 0b1111111000000000) >> 9;
 
         DateTime {
-            year: (years + 1980) as u16,
+            year: years + 1980,
             month: months as u8,
             day: days as u8,
             hour: hours as u8,
@@ -172,10 +172,10 @@ impl DateTime {
             Ok(DateTime {
                 year: (dt.year()) as u16,
                 month: (dt.month()) as u8,
-                day: dt.day() as u8,
-                hour: dt.hour() as u8,
-                minute: dt.minute() as u8,
-                second: dt.second() as u8,
+                day: dt.day(),
+                hour: dt.hour(),
+                minute: dt.minute(),
+                second: dt.second(),
             })
         } else {
             Err(())
