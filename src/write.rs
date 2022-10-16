@@ -4,12 +4,14 @@ use crate::compression::CompressionMethod;
 use crate::read::{central_header_to_zip_file, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
+use crate::truncate::Truncate;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
+use std::io::SeekFrom;
 use std::mem;
 
 #[cfg(any(
@@ -58,8 +60,8 @@ pub(crate) mod zip_writer {
     /// use zip::write::FileOptions;
     ///
     /// // We use a buffer here, though you'd normally use a `File`
-    /// let mut buf = [0; 65536];
-    /// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
+    /// let mut buf = vec![0; 65536];
+    /// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(buf));
     ///
     /// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
     /// zip.start_file("hello_world.txt", options)?;
@@ -73,7 +75,7 @@ pub(crate) mod zip_writer {
     /// # }
     /// # doit().unwrap();
     /// ```
-    pub struct ZipWriter<W: Write + io::Seek> {
+    pub struct ZipWriter<W: Write + Seek + Read + Truncate> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: Vec<ZipFileData>,
         pub(super) stats: ZipWriterStats,
@@ -203,7 +205,7 @@ impl Default for FileOptions {
     }
 }
 
-impl<W: Write + io::Seek> Write for ZipWriter<W> {
+impl<W: Write + Seek + Read + Truncate> Write for ZipWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.writing_to_file {
             return Err(io::Error::new(
@@ -257,7 +259,7 @@ impl ZipWriterStats {
     }
 }
 
-impl<A: Read + Write + io::Seek> ZipWriter<A> {
+impl<A: Write + Seek + Read + Truncate> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
@@ -299,7 +301,7 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
     }
 }
 
-impl<W: Write + io::Seek> ZipWriter<W> {
+impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
     /// Initializes the archive.
     ///
     /// Before writing to this object, the [`ZipWriter::start_file`] function should be called.
@@ -400,7 +402,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         self.inner.switch_to(CompressionMethod::Stored, None)?;
         let writer = self.inner.get_plain();
 
-        if !self.writing_raw {
+        if !self.writing_raw && self.writing_to_file {
             let file = match self.files.last_mut() {
                 None => return Ok(()),
                 Some(f) => f,
@@ -626,7 +628,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
-    /// use zip::{ZipArchive, ZipWriter};
+    /// use zip::{truncate::Truncate, ZipArchive, ZipWriter};
     ///
     /// fn copy_rename<R, W>(
     ///     src: &mut ZipArchive<R>,
@@ -634,7 +636,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// ) -> zip::result::ZipResult<()>
     /// where
     ///     R: Read + Seek,
-    ///     W: Write + Seek,
+    ///     W: Write + Seek + Read + Truncate,
     /// {
     ///     // Retrieve file entry by name
     ///     let file = src.by_name("src_file.txt")?;
@@ -679,12 +681,12 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
-    /// use zip::{ZipArchive, ZipWriter};
+    /// use zip::{truncate::Truncate, ZipArchive, ZipWriter};
     ///
     /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip::result::ZipResult<()>
     /// where
     ///     R: Read + Seek,
-    ///     W: Write + Seek,
+    ///     W: Write + Seek + Read + Truncate,
     /// {
     ///     // Retrieve file entry by name
     ///     let file = src.by_name("src_file.txt")?;
@@ -781,9 +783,15 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         // likely wastes space. So always store.
         options.compression_method = CompressionMethod::Stored;
 
+        self.writing_to_file = true;
         self.start_entry(name, options, None)?;
+
         self.writing_to_file = true;
         self.write_all(target.into().as_bytes())?;
+
+        self.writing_to_file = true;
+        self.finish_file()?;
+
         self.writing_to_file = false;
 
         Ok(())
@@ -838,36 +846,72 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             };
 
             footer.write(writer)?;
+
+            // Purge any excess data caused by shifting the data backwards when removing files
+            if writer.stream_len()? > writer.stream_position()? {
+                let end_pos = writer.stream_position()?;
+                writer.truncate(end_pos)?;
+            }
         }
 
         Ok(())
     }
 
-    /// Deletes a file currently in memory
+    /// Drops a file from the zip
+    /// This finishes any currently files being written to and shifts the data backwards to overwrite the file being deleted
     pub fn remove_file<N>(&mut self, name: N) -> ZipResult<()>
     where
         N: Into<String>,
     {
+        self.finish_file()?;
+
         let name = name.into();
 
-        if self.writing_to_file {
-            return ZipResult::Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Cannot delete file while writing currently writing a new file!",
-            )));
+        let writer = self.inner.get_plain();
+        let file = match self.files.iter().position(|f| f.file_name == name) {
+            Some(index) => self.files.remove(index),
+            None => return ZipResult::Err(ZipError::FileNotFound),
+        };
+
+        let mut ending_bytes = Vec::with_capacity(0);
+        writer.seek(SeekFrom::Start(
+            file.data_start.load() + file.compressed_size,
+        ))?;
+        writer.read_to_end(&mut ending_bytes)?;
+
+        writer.seek(SeekFrom::Start(file.header_start))?;
+        writer.write_all(ending_bytes.as_slice())?;
+
+        let displacement = file.data_start.load() - file.header_start + file.compressed_size;
+        self.files.iter_mut().for_each(|f| {
+            if f.header_start > file.header_start {
+                let data_start = f.data_start.get_mut();
+                *data_start = data_start.checked_sub(displacement).unwrap_or(0);
+                f.header_start = f.header_start.checked_sub(displacement).unwrap_or(0);
+            }
+
+            f.central_header_start = f
+                .central_header_start
+                .checked_sub(displacement)
+                .unwrap_or(0);
+        });
+
+        match self.files.last() {
+            Some(file) => {
+                writer.seek(SeekFrom::Start(
+                    file.data_start.load() + file.compressed_size,
+                ))?;
+            }
+            None => {
+                writer.seek(SeekFrom::Start(0))?;
+            }
         }
 
-        return match self.files.iter().position(|f| f.file_name == name) {
-            Some(index) => {
-                self.files.remove(index);
-                ZipResult::Ok(())
-            }
-            None => ZipResult::Err(ZipError::FileNotFound),
-        };
+        return ZipResult::Ok(());
     }
 }
 
-impl<W: Write + io::Seek> Drop for ZipWriter<W> {
+impl<W: Write + Seek + Read + Truncate> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
@@ -877,7 +921,7 @@ impl<W: Write + io::Seek> Drop for ZipWriter<W> {
     }
 }
 
-impl<W: Write + io::Seek> GenericZipWriter<W> {
+impl<W: Write + Seek + Read + Truncate> GenericZipWriter<W> {
     fn switch_to(
         &mut self,
         compression: CompressionMethod,
@@ -1117,10 +1161,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     Ok(())
 }
 
-fn update_local_file_header<T: Write + io::Seek>(
-    writer: &mut T,
-    file: &ZipFileData,
-) -> ZipResult<()> {
+fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
     writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32::<LittleEndian>(file.crc32)?;
@@ -1266,7 +1307,7 @@ fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -
     Ok(())
 }
 
-fn update_local_zip64_extra_field<T: Write + io::Seek>(
+fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
@@ -1332,11 +1373,13 @@ fn path_to_string(path: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod test {
-    use super::{FileOptions, ZipWriter};
-    use crate::compression::CompressionMethod;
-    use crate::types::DateTime;
     use std::io;
     use std::io::Write;
+
+    use crate::compression::CompressionMethod;
+    use crate::types::DateTime;
+
+    use super::{FileOptions, ZipWriter};
 
     #[test]
     fn write_empty_zip() {

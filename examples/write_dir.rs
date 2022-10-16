@@ -1,7 +1,7 @@
 use std::io::prelude::*;
-use std::io::{Seek, Write};
 use std::iter::Iterator;
 use zip::result::ZipError;
+use zip::truncate::Truncate;
 use zip::write::FileOptions;
 
 use std::fs::File;
@@ -69,7 +69,7 @@ fn zip_dir<T>(
     method: zip::CompressionMethod,
 ) -> zip::result::ZipResult<()>
 where
-    T: Write + Seek,
+    T: Write + Seek + Truncate + Read,
 {
     let mut zip = zip::ZipWriter::new(writer);
     let options = FileOptions::default()

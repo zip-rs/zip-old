@@ -734,6 +734,9 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
         .checked_add(archive_offset)
         .ok_or(ZipError::InvalidArchive("Archive header is too large"))?;
 
+    let magic_and_header = 4 + 22 + 2 + 2 + file_name_length + file_comment_length;
+    result.data_start.store(result.header_start + magic_and_header as u64);
+
     Ok(result)
 }
 
