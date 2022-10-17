@@ -857,9 +857,10 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
         Ok(())
     }
 
-    /// Drops a file from the zip
-    /// This finishes any currently files being written to and shifts the data backwards to overwrite the file being deleted
-    pub fn remove_file<N>(&mut self, name: N) -> ZipResult<()>
+    /// Drops a file from the zip.
+    /// This finishes any currently files being written to and shifts the data backwards to overwrite the file being deleted.
+    /// If `fill_void` is true, it instead fills the void caused by the missing entry and does not shift all the data.
+    pub fn remove_file<N>(&mut self, name: N, fill_void: bool) -> ZipResult<()>
     where
         N: Into<String>,
     {
@@ -868,33 +869,41 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
         let name = name.into();
 
         let writer = self.inner.get_plain();
-        let file = match self.files.iter().position(|f| f.file_name == name) {
-            Some(index) => self.files.remove(index),
+        let file_index = match self.files.iter().position(|f| f.file_name == name) {
+            Some(index) => index,
             None => return ZipResult::Err(ZipError::FileNotFound),
         };
+        let file = self.files.remove(file_index);
 
-        let mut ending_bytes = Vec::with_capacity(0);
-        writer.seek(SeekFrom::Start(
-            file.data_start.load() + file.compressed_size,
-        ))?;
-        writer.read_to_end(&mut ending_bytes)?;
+        if !fill_void {
+            let mut ending_bytes = Vec::with_capacity(0);
+            writer.seek(SeekFrom::Start(
+                file.data_start.load() + file.compressed_size,
+            ))?;
+            writer.read_to_end(&mut ending_bytes)?;
 
-        writer.seek(SeekFrom::Start(file.header_start))?;
-        writer.write_all(ending_bytes.as_slice())?;
+            writer.seek(SeekFrom::Start(file.header_start))?;
+            writer.write_all(ending_bytes.as_slice())?;
 
-        let displacement = file.data_start.load() - file.header_start + file.compressed_size;
-        self.files.iter_mut().for_each(|f| {
-            if f.header_start > file.header_start {
-                let data_start = f.data_start.get_mut();
-                *data_start = data_start.checked_sub(displacement).unwrap_or(0);
-                f.header_start = f.header_start.checked_sub(displacement).unwrap_or(0);
+            let displacement = file.data_start.load() - file.header_start + file.compressed_size;
+            self.files.iter_mut().for_each(|f| {
+                if f.header_start > file.header_start {
+                    let data_start = f.data_start.get_mut();
+                    *data_start = data_start.checked_sub(displacement).unwrap_or(0);
+                    f.header_start = f.header_start.checked_sub(displacement).unwrap_or(0);
+                }
+
+                f.central_header_start = f
+                    .central_header_start
+                    .checked_sub(displacement)
+                    .unwrap_or(0);
+            });
+        } else {
+            writer.seek(SeekFrom::Start(file.data_start.load()))?;
+            for _ in 0..file.compressed_size {
+                writer.write_u8(0)?;
             }
-
-            f.central_header_start = f
-                .central_header_start
-                .checked_sub(displacement)
-                .unwrap_or(0);
-        });
+        }
 
         match self.files.last() {
             Some(file) => {
