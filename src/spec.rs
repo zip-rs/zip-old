@@ -64,12 +64,12 @@ impl CentralDirectoryEnd {
 
         let mut pos = file_length - HEADER_SIZE;
         while pos >= search_upper_bound {
-            reader.seek(io::SeekFrom::Start(pos as u64))?;
+            reader.seek(io::SeekFrom::Start(pos))?;
             if reader.read_u32::<LittleEndian>()? == CENTRAL_DIRECTORY_END_SIGNATURE {
                 reader.seek(io::SeekFrom::Current(
                     BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
                 ))?;
-                let cde_start_pos = reader.seek(io::SeekFrom::Start(pos as u64))?;
+                let cde_start_pos = reader.seek(io::SeekFrom::Start(pos))?;
                 return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
             }
             pos = match pos.checked_sub(1) {

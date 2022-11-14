@@ -12,7 +12,7 @@ fn real_main() -> i32 {
         return 1;
     }
     let fname = std::path::Path::new(&*args[1]);
-    let file = fs::File::open(&fname).unwrap();
+    let file = fs::File::open(fname).unwrap();
     let reader = BufReader::new(file);
 
     let mut archive = zip::ZipArchive::new(reader).unwrap();

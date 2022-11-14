@@ -114,7 +114,7 @@ fn doit(
     }
 
     let path = Path::new(dst_file);
-    let file = File::create(&path).unwrap();
+    let file = File::create(path).unwrap();
 
     let walkdir = WalkDir::new(src_dir);
     let it = walkdir.into_iter();

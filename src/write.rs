@@ -1301,7 +1301,7 @@ fn path_to_string(path: &std::path::Path) -> String {
             if !path_str.is_empty() {
                 path_str.push('/');
             }
-            path_str.push_str(&*os_str.to_string_lossy());
+            path_str.push_str(&os_str.to_string_lossy());
         }
     }
     path_str

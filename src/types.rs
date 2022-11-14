@@ -44,7 +44,7 @@ mod atomic {
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum System {
     Dos = 0,
     Unix = 3,
@@ -115,7 +115,7 @@ impl DateTime {
         let years = (datepart & 0b1111111000000000) >> 9;
 
         DateTime {
-            year: (years + 1980) as u16,
+            year: years + 1980,
             month: months as u8,
             day: days as u8,
             hour: hours as u8,
@@ -143,10 +143,8 @@ impl DateTime {
         second: u8,
     ) -> Result<DateTime, ()> {
         if (1980..=2107).contains(&year)
-            && month >= 1
-            && month <= 12
-            && day >= 1
-            && day <= 31
+            && (1..=12).contains(&month)
+            && (1..=31).contains(&day)
             && hour <= 23
             && minute <= 59
             && second <= 60
@@ -174,10 +172,10 @@ impl DateTime {
             Ok(DateTime {
                 year: (dt.year()) as u16,
                 month: (dt.month()) as u8,
-                day: dt.day() as u8,
-                hour: dt.hour() as u8,
-                minute: dt.minute() as u8,
-                second: dt.second() as u8,
+                day: dt.day(),
+                hour: dt.hour(),
+                minute: dt.minute(),
+                second: dt.second(),
             })
         } else {
             Err(())
