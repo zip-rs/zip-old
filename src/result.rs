@@ -81,3 +81,20 @@ impl From<ZipError> for io::Error {
         io::Error::new(io::ErrorKind::Other, err)
     }
 }
+
+/// Error type for time parsing
+#[derive(Debug)]
+pub enum ZipDateTimeError {
+    /// The date was on or before 1980, or on or after 2107
+    DateTimeOutOfBounds,
+}
+
+impl fmt::Display for ZipDateTimeError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ZipDateTimeError::DateTimeOutOfBounds => write!(fmt, "datetime out of bounds"),
+        }
+    }
+}
+
+impl Error for ZipDateTimeError {}
