@@ -848,7 +848,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
             footer.write(writer)?;
 
             // Purge any excess data caused by shifting the data backwards when removing files
-            if writer.stream_len()? > writer.stream_position()? {
+            if writer.stream_len_stable()? > writer.stream_position()? {
                 let end_pos = writer.stream_position()?;
                 writer.truncate(end_pos)?;
             }
@@ -1535,3 +1535,35 @@ const EXTRA_FIELD_MAPPING: [u16; 49] = [
     0x5455, 0x554e, 0x5855, 0x6375, 0x6542, 0x7075, 0x756e, 0x7855, 0xa11e, 0xa220, 0xfd4a, 0x9901,
     0x9902,
 ];
+
+use stream_len::StreamLen;
+
+mod stream_len {
+    // Reimplementation of the unstable feature `Seek::stream_len`.
+    // This is to ensure we can use that on the stable compiler until it's made available without
+    // feature flag.
+    //
+
+    use std::io::{Result, Seek, SeekFrom};
+    pub(super) trait StreamLen {
+        fn stream_len_stable(&mut self) -> Result<u64>;
+    }
+
+    impl<T> StreamLen for T
+    where
+        T: Seek,
+    {
+        fn stream_len_stable(&mut self) -> Result<u64> {
+            let old_pos = self.stream_position()?;
+            let len = self.seek(SeekFrom::End(0))?;
+
+            // Avoid seeking a third time when we were already at the end of the
+            // stream. The branch is usually way cheaper than a seek operation.
+            if old_pos != len {
+                self.seek(SeekFrom::Start(old_pos))?;
+            }
+
+            Ok(len)
+        }
+    }
+}
