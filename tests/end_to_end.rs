@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::iter::FromIterator;
+use zip::result::ZipError;
 use zip::write::FileOptions;
 use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 
@@ -82,6 +83,29 @@ fn append() {
         let mut zip = zip::ZipArchive::new(&mut file).unwrap();
         check_archive_file_contents(&mut zip, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
+    }
+}
+
+// This test checks we can delete an entry from the archive
+#[test]
+fn delete() {
+    for fill_void in &[true, false] {
+        for &method in SUPPORTED_COMPRESSION_METHODS {
+            let mut file = &mut Cursor::new(Vec::new());
+            write_test_archive(file, method).expect("Couldn't write to test file");
+
+            {
+                let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
+                zip.remove_file("test/☃.txt", *fill_void).unwrap();
+            }
+
+            let mut zip = zip::ZipArchive::new(&mut file).unwrap();
+            match zip.by_name("test/☃.txt") {
+                Err(ZipError::FileNotFound) => {}
+                Err(other) => panic!("expected file not found, got: {:?}", other),
+                _ => panic!("file not deleted"),
+            };
+        }
     }
 }
 
