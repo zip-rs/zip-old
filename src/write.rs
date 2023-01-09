@@ -13,6 +13,7 @@ use std::io;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::mem;
+use std::ops::Range;
 
 #[cfg(any(
     feature = "deflate",
@@ -44,6 +45,13 @@ enum GenericZipWriter<W: Write + io::Seek> {
     #[cfg(feature = "zstd")]
     Zstd(ZstdEncoder<'static, W>),
 }
+
+#[derive(Debug)]
+struct FileHeader {
+    location: Range<u64>,
+    data: ZipFileData,
+}
+
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
     use super::*;
@@ -77,7 +85,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek + Read + Truncate> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: Vec<ZipFileData>,
+        pub(super) files: Vec<FileHeader>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_to_extra_field: bool,
@@ -216,13 +224,13 @@ impl<W: Write + Seek + Read + Truncate> Write for ZipWriter<W> {
         match self.inner.ref_mut() {
             Some(ref mut w) => {
                 if self.writing_to_extra_field {
-                    self.files.last_mut().unwrap().extra_field.write(buf)
+                    self.files.last_mut().unwrap().data.extra_field.write(buf)
                 } else {
                     let write_result = w.write(buf);
                     if let Ok(count) = write_result {
                         self.stats.update(&buf[0..count]);
                         if self.stats.bytes_written > spec::ZIP64_BYTES_THR
-                            && !self.files.last_mut().unwrap().large_file
+                            && !self.files.last_mut().unwrap().data.large_file
                         {
                             let _inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
                             return Err(io::Error::new(
@@ -283,8 +291,16 @@ impl<A: Write + Seek + Read + Truncate> ZipWriter<A> {
         }
 
         let files = (0..number_of_files)
-            .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|_| {
+                let start = readwriter.stream_position()?;
+                let data = central_header_to_zip_file(&mut readwriter, archive_offset)?;
+                let end = readwriter.stream_position()?;
+                Ok(FileHeader {
+                    location: start..end,
+                    data,
+                })
+            })
+            .collect::<Result<Vec<FileHeader>, ZipError>>()?;
 
         let _ = readwriter.seek(io::SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
 
@@ -388,7 +404,10 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
 
-            self.files.push(file);
+            self.files.push(FileHeader {
+                location: header_start..header_end,
+                data: file,
+            });
         }
 
         Ok(())
@@ -405,7 +424,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
         if !self.writing_raw && self.writing_to_file {
             let file = match self.files.last_mut() {
                 None => return Ok(()),
-                Some(f) => f,
+                Some(f) => &mut f.data,
             };
             file.crc32 = self.stats.hasher.clone().finalize();
             file.uncompressed_size = self.stats.bytes_written;
@@ -413,7 +432,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             file.compressed_size = file_end - self.stats.start;
 
-            update_local_file_header(writer, file)?;
+            update_local_file_header(writer, &file)?;
             writer.seek(io::SeekFrom::Start(file_end))?;
         }
 
@@ -563,7 +582,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
         self.writing_to_extra_field = true;
-        Ok(self.files.last().unwrap().data_start.load())
+        Ok(self.files.last().unwrap().data.data_start.load())
     }
 
     /// End local and start central extra data. Requires [`ZipWriter::start_file_with_extra_data`].
@@ -571,7 +590,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
     /// Returns the final starting offset of the file data.
     pub fn end_local_start_central_extra_data(&mut self) -> ZipResult<u64> {
         let data_start = self.end_extra_data()?;
-        self.files.last_mut().unwrap().extra_field.clear();
+        self.files.last_mut().unwrap().data.extra_field.clear();
         self.writing_to_extra_field = true;
         self.writing_to_central_extra_field_only = true;
         Ok(data_start)
@@ -588,7 +607,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
                 "Not writing to extra field",
             )));
         }
-        let file = self.files.last_mut().unwrap();
+        let file = &mut self.files.last_mut().unwrap().data;
 
         validate_extra_data(file)?;
 
@@ -805,7 +824,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
 
             let central_start = writer.stream_position()?;
             for file in self.files.iter() {
-                write_central_directory_header(writer, file)?;
+                write_central_directory_header(writer, &file.data)?;
             }
             let central_size = writer.stream_position()? - central_start;
 
@@ -869,11 +888,12 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
         let name = name.into();
 
         let writer = self.inner.get_plain();
-        let file_index = match self.files.iter().position(|f| f.file_name == name) {
+        let file_index = match self.files.iter().position(|f| f.data.file_name == name) {
             Some(index) => index,
             None => return ZipResult::Err(ZipError::FileNotFound),
         };
-        let file = self.files.remove(file_index);
+        let slot = self.files.remove(file_index);
+        let file = slot.data;
 
         if !fill_void {
             let mut ending_bytes = Vec::with_capacity(0);
@@ -887,6 +907,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
 
             let displacement = file.data_start.load() - file.header_start + file.compressed_size;
             self.files.iter_mut().for_each(|f| {
+                let f = &mut f.data;
                 if f.header_start > file.header_start {
                     let data_start = f.data_start.get_mut();
                     *data_start = data_start.checked_sub(displacement).unwrap_or(0);
@@ -899,6 +920,12 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
                     .unwrap_or(0);
             });
         } else {
+            // Ensure we rewrite the slot entirely to ensure we do not leak info
+            writer.seek(SeekFrom::Start(slot.location.start))?;
+            for _ in slot.location {
+                writer.write_u8(0)?;
+            }
+
             writer.seek(SeekFrom::Start(file.data_start.load()))?;
             for _ in 0..file.compressed_size {
                 writer.write_u8(0)?;
@@ -907,6 +934,7 @@ impl<W: Write + Seek + Read + Truncate> ZipWriter<W> {
 
         match self.files.last() {
             Some(file) => {
+                let file = &file.data;
                 writer.seek(SeekFrom::Start(
                     file.data_start.load() + file.compressed_size,
                 ))?;
