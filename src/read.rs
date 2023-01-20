@@ -920,12 +920,12 @@ impl<'a> ZipFile<'a> {
         self.data.compression_method
     }
 
-    /// Get the size of the file in the archive
+    /// Get the size of the file, in bytes, in the archive
     pub fn compressed_size(&self) -> u64 {
         self.data.compressed_size
     }
 
-    /// Get the size of the file when uncompressed
+    /// Get the size of the file, in bytes, when uncompressed
     pub fn size(&self) -> u64 {
         self.data.uncompressed_size
     }
