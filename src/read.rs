@@ -348,7 +348,9 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             Some(locator64) => {
                 // If we got here, this is indeed a ZIP64 file.
 
-                if footer.disk_number as u32 != locator64.disk_with_central_directory {
+                if !footer.record_too_small()
+                    && footer.disk_number as u32 != locator64.disk_with_central_directory
+                {
                     return unsupported_zip_error(
                         "Support for multi-disk files is not implemented",
                     );
@@ -401,7 +403,7 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
-        if footer.disk_number != footer.disk_with_central_directory {
+        if !footer.record_too_small() && footer.disk_number != footer.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
