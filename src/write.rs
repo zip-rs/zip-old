@@ -110,31 +110,6 @@ pub struct FileOptions {
 }
 
 impl FileOptions {
-    /// Construct a new FileOptions object
-    pub fn default() -> FileOptions {
-        FileOptions {
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            ))]
-            compression_method: CompressionMethod::Deflated,
-            #[cfg(not(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            )))]
-            compression_method: CompressionMethod::Stored,
-            compression_level: None,
-            #[cfg(feature = "time")]
-            last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
-            #[cfg(not(feature = "time"))]
-            last_modified_time: DateTime::default(),
-            permissions: None,
-            large_file: false,
-        }
-    }
-
     /// Set the compression method for the new file
     ///
     /// The default is `CompressionMethod::Deflated`. If the deflate compression feature is
@@ -198,8 +173,29 @@ impl FileOptions {
 }
 
 impl Default for FileOptions {
+    /// Construct a new FileOptions object
     fn default() -> Self {
-        Self::default()
+        Self {
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            compression_method: CompressionMethod::Deflated,
+            #[cfg(not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            )))]
+            compression_method: CompressionMethod::Stored,
+            compression_level: None,
+            #[cfg(feature = "time")]
+            last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
+            #[cfg(not(feature = "time"))]
+            last_modified_time: DateTime::default(),
+            permissions: None,
+            large_file: false,
+        }
     }
 }
 
