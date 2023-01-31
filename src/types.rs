@@ -44,7 +44,7 @@ mod atomic {
 }
 
 #[cfg(feature = "time")]
-use crate::result::ZipDateTimeError;
+use crate::result::DateTimeRangeError;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -259,7 +259,7 @@ impl DateTime {
 
 #[cfg(feature = "time")]
 impl TryFrom<OffsetDateTime> for DateTime {
-    type Error = ZipDateTimeError;
+    type Error = DateTimeRangeError;
 
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
@@ -272,7 +272,7 @@ impl TryFrom<OffsetDateTime> for DateTime {
                 second: dt.second(),
             })
         } else {
-            Err(ZipDateTimeError::DateTimeOutOfBounds)
+            Err(DateTimeRangeError)
         }
     }
 }

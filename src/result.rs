@@ -84,17 +84,15 @@ impl From<ZipError> for io::Error {
 
 /// Error type for time parsing
 #[derive(Debug)]
-pub enum ZipDateTimeError {
-    /// The date was on or before 1980, or on or after 2107
-    DateTimeOutOfBounds,
-}
+pub struct DateTimeRangeError;
 
-impl fmt::Display for ZipDateTimeError {
+impl fmt::Display for DateTimeRangeError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ZipDateTimeError::DateTimeOutOfBounds => write!(fmt, "datetime out of bounds"),
-        }
+        write!(
+            fmt,
+            "a date could not be represented within the bounds the MS-DOS date range (1980-2107)"
+        )
     }
 }
 
-impl Error for ZipDateTimeError {}
+impl Error for DateTimeRangeError {}
