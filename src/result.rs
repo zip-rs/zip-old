@@ -44,9 +44,9 @@ impl From<io::Error> for ZipError {
 impl fmt::Display for ZipError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ZipError::Io(err) => write!(fmt, "{}", err),
-            ZipError::InvalidArchive(err) => write!(fmt, "invalid Zip archive: {}", err),
-            ZipError::UnsupportedArchive(err) => write!(fmt, "unsupported Zip archive: {}", err),
+            ZipError::Io(err) => write!(fmt, "{err}"),
+            ZipError::InvalidArchive(err) => write!(fmt, "invalid Zip archive: {err}"),
+            ZipError::UnsupportedArchive(err) => write!(fmt, "unsupported Zip archive: {err}"),
             ZipError::FileNotFound => write!(fmt, "specified file not found in archive"),
         }
     }

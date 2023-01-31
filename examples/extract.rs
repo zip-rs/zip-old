@@ -26,7 +26,7 @@ fn real_main() -> i32 {
         {
             let comment = file.comment();
             if !comment.is_empty() {
-                println!("File {} comment: {}", i, comment);
+                println!("File {i} comment: {comment}");
             }
         }
 

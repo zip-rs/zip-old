@@ -14,8 +14,8 @@ fn real_main() -> i32 {
 
     let filename = &*args[1];
     match doit(filename) {
-        Ok(_) => println!("File written to {}", filename),
-        Err(e) => println!("Error: {:?}", e),
+        Ok(_) => println!("File written to {filename}"),
+        Err(e) => println!("Error: {e:?}"),
     }
 
     0

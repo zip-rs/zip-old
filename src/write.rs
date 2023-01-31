@@ -848,7 +848,7 @@ impl<W: Write + io::Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
-                let _ = write!(io::stderr(), "ZipWriter drop failed: {:?}", e);
+                let _ = write!(io::stderr(), "ZipWriter drop failed: {e:?}");
             }
         }
     }
@@ -1211,8 +1211,7 @@ fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     format!(
-                        "Extra data header ID {:#06} requires crate feature \"unreserved\"",
-                        kind,
+                        "Extra data header ID {kind:#06} requires crate feature \"unreserved\"",
                     ),
                 )));
             }
