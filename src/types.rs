@@ -173,18 +173,9 @@ impl DateTime {
     #[allow(clippy::result_unit_err)]
     #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
-        if dt.year() >= 1980 && dt.year() <= 2107 {
-            Ok(DateTime {
-                year: (dt.year()) as u16,
-                month: (dt.month()) as u8,
-                day: dt.day(),
-                hour: dt.hour(),
-                minute: dt.minute(),
-                second: dt.second(),
-            })
-        } else {
-            Err(())
-        }
+        use std::convert::TryInto;
+
+        dt.try_into().map_err(|_err| ())
     }
 
     /// Gets the time portion of this datetime in the msdos representation
