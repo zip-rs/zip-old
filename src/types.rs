@@ -1,6 +1,6 @@
 //! Types that specify what is contained in a ZIP.
 #[cfg(feature = "time")]
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
@@ -173,8 +173,6 @@ impl DateTime {
     #[allow(clippy::result_unit_err)]
     #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
-        use std::convert::TryInto;
-
         dt.try_into().map_err(|_err| ())
     }
 
