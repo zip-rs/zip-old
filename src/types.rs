@@ -7,6 +7,7 @@ use std::convert::{TryFrom, TryInto};
     target_arch = "powerpc"
 )))]
 use std::sync::atomic;
+#[cfg(not(feature = "time"))]
 use std::time::SystemTime;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
