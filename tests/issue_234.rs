@@ -26,6 +26,6 @@ fn invalid_header() {
     let archive = zip::ZipArchive::new(reader);
     match archive {
         Err(ZipError::InvalidArchive(_)) => {}
-        value => panic!("Unexpected value: {:?}", value),
+        value => panic!("Unexpected value: {value:?}"),
     }
 }

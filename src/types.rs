@@ -1,6 +1,6 @@
 //! Types that specify what is contained in a ZIP.
-#[cfg(feature = "time")]
-use std::convert::{TryFrom, TryInto};
+use std::path;
+
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
@@ -11,6 +11,11 @@ use std::sync::atomic;
 use std::time::SystemTime;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
+
+mod ffi {
+    pub const S_IFDIR: u32 = 0o0040000;
+    pub const S_IFREG: u32 = 0o0100000;
+}
 
 #[cfg(any(
     all(target_arch = "arm", target_pointer_width = "32"),
@@ -373,6 +378,48 @@ impl ZipFileData {
                 path.push(cur.as_os_str());
                 path
             })
+    }
+
+    pub(crate) fn enclosed_name(&self) -> Option<&path::Path> {
+        if self.file_name.contains('\0') {
+            return None;
+        }
+        let path = path::Path::new(&self.file_name);
+        let mut depth = 0usize;
+        for component in path.components() {
+            match component {
+                path::Component::Prefix(_) | path::Component::RootDir => return None,
+                path::Component::ParentDir => depth = depth.checked_sub(1)?,
+                path::Component::Normal(_) => depth += 1,
+                path::Component::CurDir => (),
+            }
+        }
+        Some(path)
+    }
+
+    /// Get unix mode for the file
+    pub(crate) fn unix_mode(&self) -> Option<u32> {
+        if self.external_attributes == 0 {
+            return None;
+        }
+
+        match self.system {
+            System::Unix => Some(self.external_attributes >> 16),
+            System::Dos => {
+                // Interpret MS-DOS directory bit
+                let mut mode = if 0x10 == (self.external_attributes & 0x10) {
+                    ffi::S_IFDIR | 0o0775
+                } else {
+                    ffi::S_IFREG | 0o0664
+                };
+                if 0x01 == (self.external_attributes & 0x01) {
+                    // Read-only bit; strip write permissions
+                    mode &= 0o0555;
+                }
+                Some(mode)
+            }
+            _ => None,
+        }
     }
 
     pub fn zip64_extension(&self) -> bool {

@@ -13,7 +13,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
-use std::path::{Component, Path};
+use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(any(
@@ -29,10 +29,8 @@ use bzip2::read::BzDecoder;
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-mod ffi {
-    pub const S_IFDIR: u32 = 0o0040000;
-    pub const S_IFREG: u32 = 0o0100000;
-}
+/// Provides high level API for reading from a stream.
+pub(crate) mod stream;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
@@ -650,12 +648,22 @@ pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
     let central_header_start = reader.stream_position()?;
+
     // Parse central header
     let signature = reader.read_u32::<LittleEndian>()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
+        Err(ZipError::InvalidArchive("Invalid Central Directory header"))
+    } else {
+        central_header_to_zip_file_inner(reader, archive_offset, central_header_start)
     }
+}
 
+/// Parse a central directory entry to collect the information for the file.
+fn central_header_to_zip_file_inner<R: Read>(
+    reader: &mut R,
+    archive_offset: u64,
+    central_header_start: u64,
+) -> ZipResult<ZipFileData> {
     let version_made_by = reader.read_u16::<LittleEndian>()?;
     let _version_to_extract = reader.read_u16::<LittleEndian>()?;
     let flags = reader.read_u16::<LittleEndian>()?;
@@ -896,20 +904,7 @@ impl<'a> ZipFile<'a> {
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
     pub fn enclosed_name(&self) -> Option<&Path> {
-        if self.data.file_name.contains('\0') {
-            return None;
-        }
-        let path = Path::new(&self.data.file_name);
-        let mut depth = 0usize;
-        for component in path.components() {
-            match component {
-                Component::Prefix(_) | Component::RootDir => return None,
-                Component::ParentDir => depth = depth.checked_sub(1)?,
-                Component::Normal(_) => depth += 1,
-                Component::CurDir => (),
-            }
-        }
-        Some(path)
+        self.data.enclosed_name()
     }
 
     /// Get the comment of the file
@@ -952,27 +947,7 @@ impl<'a> ZipFile<'a> {
 
     /// Get unix mode for the file
     pub fn unix_mode(&self) -> Option<u32> {
-        if self.data.external_attributes == 0 {
-            return None;
-        }
-
-        match self.data.system {
-            System::Unix => Some(self.data.external_attributes >> 16),
-            System::Dos => {
-                // Interpret MS-DOS directory bit
-                let mut mode = if 0x10 == (self.data.external_attributes & 0x10) {
-                    ffi::S_IFDIR | 0o0775
-                } else {
-                    ffi::S_IFREG | 0o0664
-                };
-                if 0x01 == (self.data.external_attributes & 0x01) {
-                    // Read-only bit; strip write permissions
-                    mode &= 0o0555;
-                }
-                Some(mode)
-            }
-            _ => None,
-        }
+        self.data.unix_mode()
     }
 
     /// Get the CRC32 hash of the original file
@@ -1029,10 +1004,9 @@ impl<'a> Drop for ZipFile<'a> {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(_) => (),
-                    Err(e) => panic!(
-                        "Could not consume all of the output of the current ZipFile: {:?}",
-                        e
-                    ),
+                    Err(e) => {
+                        panic!("Could not consume all of the output of the current ZipFile: {e:?}")
+                    }
                 }
             }
         }
