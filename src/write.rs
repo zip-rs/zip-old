@@ -699,7 +699,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
     /// Add a directory entry.
     ///
-    /// You can't write data to the file afterwards.
+    /// As directories have no content, you must not call [`ZipWriter::write`] before adding a new file.
     pub fn add_directory<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
     where
         S: Into<String>,
