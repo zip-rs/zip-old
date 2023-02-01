@@ -7,9 +7,6 @@ zip-rs
 
 [Documentation](https://docs.rs/zip/0.6.3/zip/)
 
-> PSA: This version of the ZIP crate will not gain any new features,
->      and will only be updated if major security issues are found.
-
 Info
 ----
 
