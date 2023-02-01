@@ -71,7 +71,7 @@ impl<R: Read> ZipStreamReader<R> {
                     fs::create_dir_all(&outpath)?;
                 } else {
                     if let Some(p) = outpath.parent() {
-                        fs::create_dir_all(&p)?;
+                        fs::create_dir_all(p)?;
                     }
                     let mut outfile = fs::File::create(&outpath)?;
                     io::copy(file, &mut outfile)?;
