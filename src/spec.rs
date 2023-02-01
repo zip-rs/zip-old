@@ -23,6 +23,18 @@ pub struct CentralDirectoryEnd {
 }
 
 impl CentralDirectoryEnd {
+    // Per spec 4.4.1.4 - a CentralDirectoryEnd field might be insufficient to hold the
+    // required data. In this case the file SHOULD contain a ZIP64 format record
+    // and the field of this record will be set to -1
+    pub(crate) fn record_too_small(&self) -> bool {
+        self.disk_number == 0xFFFF
+            || self.disk_with_central_directory == 0xFFFF
+            || self.number_of_files_on_this_disk == 0xFFFF
+            || self.number_of_files == 0xFFFF
+            || self.central_directory_size == 0xFFFFFFFF
+            || self.central_directory_offset == 0xFFFFFFFF
+    }
+
     pub fn parse<T: Read>(reader: &mut T) -> ZipResult<CentralDirectoryEnd> {
         let magic = reader.read_u32::<LittleEndian>()?;
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
