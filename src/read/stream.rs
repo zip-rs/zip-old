@@ -95,7 +95,7 @@ impl<R: Read> ZipStreamReader<R> {
 
                     use std::os::unix::fs::PermissionsExt;
                     if let Some(mode) = metadata.unix_mode() {
-                        fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                        fs::set_permissions(outpath, fs::Permissions::from_mode(mode))?;
                     }
                 }
 
