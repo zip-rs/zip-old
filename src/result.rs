@@ -81,3 +81,18 @@ impl From<ZipError> for io::Error {
         io::Error::new(io::ErrorKind::Other, err)
     }
 }
+
+/// Error type for time parsing
+#[derive(Debug)]
+pub struct DateTimeRangeError;
+
+impl fmt::Display for DateTimeRangeError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            fmt,
+            "a date could not be represented within the bounds the MS-DOS date range (1980-2107)"
+        )
+    }
+}
+
+impl Error for DateTimeRangeError {}

@@ -1,13 +1,16 @@
 //! Types that specify what is contained in a ZIP.
-#[cfg(doc)]
-use {crate::read::ZipFile, crate::write::FileOptions};
-
+#[cfg(feature = "time")]
+use std::convert::{TryFrom, TryInto};
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
     target_arch = "powerpc"
 )))]
 use std::sync::atomic;
+#[cfg(not(feature = "time"))]
+use std::time::SystemTime;
+#[cfg(doc)]
+use {crate::read::ZipFile, crate::write::FileOptions};
 
 #[cfg(any(
     all(target_arch = "arm", target_pointer_width = "32"),
@@ -41,6 +44,8 @@ mod atomic {
     }
 }
 
+#[cfg(feature = "time")]
+use crate::result::DateTimeRangeError;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -167,19 +172,9 @@ impl DateTime {
     ///
     /// Returns `Err` when this object is out of bounds
     #[allow(clippy::result_unit_err)]
+    #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
-        if dt.year() >= 1980 && dt.year() <= 2107 {
-            Ok(DateTime {
-                year: (dt.year()) as u16,
-                month: (dt.month()) as u8,
-                day: dt.day(),
-                hour: dt.hour(),
-                minute: dt.minute(),
-                second: dt.second(),
-            })
-        } else {
-            Err(())
-        }
+        dt.try_into().map_err(|_err| ())
     }
 
     /// Gets the time portion of this datetime in the msdos representation
@@ -195,8 +190,6 @@ impl DateTime {
     #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
-        use std::convert::TryFrom;
-
         let date =
             Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
         let time = Time::from_hms(self.hour, self.minute, self.second)?;
@@ -251,6 +244,26 @@ impl DateTime {
     /// When read from a zip file, this may not be a reasonable value
     pub fn second(&self) -> u8 {
         self.second
+    }
+}
+
+#[cfg(feature = "time")]
+impl TryFrom<OffsetDateTime> for DateTime {
+    type Error = DateTimeRangeError;
+
+    fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
+        if dt.year() >= 1980 && dt.year() <= 2107 {
+            Ok(DateTime {
+                year: (dt.year()) as u16,
+                month: (dt.month()) as u8,
+                day: dt.day(),
+                hour: dt.hour(),
+                minute: dt.minute(),
+                second: dt.second(),
+            })
+        } else {
+            Err(DateTimeRangeError)
+        }
     }
 }
 
@@ -498,20 +511,43 @@ mod test {
     #[cfg(feature = "time")]
     #[test]
     fn datetime_from_time_bounds() {
+        use std::convert::TryFrom;
+
         use super::DateTime;
         use time::macros::datetime;
 
         // 1979-12-31 23:59:59
-        assert!(DateTime::from_time(datetime!(1979-12-31 23:59:59 UTC)).is_err());
+        assert!(DateTime::try_from(datetime!(1979-12-31 23:59:59 UTC)).is_err());
 
         // 1980-01-01 00:00:00
-        assert!(DateTime::from_time(datetime!(1980-01-01 00:00:00 UTC)).is_ok());
+        assert!(DateTime::try_from(datetime!(1980-01-01 00:00:00 UTC)).is_ok());
 
         // 2107-12-31 23:59:59
-        assert!(DateTime::from_time(datetime!(2107-12-31 23:59:59 UTC)).is_ok());
+        assert!(DateTime::try_from(datetime!(2107-12-31 23:59:59 UTC)).is_ok());
 
         // 2108-01-01 00:00:00
-        assert!(DateTime::from_time(datetime!(2108-01-01 00:00:00 UTC)).is_err());
+        assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00 UTC)).is_err());
+    }
+
+    #[cfg(feature = "time")]
+    #[test]
+    fn datetime_try_from_bounds() {
+        use std::convert::TryFrom;
+
+        use super::DateTime;
+        use time::macros::datetime;
+
+        // 1979-12-31 23:59:59
+        assert!(DateTime::try_from(datetime!(1979-12-31 23:59:59 UTC)).is_err());
+
+        // 1980-01-01 00:00:00
+        assert!(DateTime::try_from(datetime!(1980-01-01 00:00:00 UTC)).is_ok());
+
+        // 2107-12-31 23:59:59
+        assert!(DateTime::try_from(datetime!(2107-12-31 23:59:59 UTC)).is_ok());
+
+        // 2108-01-01 00:00:00
+        assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00 UTC)).is_err());
     }
 
     #[test]
@@ -562,10 +598,11 @@ mod test {
     #[test]
     fn time_at_january() {
         use super::DateTime;
+        use std::convert::TryFrom;
 
         // 2020-01-01 00:00:00
         let clock = OffsetDateTime::from_unix_timestamp(1_577_836_800).unwrap();
 
-        assert!(DateTime::from_time(clock).is_ok());
+        assert!(DateTime::try_from(clock).is_ok());
     }
 }

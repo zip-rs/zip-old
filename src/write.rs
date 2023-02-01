@@ -7,6 +7,7 @@ use crate::spec;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
+use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -190,7 +191,7 @@ impl Default for FileOptions {
             compression_method: CompressionMethod::Stored,
             compression_level: None,
             #[cfg(feature = "time")]
-            last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
+            last_modified_time: OffsetDateTime::now_utc().try_into().unwrap_or_default(),
             #[cfg(not(feature = "time"))]
             last_modified_time: DateTime::default(),
             permissions: None,
