@@ -58,8 +58,8 @@ impl<R: Read> ZipStreamReader<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
-        struct Extracter<'a>(&'a Path);
-        impl ZipStreamVisitor for Extracter<'_> {
+        struct Extractor<'a>(&'a Path);
+        impl ZipStreamVisitor for Extractor<'_> {
             fn visit_file(&mut self, file: &mut ZipFile<'_>) -> ZipResult<()> {
                 let filepath = file
                     .enclosed_name()
@@ -103,7 +103,7 @@ impl<R: Read> ZipStreamReader<R> {
             }
         }
 
-        self.visit(&mut Extracter(directory.as_ref()))
+        self.visit(&mut Extractor(directory.as_ref()))
     }
 }
 

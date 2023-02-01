@@ -42,3 +42,14 @@ mod spec;
 mod types;
 pub mod write;
 mod zipcrypto;
+
+/// Unstable APIs
+///
+/// All APIs accessible by importing this module are unstable; They may be changed in patch releases.
+/// You MUST you an exact version specifier in `Cargo.toml`, to indicate the version of this API you're using:
+///
+/// ```toml
+/// [dependencies]
+/// zip = "=0.6.4"
+/// ```
+pub mod unstable;

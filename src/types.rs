@@ -380,7 +380,7 @@ impl ZipFileData {
             })
     }
 
-    pub fn enclosed_name(&self) -> Option<&path::Path> {
+    pub(crate) fn enclosed_name(&self) -> Option<&path::Path> {
         if self.file_name.contains('\0') {
             return None;
         }
@@ -398,7 +398,7 @@ impl ZipFileData {
     }
 
     /// Get unix mode for the file
-    pub fn unix_mode(&self) -> Option<u32> {
+    pub(crate) fn unix_mode(&self) -> Option<u32> {
         if self.external_attributes == 0 {
             return None;
         }

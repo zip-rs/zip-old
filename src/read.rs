@@ -30,7 +30,7 @@ use bzip2::read::BzDecoder;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
 /// Provides high level API for reading from a stream.
-pub mod stream;
+pub(crate) mod stream;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
@@ -1014,8 +1014,6 @@ impl<'a> Drop for ZipFile<'a> {
     }
 }
 
-/// **It is recommended to use [`stream`] for its highlevel API instead.**
-///
 /// Read ZipFile structures from a non-seekable reader.
 ///
 /// This is an alternative method to read a zip file. If possible, use the ZipArchive functions
