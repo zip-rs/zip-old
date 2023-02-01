@@ -30,7 +30,7 @@ fn real_main() -> i32 {
         {
             let comment = file.comment();
             if !comment.is_empty() {
-                println!("Entry {} comment: {}", i, comment);
+                println!("Entry {i} comment: {comment}");
             }
         }
 

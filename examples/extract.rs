@@ -12,7 +12,7 @@ fn real_main() -> i32 {
         return 1;
     }
     let fname = std::path::Path::new(&*args[1]);
-    let file = fs::File::open(&fname).unwrap();
+    let file = fs::File::open(fname).unwrap();
 
     let mut archive = zip::ZipArchive::new(file).unwrap();
 
@@ -26,7 +26,7 @@ fn real_main() -> i32 {
         {
             let comment = file.comment();
             if !comment.is_empty() {
-                println!("File {} comment: {}", i, comment);
+                println!("File {i} comment: {comment}");
             }
         }
 

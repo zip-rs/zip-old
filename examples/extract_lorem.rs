@@ -25,7 +25,7 @@ fn real_main() -> i32 {
 
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
-    println!("{}", contents);
+    println!("{contents}");
 
     0
 }

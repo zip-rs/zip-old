@@ -110,31 +110,6 @@ pub struct FileOptions {
 }
 
 impl FileOptions {
-    /// Construct a new FileOptions object
-    pub fn default() -> FileOptions {
-        FileOptions {
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            ))]
-            compression_method: CompressionMethod::Deflated,
-            #[cfg(not(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib"
-            )))]
-            compression_method: CompressionMethod::Stored,
-            compression_level: None,
-            #[cfg(feature = "time")]
-            last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
-            #[cfg(not(feature = "time"))]
-            last_modified_time: DateTime::default(),
-            permissions: None,
-            large_file: false,
-        }
-    }
-
     /// Set the compression method for the new file
     ///
     /// The default is `CompressionMethod::Deflated`. If the deflate compression feature is
@@ -198,8 +173,29 @@ impl FileOptions {
 }
 
 impl Default for FileOptions {
+    /// Construct a new FileOptions object
     fn default() -> Self {
-        Self::default()
+        Self {
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            compression_method: CompressionMethod::Deflated,
+            #[cfg(not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            )))]
+            compression_method: CompressionMethod::Stored,
+            compression_level: None,
+            #[cfg(feature = "time")]
+            last_modified_time: DateTime::from_time(OffsetDateTime::now_utc()).unwrap_or_default(),
+            #[cfg(not(feature = "time"))]
+            last_modified_time: DateTime::default(),
+            permissions: None,
+            large_file: false,
+        }
     }
 }
 
@@ -848,7 +844,7 @@ impl<W: Write + io::Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
-                let _ = write!(io::stderr(), "ZipWriter drop failed: {:?}", e);
+                let _ = write!(io::stderr(), "ZipWriter drop failed: {e:?}");
             }
         }
     }
@@ -1211,8 +1207,7 @@ fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     format!(
-                        "Extra data header ID {:#06} requires crate feature \"unreserved\"",
-                        kind,
+                        "Extra data header ID {kind:#06} requires crate feature \"unreserved\"",
                     ),
                 )));
             }
