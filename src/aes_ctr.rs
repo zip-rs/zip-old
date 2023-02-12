@@ -2,10 +2,11 @@
 //!
 //! This was implemented since the zip specification requires the mode to not use a nonce and uses a
 //! different byte order (little endian) than NIST (big endian).
-//! See [AesCtrZipKeyStream](./struct.AesCtrZipKeyStream.html) for more information.
+//! See [AesCtrZipKeyStream] for more information.
 
 use aes::cipher::generic_array::GenericArray;
-use aes::{BlockEncrypt, NewBlockCipher};
+// use aes::{BlockEncrypt, NewBlockCipher};
+use aes::cipher::{BlockEncrypt, KeyInit};
 use byteorder::WriteBytesExt;
 use std::{any, fmt};
 
@@ -82,7 +83,7 @@ where
 impl<C> AesCtrZipKeyStream<C>
 where
     C: AesKind,
-    C::Cipher: NewBlockCipher,
+    C::Cipher: KeyInit,
 {
     /// Creates a new zip variant AES-CTR key stream.
     ///
@@ -150,14 +151,14 @@ fn xor(dest: &mut [u8], src: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::{Aes128, Aes192, Aes256, AesCipher, AesCtrZipKeyStream, AesKind};
-    use aes::{BlockEncrypt, NewBlockCipher};
+    use aes::cipher::{BlockEncrypt, KeyInit};
 
     /// Checks whether `crypt_in_place` produces the correct plaintext after one use and yields the
     /// cipertext again after applying it again.
     fn roundtrip<Aes>(key: &[u8], ciphertext: &mut [u8], expected_plaintext: &[u8])
     where
         Aes: AesKind,
-        Aes::Cipher: NewBlockCipher + BlockEncrypt,
+        Aes::Cipher: KeyInit + BlockEncrypt,
     {
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
 

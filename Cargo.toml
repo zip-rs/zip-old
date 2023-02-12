@@ -11,7 +11,7 @@ Library to support the reading and writing of zip files.
 edition = "2018"
 
 [dependencies]
-aes = { version = "0.7.5", optional = true }
+aes = { version = "0.8.2", optional = true }
 byteorder = "1.4.3"
 bzip2 = { version = "0.4.3", optional = true }
 constant_time_eq = { version = "0.1.5", optional = true }
