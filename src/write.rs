@@ -16,7 +16,8 @@ use std::mem;
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
-    feature = "deflate-zlib"
+    feature = "deflate-zlib",
+    feature = "deflate-zlib-ng",
 ))]
 use flate2::write::DeflateEncoder;
 
@@ -35,7 +36,8 @@ enum GenericZipWriter<W: Write + io::Seek> {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
     ))]
     Deflater(DeflateEncoder<W>),
     #[cfg(feature = "bzip2")]
@@ -180,13 +182,15 @@ impl Default for FileOptions {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
             ))]
             compression_method: CompressionMethod::Deflated,
             #[cfg(not(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
             )))]
             compression_method: CompressionMethod::Stored,
             compression_level: None,
@@ -874,7 +878,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
             ))]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "bzip2")]
@@ -905,7 +910,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
                 #[cfg(any(
                     feature = "deflate",
                     feature = "deflate-miniz",
-                    feature = "deflate-zlib"
+                    feature = "deflate-zlib",
+                    feature = "deflate-zlib-ng",
                 ))]
                 CompressionMethod::Deflated => GenericZipWriter::Deflater(DeflateEncoder::new(
                     bare,
@@ -968,7 +974,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
             ))]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
@@ -996,7 +1003,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
             ))]
             GenericZipWriter::Deflater(..) => Some(CompressionMethod::Deflated),
             #[cfg(feature = "bzip2")]
@@ -1018,7 +1026,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
-    feature = "deflate-zlib"
+    feature = "deflate-zlib",
+    feature = "deflate-zlib-ng",
 ))]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i32> {
     let min = flate2::Compression::none().level() as i32;
@@ -1037,6 +1046,7 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i32> {
     feature = "deflate",
     feature = "deflate-miniz",
     feature = "deflate-zlib",
+    feature = "deflate-zlib-ng",
     feature = "bzip2",
     feature = "zstd"
 ))]
