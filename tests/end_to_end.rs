@@ -87,10 +87,7 @@ fn append() {
 }
 
 // Write a test zip archive to buffer.
-fn write_test_archive(
-    file: &mut Cursor<Vec<u8>>,
-    method: CompressionMethod,
-) -> ZipResult<()> {
+fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod) -> ZipResult<()> {
     let mut zip = ZipWriter::new(file);
 
     zip.add_directory("test/", Default::default())?;
