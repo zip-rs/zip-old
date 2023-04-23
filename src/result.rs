@@ -65,8 +65,8 @@ impl ZipError {
     /// The text used as an error when a password is required and not supplied
     ///
     /// ```rust,no_run
-    /// # use zip::result::ZipError;
-    /// # let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
+    /// # use zip_next::result::ZipError;
+    /// # let mut archive = zip_next::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
     /// match archive.by_index(1) {
     ///     Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)) => eprintln!("a password is needed to unzip this file"),
     ///     _ => (),

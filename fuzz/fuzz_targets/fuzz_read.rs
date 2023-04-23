@@ -3,7 +3,7 @@ use libfuzzer_sys::fuzz_target;
 
 fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let reader = std::io::Cursor::new(data);
-    let mut zip = zip::ZipArchive::new(reader)?;
+    let mut zip = zip_next::ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;

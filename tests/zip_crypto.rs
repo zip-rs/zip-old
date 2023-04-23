@@ -39,7 +39,7 @@ fn encrypted_file() {
         0x00, 0x00,
     ]);
 
-    let mut archive = zip::ZipArchive::new(zip_file_bytes).unwrap();
+    let mut archive = zip_next::ZipArchive::new(zip_file_bytes).unwrap();
 
     assert_eq!(archive.len(), 1); //Only one file inside archive: `test.txt`
 
@@ -47,8 +47,8 @@ fn encrypted_file() {
         // No password
         let file = archive.by_index(0);
         match file {
-            Err(zip::result::ZipError::UnsupportedArchive(
-                zip::result::ZipError::PASSWORD_REQUIRED,
+            Err(zip_next::result::ZipError::UnsupportedArchive(
+                zip_next::result::ZipError::PASSWORD_REQUIRED,
             )) => (),
             Err(_) => panic!(
                 "Expected PasswordRequired error when opening encrypted file without password"
@@ -61,7 +61,7 @@ fn encrypted_file() {
         // Wrong password
         let file = archive.by_index_decrypt(0, b"wrong password");
         match file {
-            Ok(Err(zip::result::InvalidPassword)) => (),
+            Ok(Err(zip_next::result::InvalidPassword)) => (),
             Err(_) => panic!(
                 "Expected InvalidPassword error when opening encrypted file with wrong password"
             ),

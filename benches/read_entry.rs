@@ -4,13 +4,13 @@ use std::io::{Cursor, Read, Write};
 
 use bencher::Bencher;
 use getrandom::getrandom;
-use zip::{ZipArchive, ZipWriter};
+use zip_next::{ZipArchive, ZipWriter};
 
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip_next::write::FileOptions::default().compression_method(zip_next::CompressionMethod::Stored);
 
     writer.start_file("random.dat", options).unwrap();
     let mut bytes = vec![0u8; size];

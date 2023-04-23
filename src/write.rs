@@ -52,17 +52,17 @@ pub(crate) mod zip_writer {
     /// API to edit its contents.
     ///
     /// ```
-    /// # fn doit() -> zip::result::ZipResult<()>
+    /// # fn doit() -> zip_next::result::ZipResult<()>
     /// # {
-    /// # use zip::ZipWriter;
+    /// # use zip_next::ZipWriter;
     /// use std::io::Write;
-    /// use zip::write::FileOptions;
+    /// use zip_next::write::FileOptions;
     ///
     /// // We use a buffer here, though you'd normally use a `File`
     /// let mut buf = [0; 65536];
-    /// let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
+    /// let mut zip = zip_next::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
     ///
-    /// let options = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    /// let options = zip_next::write::FileOptions::default().compression_method(zip_next::CompressionMethod::Stored);
     /// zip.start_file("hello_world.txt", options)?;
     /// zip.write(b"Hello, World!")?;
     ///
@@ -82,7 +82,7 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_extra_field: bool,
         pub(super) writing_to_central_extra_field_only: bool,
         pub(super) writing_raw: bool,
-        pub(super) comment: Vec<u8>,
+        pub(super) comment: Vec<u8>
     }
 }
 pub use zip_writer::ZipWriter;
@@ -291,7 +291,7 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
             writing_to_extra_field: false,
             writing_to_central_extra_field_only: false,
             comment: footer.zip_file_comment,
-            writing_raw: true, // avoid recomputing the last file's header
+            writing_raw: true // avoid recomputing the last file's header
         })
     }
 }
@@ -309,7 +309,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             writing_to_extra_field: false,
             writing_to_central_extra_field_only: false,
             writing_raw: false,
-            comment: Vec::new(),
+            comment: Vec::new()
         }
     }
 
@@ -493,8 +493,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// ```
     /// use byteorder::{LittleEndian, WriteBytesExt};
-    /// use zip::{ZipArchive, ZipWriter, result::ZipResult};
-    /// use zip::{write::FileOptions, CompressionMethod};
+    /// use zip_next::{ZipArchive, ZipWriter, result::ZipResult};
+    /// use zip_next::{write::FileOptions, CompressionMethod};
     /// use std::io::{Write, Cursor};
     ///
     /// # fn main() -> ZipResult<()> {
@@ -623,12 +623,12 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
-    /// use zip::{ZipArchive, ZipWriter};
+    /// use zip_next::{ZipArchive, ZipWriter};
     ///
     /// fn copy_rename<R, W>(
     ///     src: &mut ZipArchive<R>,
     ///     dst: &mut ZipWriter<W>,
-    /// ) -> zip::result::ZipResult<()>
+    /// ) -> zip_next::result::ZipResult<()>
     /// where
     ///     R: Read + Seek,
     ///     W: Write + Seek,
@@ -676,9 +676,9 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
-    /// use zip::{ZipArchive, ZipWriter};
+    /// use zip_next::{ZipArchive, ZipWriter};
     ///
-    /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip::result::ZipResult<()>
+    /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip_next::result::ZipResult<()>
     /// where
     ///     R: Read + Seek,
     ///     W: Write + Seek,
@@ -837,6 +837,32 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             footer.write(writer)?;
         }
 
+        Ok(())
+    }
+}
+
+impl <RW: Read + Write + io::Seek> ZipWriter<RW> {
+    fn data_by_name(&mut self, name: &str) -> ZipResult<&ZipFileData> {
+        self.finish_file()?;
+        for file in self.files.iter() {
+            if file.file_name == name {
+                return Ok(file);
+            }
+        }
+        Err(ZipError::FileNotFound)
+    }
+
+    /// Adds another entry to the central directory referring to the same content as an existing
+    /// entry. The file's local-file header will still refer to it by its original name, so
+    /// unzipping the file will technically be unspecified behavior. However, both [ZipArchive] and
+    /// OpenJDK ignore the filename in the local-file header and treat the central directory as
+    /// authoritative.
+    pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
+        self.finish_file()?;
+        let src_data = self.data_by_name(src_name)?;
+        let mut dest_data = src_data.to_owned();
+        dest_data.file_name = dest_name.into();
+        self.files.push(dest_data);
         Ok(())
     }
 }
@@ -1309,7 +1335,8 @@ mod test {
     use crate::compression::CompressionMethod;
     use crate::types::DateTime;
     use std::io;
-    use std::io::Write;
+    use std::io::{Read, Write};
+    use crate::ZipArchive;
 
     #[test]
     fn write_empty_zip() {
@@ -1439,6 +1466,41 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
         assert_eq!(result.get_ref(), &v);
+    }
+
+    #[cfg(test)]
+    const RT_TEST_TEXT: &str = "And I can't stop thinking about the moments that I lost to you\
+                            And I can't stop thinking of things I used to do\
+                            And I can't stop making bad decisions\
+                            And I can't stop eating stuff you make me chew\
+                            I put on a smile like you wanna see\
+                            Another day goes by that I long to be like you";
+    #[cfg(test)] const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
+    #[cfg(test)] const SECOND_FILENAME: &str = "different_name.xyz";
+
+    #[test]
+    fn test_shallow_copy() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: CompressionMethod::Deflated,
+            compression_level: Some(9),
+            last_modified_time: DateTime::default(),
+            permissions: Some(33188),
+            large_file: false,
+        };
+        writer.start_file(RT_TEST_FILENAME, options).unwrap();
+        writer.write(RT_TEST_TEXT.as_ref()).unwrap();
+        writer.shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME).unwrap();
+        let zip = writer.finish().unwrap();
+        let mut reader = ZipArchive::new(zip).unwrap();
+        let file_names: Vec<&str> = reader.file_names().collect();
+        assert_eq!(file_names, vec![RT_TEST_FILENAME, SECOND_FILENAME]);
+        let mut first_file_content = String::new();
+        reader.by_name(RT_TEST_FILENAME).unwrap().read_to_string(&mut first_file_content).unwrap();
+        assert_eq!(first_file_content, RT_TEST_TEXT);
+        let mut second_file_content = String::new();
+        reader.by_name(SECOND_FILENAME).unwrap().read_to_string(&mut second_file_content).unwrap();
+        assert_eq!(second_file_content, RT_TEST_TEXT);
     }
 
     #[test]

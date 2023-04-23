@@ -51,8 +51,8 @@ pub(crate) mod zip_archive {
     ///
     /// ```no_run
     /// use std::io::prelude::*;
-    /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
-    ///     let mut zip = zip::ZipArchive::new(reader)?;
+    /// fn list_zip_contents(reader: impl Read + Seek) -> zip_next::result::ZipResult<()> {
+    ///     let mut zip = zip_next::ZipArchive::new(reader)?;
     ///
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i)?;
@@ -72,7 +72,7 @@ pub(crate) mod zip_archive {
 
 pub use zip_archive::ZipArchive;
 #[allow(clippy::large_enum_variant)]
-enum CryptoReader<'a> {
+pub(crate) enum CryptoReader<'a> {
     Plaintext(io::Take<&'a mut dyn Read>),
     ZipCrypto(ZipCryptoReaderValid<io::Take<&'a mut dyn Read>>),
     #[cfg(feature = "aes-crypto")]
@@ -119,7 +119,7 @@ impl<'a> CryptoReader<'a> {
     }
 }
 
-enum ZipFileReader<'a> {
+pub(crate) enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn io::Read>),
     Stored(Crc32Reader<CryptoReader<'a>>),
@@ -178,12 +178,12 @@ impl<'a> ZipFileReader<'a> {
 
 /// A struct for reading a zip file
 pub struct ZipFile<'a> {
-    data: Cow<'a, ZipFileData>,
-    crypto_reader: Option<CryptoReader<'a>>,
-    reader: ZipFileReader<'a>,
+    pub(crate) data: Cow<'a, ZipFileData>,
+    pub(crate) crypto_reader: Option<CryptoReader<'a>>,
+    pub(crate) reader: ZipFileReader<'a>,
 }
 
-fn find_content<'a>(
+pub(crate) fn find_content<'a>(
     data: &ZipFileData,
     reader: &'a mut (impl Read + Seek),
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
@@ -206,7 +206,7 @@ fn find_content<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn make_crypto_reader<'a>(
+pub(crate) fn make_crypto_reader<'a>(
     compression_method: crate::compression::CompressionMethod,
     crc32: u32,
     last_modified_time: DateTime,
@@ -257,7 +257,7 @@ fn make_crypto_reader<'a>(
     Ok(Ok(reader))
 }
 
-fn make_reader(
+pub(crate) fn make_reader(
     compression_method: CompressionMethod,
     crc32: u32,
     reader: CryptoReader,
@@ -991,7 +991,7 @@ impl<'a> Drop for ZipFile<'a> {
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
             let mut reader: std::io::Take<&mut dyn std::io::Read> = match &mut self.reader {
                 ZipFileReader::NoReader => {
-                    let innerreader = ::std::mem::replace(&mut self.crypto_reader, None);
+                    let innerreader = self.crypto_reader.take();
                     innerreader.expect("Invalid reader state").into_inner()
                 }
                 reader => {

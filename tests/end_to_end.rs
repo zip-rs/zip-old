@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::iter::FromIterator;
-use zip::write::FileOptions;
-use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
+use zip_next::write::FileOptions;
+use zip_next::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
@@ -32,8 +32,8 @@ fn copy() {
         let mut tgt_file = &mut Cursor::new(Vec::new());
 
         {
-            let mut src_archive = zip::ZipArchive::new(src_file).unwrap();
-            let mut zip = zip::ZipWriter::new(&mut tgt_file);
+            let mut src_archive = zip_next::ZipArchive::new(src_file).unwrap();
+            let mut zip = zip_next::ZipWriter::new(&mut tgt_file);
 
             {
                 let file = src_archive
@@ -53,7 +53,7 @@ fn copy() {
             }
         }
 
-        let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
+        let mut tgt_archive = zip_next::ZipArchive::new(tgt_file).unwrap();
 
         check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
@@ -69,7 +69,7 @@ fn append() {
         write_test_archive(file, method).expect("Couldn't write to test file");
 
         {
-            let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
+            let mut zip = zip_next::ZipWriter::new_append(&mut file).unwrap();
             zip.start_file(
                 COPY_ENTRY_NAME,
                 FileOptions::default().compression_method(method),
@@ -79,7 +79,7 @@ fn append() {
             zip.finish().unwrap();
         }
 
-        let mut zip = zip::ZipArchive::new(&mut file).unwrap();
+        let mut zip = zip_next::ZipArchive::new(&mut file).unwrap();
         check_archive_file_contents(&mut zip, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
     }
@@ -89,8 +89,8 @@ fn append() {
 fn write_test_archive(
     file: &mut Cursor<Vec<u8>>,
     method: CompressionMethod,
-) -> zip::result::ZipResult<()> {
-    let mut zip = zip::ZipWriter::new(file);
+) -> zip_next::result::ZipResult<()> {
+    let mut zip = zip_next::ZipWriter::new(file);
 
     zip.add_directory("test/", Default::default())?;
 
@@ -116,8 +116,8 @@ fn write_test_archive(
 }
 
 // Load an archive from buffer and check for test data.
-fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip::ZipArchive<R>> {
-    let mut archive = zip::ZipArchive::new(zip_file).unwrap();
+fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip_next::result::ZipResult<zip_next::ZipArchive<R>> {
+    let mut archive = zip_next::ZipArchive::new(zip_file).unwrap();
 
     // Check archive contains expected file names.
     {
@@ -147,9 +147,9 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip
 
 // Read a file in the archive as a string.
 fn read_archive_file<R: Read + Seek>(
-    archive: &mut zip::ZipArchive<R>,
+    archive: &mut zip_next::ZipArchive<R>,
     name: &str,
-) -> zip::result::ZipResult<String> {
+) -> zip_next::result::ZipResult<String> {
     let mut file = archive.by_name(name)?;
 
     let mut contents = String::new();
@@ -183,7 +183,7 @@ fn check_archive_file(
 
 // Check a file in the archive contains the given data.
 fn check_archive_file_contents<R: Read + Seek>(
-    archive: &mut zip::ZipArchive<R>,
+    archive: &mut zip_next::ZipArchive<R>,
     name: &str,
     expected: &[u8],
 ) {
