@@ -3,8 +3,8 @@ use bencher::{benchmark_group, benchmark_main};
 use std::io::{Cursor, Write};
 
 use bencher::Bencher;
-use zip_next::{CompressionMethod, ZipArchive, ZipWriter};
 use zip_next::write::FileOptions;
+use zip_next::{CompressionMethod, ZipArchive, ZipWriter};
 
 const FILE_COUNT: usize = 15_000;
 const FILE_SIZE: usize = 1024;

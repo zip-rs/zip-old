@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::iter::FromIterator;
-use zip_next::write::FileOptions;
-use zip_next::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS, ZipWriter};
 use zip_next::result::ZipResult;
+use zip_next::write::FileOptions;
+use zip_next::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
