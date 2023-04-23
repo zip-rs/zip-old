@@ -839,9 +839,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         Ok(())
     }
-}
 
-impl <RW: Read + Write + Seek> ZipWriter<RW> {
     fn data_by_name(&mut self, name: &str) -> ZipResult<&ZipFileData> {
         self.finish_file()?;
         for file in self.files.iter() {
