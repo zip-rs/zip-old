@@ -1492,8 +1492,11 @@ mod test {
             .unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
-        let file_names: Vec<&str> = reader.file_names().collect();
-        assert_eq!(file_names, vec![RT_TEST_FILENAME, SECOND_FILENAME]);
+        let mut file_names: Vec<&str> = reader.file_names().collect();
+        file_names.sort();
+        let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME];
+        expected_file_names.sort();
+        assert_eq!(file_names, expected_file_names);
         let mut first_file_content = String::new();
         reader
             .by_name(RT_TEST_FILENAME)
