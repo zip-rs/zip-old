@@ -12,7 +12,8 @@ fn generate_random_archive(count_files: usize, file_size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
     let options =
-        zip_next::write::FileOptions::default().compression_method(zip_next::CompressionMethod::Stored);
+        zip_next::write::FileOptions::default()
+            .compression_method(zip_next::CompressionMethod::Stored);
 
     let bytes = vec![0u8; file_size];
 

@@ -82,7 +82,7 @@ pub(crate) mod zip_writer {
         pub(super) writing_to_extra_field: bool,
         pub(super) writing_to_central_extra_field_only: bool,
         pub(super) writing_raw: bool,
-        pub(super) comment: Vec<u8>
+        pub(super) comment: Vec<u8>,
     }
 }
 pub use zip_writer::ZipWriter;
@@ -291,7 +291,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             writing_to_extra_field: false,
             writing_to_central_extra_field_only: false,
             comment: footer.zip_file_comment,
-            writing_raw: true // avoid recomputing the last file's header
+            writing_raw: true, // avoid recomputing the last file's header
         })
     }
 }
@@ -309,7 +309,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_to_extra_field: false,
             writing_to_central_extra_field_only: false,
             writing_raw: false,
-            comment: Vec::new()
+            comment: Vec::new(),
         }
     }
 

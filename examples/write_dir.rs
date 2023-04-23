@@ -12,14 +12,16 @@ fn main() {
     std::process::exit(real_main());
 }
 
-const METHOD_STORED: Option<zip_next::CompressionMethod> = Some(zip_next::CompressionMethod::Stored);
+const METHOD_STORED: Option<zip_next::CompressionMethod> =
+    Some(zip_next::CompressionMethod::Stored);
 
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
     feature = "deflate-zlib"
 ))]
-const METHOD_DEFLATED: Option<zip_next::CompressionMethod> = Some(zip_next::CompressionMethod::Deflated);
+const METHOD_DEFLATED: Option<zip_next::CompressionMethod> =
+    Some(zip_next::CompressionMethod::Deflated);
 #[cfg(not(any(
     feature = "deflate",
     feature = "deflate-miniz",
@@ -101,7 +103,7 @@ where
         }
     }
     zip.finish()?;
-    Result::Ok(())
+    Ok(())
 }
 
 fn doit(
