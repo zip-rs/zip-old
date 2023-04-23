@@ -4,6 +4,7 @@ use std::io::{Cursor, Write};
 
 use bencher::Bencher;
 use zip_next::{ZipArchive, ZipWriter};
+use zip_next::write::FileOptions;
 
 const FILE_COUNT: usize = 15_000;
 const FILE_SIZE: usize = 1024;
@@ -11,9 +12,8 @@ const FILE_SIZE: usize = 1024;
 fn generate_random_archive(count_files: usize, file_size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
-    let options =
-        zip_next::write::FileOptions::default()
-            .compression_method(zip_next::CompressionMethod::Stored);
+    let options = FileOptions::default()
+        .compression_method(zip_next::CompressionMethod::Stored);
 
     let bytes = vec![0u8; file_size];
 

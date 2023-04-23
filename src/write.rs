@@ -1115,10 +1115,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     Ok(())
 }
 
-fn update_local_file_header<T: Write + Seek>(
-    writer: &mut T,
-    file: &ZipFileData,
-) -> ZipResult<()> {
+fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
     writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32::<LittleEndian>(file.crc32)?;
@@ -1332,9 +1329,9 @@ mod test {
     use super::{FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::types::DateTime;
+    use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
-    use crate::ZipArchive;
 
     #[test]
     fn write_empty_zip() {
@@ -1473,8 +1470,10 @@ mod test {
                             And I can't stop eating stuff you make me chew\
                             I put on a smile like you wanna see\
                             Another day goes by that I long to be like you";
-    #[cfg(test)] const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
-    #[cfg(test)] const SECOND_FILENAME: &str = "different_name.xyz";
+    #[cfg(test)]
+    const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
+    #[cfg(test)]
+    const SECOND_FILENAME: &str = "different_name.xyz";
 
     #[test]
     fn test_shallow_copy() {
@@ -1488,16 +1487,26 @@ mod test {
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
-        writer.shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME).unwrap();
+        writer
+            .shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
+            .unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
         let file_names: Vec<&str> = reader.file_names().collect();
         assert_eq!(file_names, vec![RT_TEST_FILENAME, SECOND_FILENAME]);
         let mut first_file_content = String::new();
-        reader.by_name(RT_TEST_FILENAME).unwrap().read_to_string(&mut first_file_content).unwrap();
+        reader
+            .by_name(RT_TEST_FILENAME)
+            .unwrap()
+            .read_to_string(&mut first_file_content)
+            .unwrap();
         assert_eq!(first_file_content, RT_TEST_TEXT);
         let mut second_file_content = String::new();
-        reader.by_name(SECOND_FILENAME).unwrap().read_to_string(&mut second_file_content).unwrap();
+        reader
+            .by_name(SECOND_FILENAME)
+            .unwrap()
+            .read_to_string(&mut second_file_content)
+            .unwrap();
         assert_eq!(second_file_content, RT_TEST_TEXT);
     }
 

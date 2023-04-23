@@ -4,7 +4,8 @@ use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::iter::FromIterator;
 use zip_next::write::FileOptions;
-use zip_next::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
+use zip_next::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS, ZipWriter};
+use zip_next::result::ZipResult;
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
@@ -33,7 +34,7 @@ fn copy() {
 
         {
             let mut src_archive = zip_next::ZipArchive::new(src_file).unwrap();
-            let mut zip = zip_next::ZipWriter::new(&mut tgt_file);
+            let mut zip = ZipWriter::new(&mut tgt_file);
 
             {
                 let file = src_archive
@@ -69,7 +70,7 @@ fn append() {
         write_test_archive(file, method).expect("Couldn't write to test file");
 
         {
-            let mut zip = zip_next::ZipWriter::new_append(&mut file).unwrap();
+            let mut zip = ZipWriter::new_append(&mut file).unwrap();
             zip.start_file(
                 COPY_ENTRY_NAME,
                 FileOptions::default().compression_method(method),
@@ -89,8 +90,8 @@ fn append() {
 fn write_test_archive(
     file: &mut Cursor<Vec<u8>>,
     method: CompressionMethod,
-) -> zip_next::result::ZipResult<()> {
-    let mut zip = zip_next::ZipWriter::new(file);
+) -> ZipResult<()> {
+    let mut zip = ZipWriter::new(file);
 
     zip.add_directory("test/", Default::default())?;
 
@@ -116,7 +117,7 @@ fn write_test_archive(
 }
 
 // Load an archive from buffer and check for test data.
-fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip_next::result::ZipResult<zip_next::ZipArchive<R>> {
+fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip_next::ZipArchive<R>> {
     let mut archive = zip_next::ZipArchive::new(zip_file).unwrap();
 
     // Check archive contains expected file names.
@@ -149,7 +150,7 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip_next::result::ZipResul
 fn read_archive_file<R: Read + Seek>(
     archive: &mut zip_next::ZipArchive<R>,
     name: &str,
-) -> zip_next::result::ZipResult<String> {
+) -> ZipResult<String> {
     let mut file = archive.by_name(name)?;
 
     let mut contents = String::new();
