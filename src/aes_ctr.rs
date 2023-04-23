@@ -4,10 +4,12 @@
 //! different byte order (little endian) than NIST (big endian).
 //! See [AesCtrZipKeyStream](./struct.AesCtrZipKeyStream.html) for more information.
 
+use aes::cipher;
+use aes::cipher::{BlockCipher, BlockEncrypt};
 use aes::cipher::generic_array::GenericArray;
-use aes::{BlockEncrypt, NewBlockCipher};
 use byteorder::WriteBytesExt;
 use std::{any, fmt};
+use cipher::KeyInit;
 
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;
@@ -27,7 +29,7 @@ pub trait AesKind {
     /// Key type.
     type Key: AsRef<[u8]>;
     /// Cipher used to decrypt.
-    type Cipher;
+    type Cipher: KeyInit;
 }
 
 impl AesKind for Aes128 {
@@ -82,7 +84,7 @@ where
 impl<C> AesCtrZipKeyStream<C>
 where
     C: AesKind,
-    C::Cipher: NewBlockCipher,
+    C::Cipher: BlockCipher,
 {
     /// Creates a new zip variant AES-CTR key stream.
     ///
@@ -151,13 +153,14 @@ fn xor(dest: &mut [u8], src: &[u8]) {
 mod tests {
     use super::{Aes128, Aes192, Aes256, AesCipher, AesCtrZipKeyStream, AesKind};
     use aes::{BlockEncrypt, NewBlockCipher};
+    use aes::cipher::{BlockCipher, BlockEncrypt};
 
     /// Checks whether `crypt_in_place` produces the correct plaintext after one use and yields the
     /// cipertext again after applying it again.
     fn roundtrip<Aes>(key: &[u8], ciphertext: &mut [u8], expected_plaintext: &[u8])
     where
         Aes: AesKind,
-        Aes::Cipher: NewBlockCipher + BlockEncrypt,
+        Aes::Cipher: BlockCipher + BlockEncrypt,
     {
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
 
