@@ -29,7 +29,7 @@ use time::OffsetDateTime;
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
 
-enum GenericZipWriter<W: Write + io::Seek> {
+enum GenericZipWriter<W: Write + Seek> {
     Closed,
     Storer(W),
     #[cfg(any(
@@ -60,9 +60,9 @@ pub(crate) mod zip_writer {
     ///
     /// // We use a buffer here, though you'd normally use a `File`
     /// let mut buf = [0; 65536];
-    /// let mut zip = zip_next::ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
+    /// let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
     ///
-    /// let options = zip_next::write::FileOptions::default().compression_method(zip_next::CompressionMethod::Stored);
+    /// let options = FileOptions::default().compression_method(zip_next::CompressionMethod::Stored);
     /// zip.start_file("hello_world.txt", options)?;
     /// zip.write(b"Hello, World!")?;
     ///
@@ -74,7 +74,7 @@ pub(crate) mod zip_writer {
     /// # }
     /// # doit().unwrap();
     /// ```
-    pub struct ZipWriter<W: Write + io::Seek> {
+    pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: Vec<ZipFileData>,
         pub(super) stats: ZipWriterStats,
@@ -200,7 +200,7 @@ impl Default for FileOptions {
     }
 }
 
-impl<W: Write + io::Seek> Write for ZipWriter<W> {
+impl<W: Write + Seek> Write for ZipWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.writing_to_file {
             return Err(io::Error::new(
@@ -254,7 +254,7 @@ impl ZipWriterStats {
     }
 }
 
-impl<A: Read + Write + io::Seek> ZipWriter<A> {
+impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
@@ -296,7 +296,7 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
     }
 }
 
-impl<W: Write + io::Seek> ZipWriter<W> {
+impl<W: Write + Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
     /// Before writing to this object, the [`ZipWriter::start_file`] function should be called.
@@ -419,7 +419,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
     /// Create a file in the archive and start writing its' contents.
     ///
-    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
     where
         S: Into<String>,
@@ -455,7 +455,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     ///
     /// Returns the number of padding bytes required to align the file.
     ///
-    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
     pub fn start_file_aligned<S>(
         &mut self,
         name: S,
@@ -489,7 +489,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// Returns the preliminary starting offset of the file data without any extra data allowing to
     /// align the file data by calculating a pad length to be prepended as part of the extra data.
     ///
-    /// The data should be written using the [`io::Write`] implementation on this [`ZipWriter`]
+    /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
     ///
     /// ```
     /// use byteorder::{LittleEndian, WriteBytesExt};
@@ -841,7 +841,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     }
 }
 
-impl <RW: Read + Write + io::Seek> ZipWriter<RW> {
+impl <RW: Read + Write + Seek> ZipWriter<RW> {
     fn data_by_name(&mut self, name: &str) -> ZipResult<&ZipFileData> {
         self.finish_file()?;
         for file in self.files.iter() {
@@ -867,7 +867,7 @@ impl <RW: Read + Write + io::Seek> ZipWriter<RW> {
     }
 }
 
-impl<W: Write + io::Seek> Drop for ZipWriter<W> {
+impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
@@ -877,7 +877,7 @@ impl<W: Write + io::Seek> Drop for ZipWriter<W> {
     }
 }
 
-impl<W: Write + io::Seek> GenericZipWriter<W> {
+impl<W: Write + Seek> GenericZipWriter<W> {
     fn switch_to(
         &mut self,
         compression: CompressionMethod,
@@ -1117,7 +1117,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
     Ok(())
 }
 
-fn update_local_file_header<T: Write + io::Seek>(
+fn update_local_file_header<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
@@ -1265,7 +1265,7 @@ fn write_local_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData) -
     Ok(())
 }
 
-fn update_local_zip64_extra_field<T: Write + io::Seek>(
+fn update_local_zip64_extra_field<T: Write + Seek>(
     writer: &mut T,
     file: &ZipFileData,
 ) -> ZipResult<()> {
