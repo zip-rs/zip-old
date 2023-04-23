@@ -5,11 +5,11 @@
 //! See [AesCtrZipKeyStream](./struct.AesCtrZipKeyStream.html) for more information.
 
 use aes::cipher;
-use aes::cipher::{BlockCipher, BlockEncrypt};
 use aes::cipher::generic_array::GenericArray;
+use aes::cipher::{BlockCipher, BlockEncrypt};
 use byteorder::WriteBytesExt;
-use std::{any, fmt};
 use cipher::KeyInit;
+use std::{any, fmt};
 
 /// Internal block size of an AES cipher.
 const AES_BLOCK_SIZE: usize = 16;
@@ -152,7 +152,6 @@ fn xor(dest: &mut [u8], src: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::{Aes128, Aes192, Aes256, AesCipher, AesCtrZipKeyStream, AesKind};
-    use aes::{BlockEncrypt, NewBlockCipher};
     use aes::cipher::{BlockCipher, BlockEncrypt};
 
     /// Checks whether `crypt_in_place` produces the correct plaintext after one use and yields the
