@@ -21,7 +21,6 @@
 //!
 //!
 //!
-#![feature(read_buf)]
 #![warn(missing_docs)]
 
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
