@@ -90,3 +90,6 @@ jobs:
       - name: compile fuzz
         run: |
           cargo fuzz build fuzz_read
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_read -- -timeout=1s -runs=10000000
