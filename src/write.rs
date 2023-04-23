@@ -1489,7 +1489,7 @@ mod test {
             large_file: false,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
-        writer.write(RT_TEST_TEXT.as_ref()).unwrap();
+        writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
         writer.shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME).unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
