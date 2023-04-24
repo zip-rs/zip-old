@@ -67,9 +67,9 @@ fn copy() {
 #[test]
 fn append() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
-        for shallow_copy in vec![false, true] {
+        for shallow_copy in &[false, true] {
             let mut file = &mut Cursor::new(Vec::new());
-            write_test_archive(file, method, shallow_copy).expect("Couldn't write to test file");
+            write_test_archive(file, method, *shallow_copy).expect("Couldn't write to test file");
 
             {
                 let mut zip = ZipWriter::new_append(&mut file).unwrap();
