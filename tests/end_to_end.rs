@@ -15,10 +15,11 @@ fn end_to_end() {
         let file = &mut Cursor::new(Vec::new());
 
         println!("Writing file with {method} compression");
-        write_test_archive(file, method).expect("Couldn't write test zip archive");
+        write_test_archive(file, method, true).expect("Couldn't write test zip archive");
 
         println!("Checking file contents");
         check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
+        check_archive_file(file, INTERNAL_COPY_ENTRY_NAME, Some(method), LOREM_IPSUM);
     }
 }
 
@@ -28,7 +29,7 @@ fn end_to_end() {
 fn copy() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         let src_file = &mut Cursor::new(Vec::new());
-        write_test_archive(src_file, method).expect("Couldn't write to test file");
+        write_test_archive(src_file, method, false).expect("Couldn't write to test file");
 
         let mut tgt_file = &mut Cursor::new(Vec::new());
 
@@ -66,28 +67,35 @@ fn copy() {
 #[test]
 fn append() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
-        let mut file = &mut Cursor::new(Vec::new());
-        write_test_archive(file, method).expect("Couldn't write to test file");
+        for shallow_copy in vec![false, true] {
+            let mut file = &mut Cursor::new(Vec::new());
+            write_test_archive(file, method, shallow_copy).expect("Couldn't write to test file");
 
-        {
-            let mut zip = ZipWriter::new_append(&mut file).unwrap();
-            zip.start_file(
-                COPY_ENTRY_NAME,
-                FileOptions::default().compression_method(method),
-            )
-            .unwrap();
-            zip.write_all(LOREM_IPSUM).unwrap();
-            zip.finish().unwrap();
+            {
+                let mut zip = ZipWriter::new_append(&mut file).unwrap();
+                zip.start_file(
+                    COPY_ENTRY_NAME,
+                    FileOptions::default().compression_method(method),
+                )
+                .unwrap();
+                zip.write_all(LOREM_IPSUM).unwrap();
+                zip.finish().unwrap();
+            }
+
+            let mut zip = zip_next::ZipArchive::new(&mut file).unwrap();
+            check_archive_file_contents(&mut zip, ENTRY_NAME, LOREM_IPSUM);
+            check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
+            check_archive_file_contents(&mut zip, INTERNAL_COPY_ENTRY_NAME, LOREM_IPSUM);
         }
-
-        let mut zip = zip_next::ZipArchive::new(&mut file).unwrap();
-        check_archive_file_contents(&mut zip, ENTRY_NAME, LOREM_IPSUM);
-        check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
     }
 }
 
 // Write a test zip archive to buffer.
-fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod) -> ZipResult<()> {
+fn write_test_archive(
+    file: &mut Cursor<Vec<u8>>,
+    method: CompressionMethod,
+    shallow_copy: bool,
+) -> ZipResult<()> {
     let mut zip = ZipWriter::new(file);
 
     zip.add_directory("test/", Default::default())?;
@@ -109,6 +117,12 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod) -> 
     zip.start_file(ENTRY_NAME, options)?;
     zip.write_all(LOREM_IPSUM)?;
 
+    if shallow_copy {
+        zip.shallow_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)?;
+    } else {
+        zip.deep_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)?;
+    }
+
     zip.finish()?;
     Ok(())
 }
@@ -124,6 +138,7 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip_next::ZipArc
             "test/☃.txt",
             "test_with_extra_data/🐢.txt",
             ENTRY_NAME,
+            INTERNAL_COPY_ENTRY_NAME,
         ];
         let expected_file_names = HashSet::from_iter(expected_file_names.iter().copied());
         let file_names = archive.file_names().collect::<HashSet<_>>();
@@ -201,3 +216,5 @@ const EXTRA_DATA: &[u8] = b"Extra Data";
 const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
+
+const INTERNAL_COPY_ENTRY_NAME: &str = "test/lorem_ipsum_copied.txt";

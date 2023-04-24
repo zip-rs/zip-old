@@ -1,7 +1,7 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{central_header_to_zip_file, ZipArchive, ZipFile};
+use crate::read::{central_header_to_zip_file, find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -11,6 +11,7 @@ use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
+use std::io::{BufReader, SeekFrom};
 use std::mem;
 
 #[cfg(any(
@@ -268,10 +269,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let (archive_offset, directory_start, number_of_files) =
             ZipArchive::get_directory_counts(&mut readwriter, &footer, cde_start_pos)?;
 
-        if readwriter
-            .seek(io::SeekFrom::Start(directory_start))
-            .is_err()
-        {
+        if readwriter.seek(SeekFrom::Start(directory_start)).is_err() {
             return Err(ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
             ));
@@ -281,7 +279,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let _ = readwriter.seek(io::SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
+        let _ = readwriter.seek(SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
 
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(readwriter),
@@ -293,6 +291,45 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             comment: footer.zip_file_comment,
             writing_raw: true, // avoid recomputing the last file's header
         })
+    }
+}
+
+impl<A: Read + Write + Seek> ZipWriter<A> {
+    /// Adds another copy of a file already in this archive. This will produce a larger but more
+    /// widely-compatible archive compared to [shallow_copy_file].
+    pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
+        self.finish_file()?;
+        let write_position = self.inner.get_plain().stream_position()?;
+        let src_data = self.data_by_name(src_name)?.to_owned();
+        let data_start = src_data.data_start.load();
+        let real_size = src_data.compressed_size.max(write_position - data_start);
+        let mut options = FileOptions::default()
+            .large_file(real_size > spec::ZIP64_BYTES_THR)
+            .last_modified_time(src_data.last_modified_time)
+            .compression_method(src_data.compression_method);
+        if let Some(perms) = src_data.unix_mode() {
+            options = options.unix_permissions(perms);
+        }
+
+        let raw_values = ZipRawValues {
+            crc32: src_data.crc32,
+            compressed_size: real_size,
+            uncompressed_size: src_data.uncompressed_size,
+        };
+        let reader = self.inner.get_plain();
+        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(&src_data, reader)?));
+        let mut copy = Vec::with_capacity(real_size as usize);
+        reader.read_to_end(&mut copy)?;
+        drop(reader);
+        self.inner
+            .get_plain()
+            .seek(SeekFrom::Start(write_position))?;
+        self.start_entry(dest_name, options, Some(raw_values))?;
+        self.writing_raw = true;
+        self.writing_to_file = true;
+        self.write_all(&copy)?;
+
+        Ok(())
     }
 }
 
@@ -409,7 +446,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             file.compressed_size = file_end - self.stats.start;
 
             update_local_file_header(writer, file)?;
-            writer.seek(io::SeekFrom::Start(file_end))?;
+            writer.seek(SeekFrom::Start(file_end))?;
         }
 
         self.writing_to_file = false;
@@ -603,9 +640,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Update extra field length in local file header.
             let extra_field_length =
                 if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
-            writer.seek(io::SeekFrom::Start(file.header_start + 28))?;
+            writer.seek(SeekFrom::Start(file.header_start + 28))?;
             writer.write_u16::<LittleEndian>(extra_field_length)?;
-            writer.seek(io::SeekFrom::Start(header_end))?;
+            writer.seek(SeekFrom::Start(header_end))?;
 
             self.inner
                 .switch_to(file.compression_method, file.compression_level)?;
@@ -852,9 +889,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Adds another entry to the central directory referring to the same content as an existing
     /// entry. The file's local-file header will still refer to it by its original name, so
-    /// unzipping the file will technically be unspecified behavior. However, both [ZipArchive] and
-    /// OpenJDK ignore the filename in the local-file header and treat the central directory as
-    /// authoritative.
+    /// unzipping the file will technically be unspecified behavior. [ZipArchive] ignores the
+    /// filename in the local-file header and treat the central directory as authoritative. However,
+    /// some other software (e.g. Minecraft) will refuse to extract a file copied this way.
     pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         let src_data = self.data_by_name(src_name)?;
@@ -1117,7 +1154,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
 
 fn update_local_file_header<T: Write + Seek>(writer: &mut T, file: &ZipFileData) -> ZipResult<()> {
     const CRC32_OFFSET: u64 = 14;
-    writer.seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
+    writer.seek(SeekFrom::Start(file.header_start + CRC32_OFFSET))?;
     writer.write_u32::<LittleEndian>(file.crc32)?;
     if file.large_file {
         update_local_zip64_extra_field(writer, file)?;
@@ -1265,7 +1302,7 @@ fn update_local_zip64_extra_field<T: Write + Seek>(
     file: &ZipFileData,
 ) -> ZipResult<()> {
     let zip64_extra_field = file.header_start + 30 + file.file_name.as_bytes().len() as u64;
-    writer.seek(io::SeekFrom::Start(zip64_extra_field + 4))?;
+    writer.seek(SeekFrom::Start(zip64_extra_field + 4))?;
     writer.write_u64::<LittleEndian>(file.uncompressed_size)?;
     writer.write_u64::<LittleEndian>(file.compressed_size)?;
     // Excluded fields:
@@ -1489,6 +1526,44 @@ mod test {
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
         writer
             .shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        let mut reader = ZipArchive::new(zip).unwrap();
+        let mut file_names: Vec<&str> = reader.file_names().collect();
+        file_names.sort();
+        let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME];
+        expected_file_names.sort();
+        assert_eq!(file_names, expected_file_names);
+        let mut first_file_content = String::new();
+        reader
+            .by_name(RT_TEST_FILENAME)
+            .unwrap()
+            .read_to_string(&mut first_file_content)
+            .unwrap();
+        assert_eq!(first_file_content, RT_TEST_TEXT);
+        let mut second_file_content = String::new();
+        reader
+            .by_name(SECOND_FILENAME)
+            .unwrap()
+            .read_to_string(&mut second_file_content)
+            .unwrap();
+        assert_eq!(second_file_content, RT_TEST_TEXT);
+    }
+
+    #[test]
+    fn test_deep_copy() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let options = FileOptions {
+            compression_method: CompressionMethod::Deflated,
+            compression_level: Some(9),
+            last_modified_time: DateTime::default(),
+            permissions: Some(33188),
+            large_file: false,
+        };
+        writer.start_file(RT_TEST_FILENAME, options).unwrap();
+        writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
+        writer
+            .deep_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
             .unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
