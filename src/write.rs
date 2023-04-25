@@ -1,7 +1,7 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{central_header_to_zip_file, find_content, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{central_header_to_zip_file, find_content, make_crypto_reader, make_reader, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -295,12 +295,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 }
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
+    fn reader_by_name<'a>(&'a mut self, name: &str) -> ZipResult<io::Take<&'a mut dyn Read>> {
+        let data = self.data_by_name(name)?.to_owned();
+        find_content(&data, self.inner.get_plain())
+    }
+
     /// Adds another copy of a file already in this archive. This will produce a larger but more
     /// widely-compatible archive compared to [shallow_copy_file].
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         let write_position = self.inner.get_plain().stream_position()?;
-        let src_data = self.data_by_name(src_name)?.to_owned();
+        let src_data = self.data_by_name(src_name)?;
         let data_start = src_data.data_start.load();
         let real_size = src_data.compressed_size.max(write_position - data_start);
         let mut options = FileOptions::default()
@@ -310,14 +315,13 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         if let Some(perms) = src_data.unix_mode() {
             options = options.unix_permissions(perms);
         }
-
         let raw_values = ZipRawValues {
             crc32: src_data.crc32,
             compressed_size: real_size,
             uncompressed_size: src_data.uncompressed_size,
         };
-        let reader = self.inner.get_plain();
-        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(&src_data, reader)?));
+        let mut reader =
+            BufReader::new(ZipFileReader::Raw(self.reader_by_name(src_name)?));
         let mut copy = Vec::with_capacity(real_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
@@ -877,8 +881,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn data_by_name(&mut self, name: &str) -> ZipResult<&ZipFileData> {
-        self.finish_file()?;
+    fn data_by_name(&self, name: &str) -> ZipResult<&ZipFileData> {
         for file in self.files.iter() {
             if file.file_name == name {
                 return Ok(file);
