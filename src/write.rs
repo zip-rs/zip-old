@@ -1,10 +1,7 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{
-    central_header_to_zip_file, find_content, make_crypto_reader, make_reader, ZipArchive, ZipFile,
-    ZipFileReader,
-};
+use crate::read::{central_header_to_zip_file, find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -911,7 +908,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     fn drop(&mut self) {
         if !self.inner.is_closed() {
             if let Err(e) = self.finalize() {
-                let _ = write!(io::stderr(), "ZipWriter drop failed: {e:?}");
+                let _ = write!(io::stderr(), "ZipWriter drop failed: {:?}", e);
             }
         }
     }
