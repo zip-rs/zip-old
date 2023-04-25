@@ -1,7 +1,10 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{central_header_to_zip_file, find_content, make_crypto_reader, make_reader, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{
+    central_header_to_zip_file, find_content, make_crypto_reader, make_reader, ZipArchive, ZipFile,
+    ZipFileReader,
+};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -320,8 +323,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size: real_size,
             uncompressed_size: src_data.uncompressed_size,
         };
-        let mut reader =
-            BufReader::new(ZipFileReader::Raw(self.reader_by_name(src_name)?));
+        let mut reader = BufReader::new(ZipFileReader::Raw(self.reader_by_name(src_name)?));
         let mut copy = Vec::with_capacity(real_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
