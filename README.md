@@ -1,7 +1,7 @@
 zip_next
 ========
 
-[![Build Status](https://img.shields.io/github/workflow/status/Pr0methean/zip-next/CI)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
+[![Build Status](https://github.com/Pr0methean/zip-next/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip_next.svg)](https://crates.io/crates/zip_next)
 
 [Documentation](https://docs.rs/zip_next/0.6.6/zip_next/)
