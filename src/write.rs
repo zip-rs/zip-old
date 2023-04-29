@@ -494,7 +494,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Create a file in the archive and start writing its' contents.
+    /// Create a file in the archive and start writing its' contents. The file must not have the
+    /// same name as a file already in the archive.
     ///
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>

@@ -31,6 +31,10 @@
 
 ## [0.6.8]
 
+### Added
+
+ - Detects duplicate filenames.
+
 ### Fixed
 
  - `deep_copy_file` could set incorrect Unix permissions.
@@ -40,4 +44,4 @@
  
 ### Changed
 
- - Improved performance of `deep_copy_file`: it no longer searches for the filename twice.
+ - Improved performance of `deep_copy_file` by using a HashMap and eliminating a redundant search.
