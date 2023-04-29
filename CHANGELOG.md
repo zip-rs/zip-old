@@ -51,3 +51,9 @@
 ### Fixed
 
  - Fixed an issue that prevented `ZipWriter` from implementing `Send`.
+
+## [0.6.10]
+
+### Changed
+
+ - Updated dependency versions.
