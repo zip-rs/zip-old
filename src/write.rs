@@ -8,6 +8,7 @@ use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSIO
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::default::Default;
 use std::io;
@@ -50,6 +51,7 @@ enum GenericZipWriter<W: Write + Seek> {
 pub(crate) mod zip_writer {
     use super::*;
     use std::cell::RefCell;
+    use std::collections::BTreeMap;
     use std::rc::Rc;
 
     /// ZIP archive generator
@@ -83,6 +85,7 @@ pub(crate) mod zip_writer {
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: Vec<Rc<RefCell<ZipFileData>>>,
+        pub(super) files_by_name: BTreeMap<String, Rc<RefCell<ZipFileData>>>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_to_extra_field: bool,
@@ -291,11 +294,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
                 .map(Rc::new))
             .collect::<Result<Vec<_>, _>>()?;
 
+        let mut files_by_name = BTreeMap::new();
+        for file in files.iter() {
+            files_by_name.insert(file.borrow().file_name.to_owned(), file.to_owned());
+        }
+
         let _ = readwriter.seek(SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
 
         Ok(ZipWriter {
             inner: GenericZipWriter::Storer(readwriter),
             files,
+            files_by_name,
             stats: Default::default(),
             writing_to_file: false,
             writing_to_extra_field: false,
@@ -357,6 +366,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         ZipWriter {
             inner: GenericZipWriter::Storer(inner),
             files: Vec::new(),
+            files_by_name: BTreeMap::new(),
             stats: Default::default(),
             writing_to_file: false,
             writing_to_extra_field: false,
@@ -403,6 +413,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             let writer = self.inner.get_plain();
             let header_start = writer.stream_position()?;
+            let name = name.into();
 
             let permissions = options.permissions.unwrap_or(0o100644);
             let mut file = ZipFileData {
@@ -416,7 +427,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
-                file_name: name.into(),
+                file_name: name.to_owned(),
                 file_name_raw: Vec::new(), // Never used for saving
                 extra_field: Vec::new(),
                 file_comment: String::new(),
@@ -436,7 +447,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
 
-            self.files.push(Rc::new(RefCell::new(file)));
+            let file = Rc::new(RefCell::new(file));
+            self.files.push(file.to_owned());
+            self.files_by_name.insert(name, file);
         }
 
         Ok(())
@@ -904,13 +917,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn data_by_name(&self, name: &str) -> ZipResult<&RefCell<ZipFileData>> {
-        for file in self.files.iter() {
-            if file.borrow().file_name == name {
-                return Ok(file);
-            }
-        }
-        Err(ZipError::FileNotFound)
+    fn data_by_name(&self, name: &str) -> ZipResult<&Rc<RefCell<ZipFileData>>> {
+        self.files_by_name.get(name).ok_or(ZipError::FileNotFound)
     }
 
     /// Adds another entry to the central directory referring to the same content as an existing
@@ -924,7 +932,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut dest_data = src_data.to_owned();
         drop(src_data);
         dest_data.file_name = dest_name.into();
-        self.files.push(Rc::new(RefCell::new(dest_data)));
+        let dest_data = Rc::new(RefCell::new(dest_data));
+        self.files.push(dest_data.to_owned());
+        self.files_by_name.insert(dest_name.into(), dest_data);
         Ok(())
     }
 }
