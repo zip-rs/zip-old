@@ -1,6 +1,7 @@
 #[cfg(feature = "std")]
 use std::io;
 
+#[derive(Debug)]
 pub struct DecryptBuilder<D> {
     seed: [u8; 12],
     builder: super::ReadBuilder<D, super::Found>,

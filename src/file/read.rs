@@ -24,10 +24,13 @@ pub struct Store {
     #[cfg(feature = "read-deflate")]
     deflate: Option<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
 }
-
+#[derive(Debug)]
 pub struct Decrypted(());
+#[derive(Debug)]
 pub struct Found(());
+#[derive(Debug)]
 pub struct Not<T>(T);
+#[derive(Debug)]
 pub struct ReadBuilder<D, F = Not<Found>, E = Not<Decrypted>> {
     disk: D,
     storage: FileStorage,
@@ -203,6 +206,7 @@ impl Default for InflateBuffer {
 }
 
 /// We use an `Option<FileStorage>` in [`super::FileLocator`] to represent files that we might not be able to read.
+#[derive(Debug, Clone)]
 pub(crate) struct FileStorage {
     pub(crate) start: u64,
     pub(crate) len: u64,
@@ -213,6 +217,7 @@ pub(crate) struct FileStorage {
 }
 
 /// List of available [`zip_format::CompressionMethod`] implementations.
+#[derive(Debug, Clone)]
 pub(crate) enum FileStorageKind {
     Stored,
     #[cfg(feature = "read-deflate")]
