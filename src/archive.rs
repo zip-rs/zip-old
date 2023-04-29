@@ -1,5 +1,6 @@
 use crate::{error, file, metadata};
 
+#[cfg(feature = "std")]
 use std::io;
 
 pub struct Footer<D> {
@@ -18,6 +19,7 @@ impl DiskDescriptor {
         self.disk_id
     }
 }
+#[cfg(feature = "std")]
 impl<D: io::Read + io::Seek> Footer<D> {
     pub fn from_io(mut disk: D) -> io::Result<Self> {
         // TODO: optimize this
@@ -119,11 +121,38 @@ pub struct DirectorySpan {
     offset: u64,
     entries: u64,
 }
+impl<'a> Directory<&'a [u8]> {
+    pub fn iter(self) -> impl Iterator<Item = Result<file::File<metadata::RawDirectoryEntry<'a>, &'a [u8]>, error::NotAnArchive>> {
+        let Directory { disk, span } = self;
+        // FIXME: checked conversions
+        let mut offset = span.offset as usize;
+        let mut entries = span.entries;
+        core::iter::from_fn(move || {
+            (entries != 0).then(|| {
+                let entry = zip_format::DirectoryEntry::as_prefix(&disk[offset..]).ok_or(error::NotAnArchive(()))?;
+                offset += core::mem::size_of::<zip_format::DirectoryEntry>() + 4;
+                let size = entry.name_len.get() as usize + entry.metadata_len.get() as usize + entry.comment_len.get() as usize;
+                let metadata = &disk[offset..offset + size];
+                offset += size;
+                entries -= 1;
+                Ok(file::File {
+                    disk: disk,
+                    meta: metadata::RawDirectoryEntry::new(entry, metadata),
+                    locator: file::FileLocator::from_entry(entry),
+                })
+            })
+        })
+    }
+}
+#[cfg(feature = "std")]
 impl<D: io::Seek + io::Read> Directory<D> {
     /// It is highly recommended to use a buffered disk for this operation
     pub fn seek_to_files<M: metadata::Metadata<D>>(
         mut self,
-    ) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>> {
+    ) -> io::Result<impl ExactSizeIterator<Item = io::Result<file::File<M>>>>
+    where
+        M::Error: Into<io::Error>,
+    {
         self.disk
             .seek(std::io::SeekFrom::Start(self.span.offset as u64))?;
         Ok(DirectoryIter {
@@ -146,11 +175,14 @@ where
         self.entries as usize
     }
 }
+#[cfg(feature = "std")]
 // TODO: Design an API for reading metadata from an entry
 impl<
         D: io::Read + io::Seek,
         M: metadata::Metadata<D>,
     > Iterator for DirectoryIter<M, D>
+where
+    M::Error: Into<std::io::Error>,
 {
     type Item = io::Result<file::File<M>>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -160,30 +192,10 @@ impl<
             self.disk.read_exact(&mut buf)?;
             let entry =
                 zip_format::DirectoryEntry::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
-            let storage_kind = match entry.method {
-                zip_format::CompressionMethod::STORED => Some(crate::file::FileStorageKind::Stored),
-                #[cfg(feature = "read-deflate")]
-                zip_format::CompressionMethod::DEFLATE => {
-                    Some(crate::file::FileStorageKind::Deflated)
-                }
-                _ => None,
-            };
-            let flags = entry.flags.get();
-            let storage = storage_kind.map(|kind| crate::file::FileStorage {
-                kind,
-                encrypted: flags & 0b1 != 0,
-                unknown_size: flags & 0b100 != 0,
-                crc32: entry.crc32.get(),
-                len: entry.compressed_size.get() as u64,
-                start: entry.offset_from_start.get() as u64,
-            });
             Ok(file::File {
                 disk: (),
-                meta: M::from_entry(entry, &mut self.disk)?,
-                locator: file::FileLocator {
-                    storage,
-                    disk_id: entry.disk_number.get() as u32,
-                },
+                meta: M::from_entry(entry, &mut self.disk).map_err(|e| {let e: io::Error = e.into(); e})?,
+                locator: file::FileLocator::from_entry(entry),
             })
         })
     }

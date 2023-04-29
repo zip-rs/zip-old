@@ -23,7 +23,7 @@ pub fn main() -> io::Result<()> {
     // look for the directory in this disk, and start scanning it
     let files = footer
         .into_directory()?
-        .seek_to_files::<zip::metadata::Full>()?;
+        .seek_to_files::<zip::metadata::std::Full>()?;
     for file in files {
         // resolve the files within the open archive
         // NOTE: `in_disk` could be pointed at another file for multi-file archives
@@ -34,7 +34,7 @@ pub fn main() -> io::Result<()> {
         let mut data = file
             .reader()?
             .seek_to_data()?
-            .decrypt()?
+            .unlock_io()?
             .map(|d| Ok(d.into()))
             .unwrap_or_else(|d| {
                 // If the file is locked, try to decrypt it with this password

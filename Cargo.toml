@@ -10,9 +10,17 @@ miniz_oxide = { version = "0.5.1", optional = true }
 zip-format = { path = "zip-format" }
 
 [features]
+std = []
 default = ["read", "write"]
 read = ["read-deflate"]
 write = ["write-deflate"]
 
 read-deflate = ["miniz_oxide"]
 write-deflate = ["miniz_oxide"]
+
+[[example]]
+name = "extract_to_stdout"
+required-features = ["std"]
+[[example]]
+name = "simple_inspection"
+required-features = ["std"]

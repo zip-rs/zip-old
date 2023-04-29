@@ -1,16 +1,19 @@
+#[cfg(feature = "std")]
 use std::io;
 
 pub struct DecryptBuilder<D> {
     seed: [u8; 12],
     builder: super::ReadBuilder<D, (super::Not<super::Decrypted>, super::Found)>,
 }
+#[cfg(feature = "std")]
 impl<D> From<DecryptBuilder<D>> for io::Error {
     fn from(_: DecryptBuilder<D>) -> Self {
         crate::error::FileLocked(()).into()
     }
 }
+#[cfg(feature = "std")]
 impl<D: io::Read> DecryptBuilder<D> {
-    pub(crate) fn new(mut builder: super::ReadBuilder<D, (super::Not<super::Decrypted>, super::Found)>) -> io::Result<Self> {
+    pub(crate) fn from_io(mut builder: super::ReadBuilder<D, (super::Not<super::Decrypted>, super::Found)>) -> io::Result<Self> {
         let mut seed = [0; 12];
         builder.disk.read_exact(&mut seed)?;
         // TODO: Clarify the meaning of `storage.len` so that it can be used consistently by readers
@@ -39,6 +42,7 @@ impl<D> From<super::ReadBuilder<D, (super::Decrypted, super::Found)>> for super:
         }
     }
 }
+#[cfg(feature = "std")]
 impl<D: io::Read> io::Read for Decrypt<D> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {

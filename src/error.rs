@@ -2,15 +2,17 @@ macro_rules! errors {
     { $($name:ident $kind:ident $desc:literal)* } => {
         $(
 
-            #[derive(Debug)]
+            #[derive(Debug, Clone)]
             #[doc = $desc]
             pub struct $name(pub(crate) ());
             impl core::fmt::Display for $name {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                     f.write_str($desc)
                 }
             }
+            #[cfg(feature = "std")]
             impl std::error::Error for $name {}
+            #[cfg(feature = "std")]
             impl From<$name> for std::io::Error {
                 fn from(_: $name) -> Self {
                     Self::new(std::io::ErrorKind::$kind, $name(()))

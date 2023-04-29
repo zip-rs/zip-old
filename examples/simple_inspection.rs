@@ -1,6 +1,6 @@
 use std::io;
 
-const NAME: &str = "archive.zip";
+const NAME: &str = "examples/example.zip";
 
 fn main() -> io::Result<()> {
     for file in zip::files(std::fs::File::open(NAME)?)? {

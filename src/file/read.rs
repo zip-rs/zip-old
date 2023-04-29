@@ -1,5 +1,6 @@
 use crate::error;
 use core::marker::PhantomData;
+#[cfg(feature = "std")]
 use std::io;
 
 mod decrypt;
@@ -21,7 +22,7 @@ pub struct Read<'a, D, Buffered = D>(ReadImpl<'a, D, Buffered>);
 #[derive(Default)]
 pub struct Store {
     #[cfg(feature = "read-deflate")]
-    deflate: Option<Box<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>>,
+    deflate: Option<(miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer)>,
 }
 
 pub struct Decrypted(());
@@ -78,6 +79,7 @@ impl<D> ReadBuilder<D, (Not<Decrypted>, Not<Found>)> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
     pub fn seek_to_data(mut self) -> io::Result<ReadBuilder<D, (E, Found)>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
@@ -96,8 +98,9 @@ impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
         })
     }
 }
+#[cfg(feature = "std")]
 impl<D: io::Read> ReadBuilder<D, (Not<Decrypted>, Found)> {
-    pub fn decrypt(self) -> io::Result<Result<ReadBuilder<D, (Decrypted, Found)>, decrypt::DecryptBuilder<D>>> {
+    pub fn unlock_io(self) -> io::Result<Result<ReadBuilder<D, (Decrypted, Found)>, decrypt::DecryptBuilder<D>>> {
         if !self.storage.encrypted {
             Ok(Ok(ReadBuilder {
                 disk: self.disk,
@@ -105,7 +108,7 @@ impl<D: io::Read> ReadBuilder<D, (Not<Decrypted>, Found)> {
                 state: PhantomData,
             }))
         } else {
-            decrypt::DecryptBuilder::new(self).map(Err)
+            decrypt::DecryptBuilder::from_io(self).map(Err)
         }
     }
 }
@@ -140,6 +143,7 @@ impl<D> ReadBuilder<D, (Decrypted, Found)> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<D: io::Read, Buffered: io::BufRead> io::Read for Read<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
