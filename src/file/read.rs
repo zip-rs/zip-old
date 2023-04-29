@@ -44,8 +44,7 @@ enum ReadImpl<'a, D, Buffered> {
     },
     #[cfg(feature = "read-deflate")]
     Deflate {
-        disk: Buffered,
-        remaining: u64,
+        disk: std::io::Take<Buffered>,
         decompressor: &'a mut (miniz_oxide::inflate::core::DecompressorOxide, InflateBuffer),
         out_pos: u16,
         read_cursor: u16,
@@ -123,7 +122,7 @@ impl<D: io::Read> ReadBuilder<D, Found> {
 }
 impl<D> ReadBuilder<D, Found, Decrypted> {
     // FIXME: recommend self-reference for owning the store?
-    pub fn build_io<Buffered>(
+    pub fn build_with_buffering<Buffered: std::io::Read>(
         self,
         store: &mut Store,
         f: impl FnOnce(D) -> Buffered,
@@ -135,12 +134,11 @@ impl<D> ReadBuilder<D, Found, Decrypted> {
             },
             #[cfg(feature = "read-deflate")]
             FileStorageKind::Deflated => ReadImpl::Deflate {
-                disk: f(self.disk),
-                remaining: if self.storage.unknown_size {
+                disk: f(self.disk).take(if self.storage.unknown_size {
                     u64::MAX
                 } else {
                     self.storage.len
-                },
+                }),
                 decompressor: {
                     let deflate = store.deflate.get_or_insert_with(Default::default);
                     deflate.0.init();
@@ -170,6 +168,7 @@ impl<D: io::Read, Buffered: io::BufRead> io::Read for Read<'_, D, Buffered> {
                 read_cursor,
                 ..
             } => {
+                use std::io::BufRead;
                 // TODO: track `remaining`
                 // TODO: Check the CRC of the decompressed data
                 let (decompressor, InflateBuffer(backbuf)) = decompressor;
