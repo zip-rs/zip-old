@@ -35,11 +35,6 @@ pub struct ReadBuilder<D, St = (Not<Decrypted>, Not<Found>)> {
 }
 
 enum ReadImpl<'a, D, Buffered> {
-    Never {
-        never: core::convert::Infallible,
-        b: Buffered,
-        stored: &'a mut (),
-    },
     Stored {
         disk: D,
         remaining: u64,
@@ -94,6 +89,8 @@ impl<D> ReadBuilder<D, (Not<Decrypted>, Not<Found>)> {
 impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
     pub fn seek_to_data(mut self) -> io::Result<ReadBuilder<D, (E, Found)>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
+        // FIXME: should we be using the local header? This will disagree with most other tools
+        //        really, we want a side channel for "nonfatal errors".
         self.disk
             .seek(std::io::SeekFrom::Start(self.storage.start))?;
         let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
@@ -124,6 +121,7 @@ impl<D: io::Read> ReadBuilder<D, (Not<Decrypted>, Found)> {
     }
 }
 impl<D> ReadBuilder<D, (Decrypted, Found)> {
+    // FIXME: recommend self-reference for owning the store?
     pub fn build_io<Buffered>(
         self,
         store: &mut Store,
@@ -158,7 +156,6 @@ impl<D> ReadBuilder<D, (Decrypted, Found)> {
 impl<D: io::Read, Buffered: io::BufRead> io::Read for Read<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
-            ReadImpl::Never { never, .. } => match *never {},
             ReadImpl::Stored { disk, remaining } => {
                 let n = disk.take(*remaining).read(buf)?;
                 *remaining -= n as u64;
