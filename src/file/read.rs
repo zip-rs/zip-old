@@ -28,10 +28,10 @@ pub struct Store {
 pub struct Decrypted(());
 pub struct Found(());
 pub struct Not<T>(T);
-pub struct ReadBuilder<D, St = (Not<Decrypted>, Not<Found>)> {
+pub struct ReadBuilder<D, F = Not<Found>, E = Not<Decrypted>> {
     disk: D,
     storage: FileStorage,
-    state: PhantomData<St>,
+    state: PhantomData<(F, E)>,
 }
 
 enum ReadImpl<'a, D, Buffered> {
@@ -48,10 +48,8 @@ enum ReadImpl<'a, D, Buffered> {
         read_cursor: u16,
     },
 }
-impl<D, St> ReadBuilder<D, St> {
-    pub fn map_disk<D2, F>(self, f: F) -> ReadBuilder<D2, St>
-    where
-        F: FnOnce(D) -> D2,
+impl<D, F, E> ReadBuilder<D, F, E> {
+    pub fn map_disk<D2>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, F, E>
     {
         ReadBuilder {
             disk: f(self.disk),
@@ -73,8 +71,8 @@ impl<D> ReadBuilder<D> {
     }
 }
 
-impl<D> ReadBuilder<D, (Not<Decrypted>, Not<Found>)> {
-    pub fn without_encryption(self) -> Result<ReadBuilder<D, (Decrypted, Not<Found>)>, error::FileLocked> {
+impl<D, F> ReadBuilder<D, F, Not<Decrypted>> {
+    pub fn without_encryption(self) -> Result<ReadBuilder<D, F, Decrypted>, error::FileLocked> {
         (!self.storage.encrypted)
             .then(|| ReadBuilder {
                 disk: self.disk,
@@ -86,8 +84,8 @@ impl<D> ReadBuilder<D, (Not<Decrypted>, Not<Found>)> {
 }
 
 #[cfg(feature = "std")]
-impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
-    pub fn seek_to_data(mut self) -> io::Result<ReadBuilder<D, (E, Found)>> {
+impl<D: io::Seek + io::Read, E> ReadBuilder<D, Not<Found>, E> {
+    pub fn seek_to_data(mut self) -> io::Result<ReadBuilder<D, Found, E>> {
         // TODO: avoid seeking if we can, since this will often be done in a loop
         // FIXME: should we be using the local header? This will disagree with most other tools
         //        really, we want a side channel for "nonfatal errors".
@@ -107,8 +105,8 @@ impl<D: io::Seek + io::Read, E> ReadBuilder<D, (E, Not<Found>)> {
     }
 }
 #[cfg(feature = "std")]
-impl<D: io::Read> ReadBuilder<D, (Not<Decrypted>, Found)> {
-    pub fn unlock_io(self) -> io::Result<Result<ReadBuilder<D, (Decrypted, Found)>, decrypt::DecryptBuilder<D>>> {
+impl<D: io::Read> ReadBuilder<D, Found> {
+    pub fn remove_encryption_io(self) -> io::Result<Result<ReadBuilder<D, Found, Decrypted>, decrypt::DecryptBuilder<D>>> {
         if !self.storage.encrypted {
             Ok(Ok(ReadBuilder {
                 disk: self.disk,
@@ -120,7 +118,7 @@ impl<D: io::Read> ReadBuilder<D, (Not<Decrypted>, Found)> {
         }
     }
 }
-impl<D> ReadBuilder<D, (Decrypted, Found)> {
+impl<D> ReadBuilder<D, Found, Decrypted> {
     // FIXME: recommend self-reference for owning the store?
     pub fn build_io<Buffered>(
         self,

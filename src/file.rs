@@ -70,11 +70,11 @@ impl<D, M> File<M, D> {
 }
 #[cfg(feature = "std")]
 impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
-    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, (read::Decrypted, read::Found)>, read::DecryptBuilder<D>>> {
+    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, read::Found, read::Decrypted>, read::DecryptBuilder<D>>> {
         Ok(self
             .reader()?
             .seek_to_data()?
-            .unlock_io()?
+            .remove_encryption_io()?
             .map(|read| read.map_disk(read::Decrypt::from_unlocked)))
     }
 }
