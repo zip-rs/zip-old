@@ -100,15 +100,15 @@ impl<D> DecryptBuilder<D> {
     }
     fn update_keys(keys: &mut [u32; 3], byte: u8) {
         keys[0] = Self::crc32(keys[0], byte);
-        keys[1] = (keys[1] + (keys[0] & 0xff)) * 0x08088405 + 1;
+        keys[1] = (keys[1] + (keys[0] & 0xff)).wrapping_mul(0x08088405).wrapping_add(1);
         keys[2] = Self::crc32(keys[2], (keys[1] >> 24) as u8);
     }
     fn stream_byte(keys: &[u32; 3]) -> u8 {
         let n = keys[2] as u16 | 3;
-        ((n * (n ^ 1)) >> 8) as u8
+        (n.wrapping_mul(n ^ 1) >> 8) as u8
     }
     pub fn try_password(
-        mut self,
+        self,
         password: &[u8],
     ) -> Result<super::ReadBuilder<Decrypt<D>, (super::Decrypted, super::Found)>, Self> {
         let mut keys = [0x12345678, 0x23456789, 0x34567890];
