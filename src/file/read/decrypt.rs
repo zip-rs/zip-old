@@ -49,7 +49,6 @@ impl<D: io::Read> io::Read for Decrypt<D> {
                     *byte ^= DecryptBuilder::<()>::stream_byte(keys);
                     DecryptBuilder::<()>::update_keys(keys, *byte);
                 }
-                println!("{}", std::any::type_name::<D>());
                 Ok(n)
             }
         }
