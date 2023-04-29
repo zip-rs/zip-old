@@ -65,7 +65,17 @@ impl<D, M> File<M, D> {
     /// If the file uses a [`zip_format::CompressionMethod`] that isn't enabled in the
     /// crate features, a [`MethodNotSupported`] is returned instead.
     pub fn reader(self) -> Result<ReadBuilder<D>, MethodNotSupported> {
-        Ok(ReadBuilder::new(self.disk, self.locator)?)
+        ReadBuilder::new(self.disk, self.locator)
+    }
+}
+#[cfg(feature = "std")]
+impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
+    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, (read::Decrypted, read::Found)>, read::DecryptBuilder<D>>> {
+        Ok(self
+            .reader()?
+            .seek_to_data()?
+            .unlock_io()?
+            .map(|read| read.map_disk(read::Decrypt::from_unlocked)))
     }
 }
 

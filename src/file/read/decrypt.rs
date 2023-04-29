@@ -33,13 +33,9 @@ pub(crate) enum DecryptImpl<D> {
         disk: D,
     }
 }
-impl<D> From<super::ReadBuilder<D, (super::Decrypted, super::Found)>> for super::ReadBuilder<Decrypt<D>, (super::Decrypted, super::Found)> {
-    fn from(builder: super::ReadBuilder<D, (super::Decrypted, super::Found)>) -> Self {
-        Self {
-            state: core::marker::PhantomData,
-            disk: Decrypt(DecryptImpl::Stored(builder.disk)),
-            storage: builder.storage,
-        }
+impl<D> Decrypt<D> {
+    pub(crate) fn from_unlocked(disk: D) -> Self {
+        Self(DecryptImpl::Stored(disk))
     }
 }
 #[cfg(feature = "std")]
