@@ -14,6 +14,7 @@ use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::mem;
+use std::rc::Rc;
 
 #[cfg(any(
     feature = "deflate",
@@ -49,6 +50,8 @@ enum GenericZipWriter<W: Write + Seek> {
 pub(crate) mod zip_writer {
     use super::*;
     use std::cell::RefCell;
+    use std::rc::Rc;
+
     /// ZIP archive generator
     ///
     /// Handles the bookkeeping involved in building an archive, and provides an
@@ -79,7 +82,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: Vec<RefCell<ZipFileData>>,
+        pub(super) files: Vec<Rc<RefCell<ZipFileData>>>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_to_extra_field: bool,
@@ -283,7 +286,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         }
 
         let files = (0..number_of_files)
-            .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset).map(RefCell::new))
+            .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset)
+                .map(RefCell::new)
+                .map(Rc::new))
             .collect::<Result<Vec<_>, _>>()?;
 
         let _ = readwriter.seek(SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
@@ -431,7 +436,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
 
-            self.files.push(RefCell::new(file));
+            self.files.push(Rc::new(RefCell::new(file)));
         }
 
         Ok(())
@@ -919,7 +924,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut dest_data = src_data.to_owned();
         drop(src_data);
         dest_data.file_name = dest_name.into();
-        self.files.push(RefCell::new(dest_data));
+        self.files.push(Rc::new(RefCell::new(dest_data)));
         Ok(())
     }
 }
