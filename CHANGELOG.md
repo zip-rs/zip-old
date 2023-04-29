@@ -45,3 +45,9 @@
 ### Changed
 
  - Improved performance of `deep_copy_file` by using a HashMap and eliminating a redundant search.
+
+## [0.6.9]
+
+### Fixed
+
+ - Fixed an issue that prevented `ZipWriter` from implementing `Send`.
