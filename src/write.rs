@@ -7,7 +7,6 @@ use crate::spec;
 use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::default::Default;
@@ -15,7 +14,6 @@ use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::mem;
-use std::rc::Rc;
 
 #[cfg(any(
     feature = "deflate",
@@ -48,7 +46,7 @@ enum GenericZipWriter<W: Write + Seek> {
     Zstd(ZstdEncoder<'static, W>),
 }
 
-type FileRef = Rc<RefCell<ZipFileData>>;
+type FileRef = ZipFileData;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
@@ -85,7 +83,7 @@ pub(crate) mod zip_writer {
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: Vec<FileRef>,
-        pub(super) files_by_name: HashMap<String, FileRef>,
+        pub(super) files_by_name: HashMap<String, usize>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_to_extra_field: bool,
@@ -220,18 +218,13 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
         match self.inner.ref_mut() {
             Some(ref mut w) => {
                 if self.writing_to_extra_field {
-                    self.files
-                        .last_mut()
-                        .unwrap()
-                        .borrow_mut()
-                        .extra_field
-                        .write(buf)
+                    self.files.last_mut().unwrap().extra_field.write(buf)
                 } else {
                     let write_result = w.write(buf);
                     if let Ok(count) = write_result {
                         self.stats.update(&buf[0..count]);
                         if self.stats.bytes_written > spec::ZIP64_BYTES_THR
-                            && !self.files.last_mut().unwrap().borrow().large_file
+                            && !self.files.last_mut().unwrap().large_file
                         {
                             let _inner = mem::replace(&mut self.inner, GenericZipWriter::Closed);
                             return Err(io::Error::new(
@@ -289,16 +282,12 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         }
 
         let files = (0..number_of_files)
-            .map(|_| {
-                central_header_to_zip_file(&mut readwriter, archive_offset)
-                    .map(RefCell::new)
-                    .map(Rc::new)
-            })
+            .map(|_| central_header_to_zip_file(&mut readwriter, archive_offset))
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut files_by_name = HashMap::new();
-        for file in files.iter() {
-            files_by_name.insert(file.borrow().file_name.to_owned(), file.to_owned());
+        for (index, file) in files.iter().enumerate() {
+            files_by_name.insert(file.file_name.to_owned(), index);
         }
 
         let _ = readwriter.seek(SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
@@ -323,8 +312,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         let write_position = self.inner.get_plain().stream_position()?;
-        let src_data_rc = self.data_by_name(src_name)?;
-        let src_data = src_data_rc.borrow();
+        let src_index = self.index_by_name(src_name)?;
+        let src_data = &self.files[src_index];
         let data_start = src_data.data_start.load();
         let compressed_size = src_data.compressed_size;
         if compressed_size > write_position - data_start {
@@ -344,9 +333,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size,
             uncompressed_size,
         };
-        drop(src_data);
         let mut reader = BufReader::new(ZipFileReader::Raw(find_content(
-            &src_data_rc.clone().borrow(),
+            src_data,
             self.inner.get_plain(),
         )?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
@@ -439,13 +427,14 @@ impl<W: Write + Seek> ZipWriter<W> {
                 large_file: options.large_file,
                 aes_mode: None,
             };
-            let file = self.insert_file_data(file)?;
+            let index = self.insert_file_data(file)?;
+            let file = &mut self.files[index];
             let writer = self.inner.get_plain();
-            write_local_file_header(writer, &file.borrow())?;
+            write_local_file_header(writer, file)?;
 
             let header_end = writer.stream_position()?;
             self.stats.start = header_end;
-            *file.borrow_mut().data_start.get_mut() = header_end;
+            *file.data_start.get_mut() = header_end;
 
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
@@ -454,16 +443,16 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<FileRef> {
+    fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
         let name = &file.file_name;
         if self.files_by_name.contains_key(name) {
             return Err(ZipError::InvalidArchive("Duplicate filename"));
         }
         let name = name.to_owned();
-        let file = Rc::new(RefCell::new(file));
-        self.files.push(file.to_owned());
-        self.files_by_name.insert(name, file.to_owned());
-        Ok(file)
+        self.files.push(file);
+        let index = self.files.len() - 1;
+        self.files_by_name.insert(name, index);
+        Ok(index)
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
@@ -477,7 +466,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !self.writing_raw {
             let mut file = match self.files.last_mut() {
                 None => return Ok(()),
-                Some(f) => f.borrow_mut(),
+                Some(f) => f,
             };
             file.crc32 = self.stats.hasher.clone().finalize();
             file.uncompressed_size = self.stats.bytes_written;
@@ -485,7 +474,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             let file_end = writer.stream_position()?;
             file.compressed_size = file_end - self.stats.start;
 
-            update_local_file_header(writer, &file)?;
+            update_local_file_header(writer, file)?;
             writer.seek(SeekFrom::Start(file_end))?;
         }
 
@@ -637,7 +626,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
         self.writing_to_extra_field = true;
-        Ok(self.files.last().unwrap().borrow().data_start.load())
+        Ok(self.files.last().unwrap().data_start.load())
     }
 
     /// End local and start central extra data. Requires [`ZipWriter::start_file_with_extra_data`].
@@ -645,12 +634,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Returns the final starting offset of the file data.
     pub fn end_local_start_central_extra_data(&mut self) -> ZipResult<u64> {
         let data_start = self.end_extra_data()?;
-        self.files
-            .last_mut()
-            .unwrap()
-            .borrow_mut()
-            .extra_field
-            .clear();
+        self.files.last_mut().unwrap().extra_field.clear();
         self.writing_to_extra_field = true;
         self.writing_to_central_extra_field_only = true;
         Ok(data_start)
@@ -669,9 +653,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let file = self.files.last_mut().unwrap();
 
-        validate_extra_data(&file.borrow())?;
+        validate_extra_data(file)?;
 
-        let mut file = file.borrow_mut();
         let mut data_start_result = file.data_start.load();
 
         if !self.writing_to_central_extra_field_only {
@@ -883,7 +866,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
             let central_start = writer.stream_position()?;
             for file in self.files.iter() {
-                write_central_directory_header(writer, &file.borrow())?;
+                write_central_directory_header(writer, file)?;
             }
             let central_size = writer.stream_position()? - central_start;
 
@@ -929,8 +912,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    fn data_by_name(&self, name: &str) -> ZipResult<&Rc<RefCell<ZipFileData>>> {
-        self.files_by_name.get(name).ok_or(ZipError::FileNotFound)
+    fn index_by_name(&self, name: &str) -> ZipResult<usize> {
+        Ok(*self.files_by_name.get(name).ok_or(ZipError::FileNotFound)?)
     }
 
     /// Adds another entry to the central directory referring to the same content as an existing
@@ -940,13 +923,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// some other software (e.g. Minecraft) will refuse to extract a file copied this way.
     pub fn shallow_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
-        let src_data = self.data_by_name(src_name)?.borrow();
-        let mut dest_data = src_data.to_owned();
-        drop(src_data);
+        let src_index = self.index_by_name(src_name)?;
+        let mut dest_data = self.files[src_index].to_owned();
         dest_data.file_name = dest_name.into();
-        let dest_data = Rc::new(RefCell::new(dest_data));
-        self.files.push(dest_data.to_owned());
-        self.files_by_name.insert(dest_name.into(), dest_data);
+        self.insert_file_data(dest_data)?;
         Ok(())
     }
 }
