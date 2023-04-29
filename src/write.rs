@@ -1637,6 +1637,20 @@ mod test {
     }
 
     #[test]
+    fn duplicate_filenames() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file("foo/bar/test", FileOptions::default())
+            .unwrap();
+        writer
+            .write("The quick brown 🦊 jumps over the lazy 🐕".as_bytes())
+            .unwrap();
+        writer
+            .start_file("foo/bar/test", FileOptions::default())
+            .expect_err("Expected duplicate filename not to be allowed");
+    }
+
+    #[test]
     fn path_to_string() {
         let mut path = std::path::PathBuf::new();
         #[cfg(windows)]
