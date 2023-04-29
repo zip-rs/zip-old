@@ -4,7 +4,7 @@ use crate::compression::CompressionMethod;
 use crate::read::{central_header_to_zip_file, find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
-use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
 use std::convert::TryInto;
@@ -307,32 +307,33 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let write_position = self.inner.get_plain().stream_position()?;
         let src_data = self.data_by_name(src_name)?;
         let data_start = src_data.data_start.load();
-        let real_size = src_data.compressed_size.max(write_position - data_start);
+        let compressed_size = src_data.compressed_size;
+        if compressed_size > write_position - data_start {
+            return Err(ZipError::InvalidArchive("Source file size too large"));
+        }
+        let uncompressed_size = src_data.uncompressed_size;
         let mut options = FileOptions::default()
-            .large_file(real_size > spec::ZIP64_BYTES_THR)
+            .large_file(compressed_size.max(uncompressed_size) > spec::ZIP64_BYTES_THR)
             .last_modified_time(src_data.last_modified_time)
             .compression_method(src_data.compression_method);
         if let Some(perms) = src_data.unix_mode() {
             options = options.unix_permissions(perms);
         }
+        Self::normalize_options(&mut options);
         let raw_values = ZipRawValues {
             crc32: src_data.crc32,
-            compressed_size: real_size,
-            uncompressed_size: src_data.uncompressed_size,
+            compressed_size,
+            uncompressed_size,
         };
         let mut reader = BufReader::new(ZipFileReader::Raw(self.reader_by_name(src_name)?));
-        let mut copy = Vec::with_capacity(real_size as usize);
+        let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
-        self.inner
-            .get_plain()
-            .seek(SeekFrom::Start(write_position))?;
         self.start_entry(dest_name, options, Some(raw_values))?;
-        self.writing_raw = true;
+        self.inner.switch_to(CompressionMethod::Stored, None)?;
         self.writing_to_file = true;
-        self.write_all(&copy)?;
-
-        Ok(())
+        self.writing_raw = true;
+        Ok(self.write_all(&copy)?)
     }
 }
 
@@ -464,15 +465,19 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
-        *options.permissions.as_mut().unwrap() |= 0o100000;
+        Self::normalize_options(&mut options);
         self.start_entry(name, options, None)?;
         self.inner
             .switch_to(options.compression_method, options.compression_level)?;
         self.writing_to_file = true;
         Ok(())
+    }
+
+    fn normalize_options(options: &mut FileOptions) {
+        if options.permissions.is_none() {
+            options.permissions = Some(0o644);
+        }
+        *options.permissions.as_mut().unwrap() |= ffi::S_IFREG;
     }
 
     /// Starts a file, taking a Path as argument.
@@ -591,10 +596,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     where
         S: Into<String>,
     {
-        if options.permissions.is_none() {
-            options.permissions = Some(0o644);
-        }
-        *options.permissions.as_mut().unwrap() |= 0o100000;
+        Self::normalize_options(&mut options);
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
         self.writing_to_extra_field = true;
@@ -693,6 +695,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if let Some(perms) = file.unix_mode() {
             options = options.unix_permissions(perms);
         }
+        Self::normalize_options(&mut options);
 
         let raw_values = ZipRawValues {
             crc32: file.crc32(),

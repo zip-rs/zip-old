@@ -15,7 +15,7 @@ fn end_to_end() {
         let file = &mut Cursor::new(Vec::new());
 
         println!("Writing file with {method} compression");
-        write_test_archive(file, method, true).expect("Couldn't write test zip archive");
+        write_test_archive(file, method, true);
 
         println!("Checking file contents");
         check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
@@ -29,7 +29,7 @@ fn end_to_end() {
 fn copy() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         let src_file = &mut Cursor::new(Vec::new());
-        write_test_archive(src_file, method, false).expect("Couldn't write to test file");
+        write_test_archive(src_file, method, false);
 
         let mut tgt_file = &mut Cursor::new(Vec::new());
 
@@ -68,14 +68,17 @@ fn copy() {
 fn append() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         for shallow_copy in &[false, true] {
+            println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
             let mut file = &mut Cursor::new(Vec::new());
-            write_test_archive(file, method, *shallow_copy).expect("Couldn't write to test file");
+            write_test_archive(file, method, *shallow_copy);
 
             {
                 let mut zip = ZipWriter::new_append(&mut file).unwrap();
                 zip.start_file(
                     COPY_ENTRY_NAME,
-                    FileOptions::default().compression_method(method),
+                    FileOptions::default()
+                        .compression_method(method)
+                        .unix_permissions(0o755),
                 )
                 .unwrap();
                 zip.write_all(LOREM_IPSUM).unwrap();
@@ -91,40 +94,39 @@ fn append() {
 }
 
 // Write a test zip archive to buffer.
-fn write_test_archive(
-    file: &mut Cursor<Vec<u8>>,
-    method: CompressionMethod,
-    shallow_copy: bool,
-) -> ZipResult<()> {
+fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, shallow_copy: bool) {
     let mut zip = ZipWriter::new(file);
 
-    zip.add_directory("test/", Default::default())?;
+    zip.add_directory("test/", Default::default()).unwrap();
 
     let options = FileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
-    zip.start_file("test/☃.txt", options)?;
-    zip.write_all(b"Hello, World!\n")?;
+    zip.start_file("test/☃.txt", options).unwrap();
+    zip.write_all(b"Hello, World!\n").unwrap();
 
-    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)?;
-    zip.write_u16::<LittleEndian>(0xbeef)?;
-    zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
-    zip.write_all(EXTRA_DATA)?;
-    zip.end_extra_data()?;
-    zip.write_all(b"Hello, World! Again.\n")?;
+    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)
+        .unwrap();
+    zip.write_u16::<LittleEndian>(0xbeef).unwrap();
+    zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)
+        .unwrap();
+    zip.write_all(EXTRA_DATA).unwrap();
+    zip.end_extra_data().unwrap();
+    zip.write_all(b"Hello, World! Again.\n").unwrap();
 
-    zip.start_file(ENTRY_NAME, options)?;
-    zip.write_all(LOREM_IPSUM)?;
+    zip.start_file(ENTRY_NAME, options).unwrap();
+    zip.write_all(LOREM_IPSUM).unwrap();
 
     if shallow_copy {
-        zip.shallow_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)?;
+        zip.shallow_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
+            .unwrap();
     } else {
-        zip.deep_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)?;
+        zip.deep_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
+            .unwrap();
     }
 
-    zip.finish()?;
-    Ok(())
+    zip.finish().unwrap();
 }
 
 // Load an archive from buffer and check for test data.
@@ -200,6 +202,9 @@ fn check_archive_file_contents<R: Read + Seek>(
     name: &str,
     expected: &[u8],
 ) {
+    let file_permissions: u32 = archive.by_name(name).unwrap().unix_mode().unwrap();
+    assert_eq!(file_permissions, 0o100755);
+
     let file_contents: String = read_archive_file(archive, name).unwrap();
     assert_eq!(file_contents.as_bytes(), expected);
 }
