@@ -295,11 +295,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 }
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
-    fn reader_by_name<'a>(&'a mut self, name: &str) -> ZipResult<io::Take<&'a mut dyn Read>> {
-        let data = self.data_by_name(name)?.to_owned();
-        find_content(&data, self.inner.get_plain())
-    }
-
     /// Adds another copy of a file already in this archive. This will produce a larger but more
     /// widely-compatible archive compared to [shallow_copy_file].
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
@@ -325,7 +320,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             compressed_size,
             uncompressed_size,
         };
-        let mut reader = BufReader::new(ZipFileReader::Raw(self.reader_by_name(src_name)?));
+        let mut reader = BufReader::new(ZipFileReader::Raw(find_content(&data, self.inner.get_plain())?));
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
