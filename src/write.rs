@@ -1644,7 +1644,7 @@ mod test {
             .start_file("foo/bar/test", FileOptions::default())
             .unwrap();
         writer
-            .write("The quick brown 🦊 jumps over the lazy 🐕".as_bytes())
+            .write_all("The quick brown 🦊 jumps over the lazy 🐕".as_bytes())
             .unwrap();
         writer
             .start_file("foo/bar/test", FileOptions::default())
