@@ -57,3 +57,7 @@
 ### Changed
 
  - Updated dependency versions.
+
+## [0.6.11]
+
+ - Fixed a bug that could cause later writes to fail after a `deep_copy_file` call.
