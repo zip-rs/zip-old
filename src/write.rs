@@ -471,6 +471,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             file.uncompressed_size = self.stats.bytes_written;
 
             let file_end = writer.stream_position()?;
+            debug_assert!(file_end >= self.stats.start);
             file.compressed_size = file_end - self.stats.start;
 
             update_local_file_header(writer, file)?;
