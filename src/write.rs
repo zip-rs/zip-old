@@ -338,7 +338,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let mut copy = Vec::with_capacity(compressed_size as usize);
         reader.read_to_end(&mut copy)?;
         drop(reader);
-        self.inner.get_plain().seek(SeekFrom::Start(write_position))?;
+        self.inner
+            .get_plain()
+            .seek(SeekFrom::Start(write_position))?;
         self.start_entry(dest_name, options, Some(raw_values))?;
         self.writing_to_file = true;
         self.writing_raw = true;
