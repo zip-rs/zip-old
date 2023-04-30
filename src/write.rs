@@ -341,7 +341,6 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         reader.read_to_end(&mut copy)?;
         drop(reader);
         self.start_entry(dest_name, options, Some(raw_values))?;
-        self.inner.switch_to(CompressionMethod::Stored, None)?;
         self.writing_to_file = true;
         self.writing_raw = true;
         Ok(self.write_all(&copy)?)
