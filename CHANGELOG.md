@@ -60,4 +60,12 @@
 
 ## [0.6.11]
 
+### Fixed
+
  - Fixed a bug that could cause later writes to fail after a `deep_copy_file` call.
+
+## [0.6.12]
+
+### Fixed
+
+ - Fixed a Clippy warning that was missed during the last release.
