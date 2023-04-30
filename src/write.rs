@@ -46,8 +46,6 @@ enum GenericZipWriter<W: Write + Seek> {
     Zstd(ZstdEncoder<'static, W>),
 }
 
-type FileRef = ZipFileData;
-
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
     use super::*;
@@ -82,7 +80,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: Vec<FileRef>,
+        pub(super) files: Vec<ZipFileData>,
         pub(super) files_by_name: HashMap<String, usize>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
@@ -463,7 +461,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let writer = self.inner.get_plain();
 
         if !self.writing_raw {
-            let mut file = match self.files.last_mut() {
+            let file = match self.files.last_mut() {
                 None => return Ok(()),
                 Some(f) => f,
             };
