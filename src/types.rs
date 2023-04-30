@@ -92,6 +92,7 @@ impl System {
 /// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
 /// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -171,6 +172,11 @@ impl DateTime {
         } else {
             Err(())
         }
+    }
+
+    /// Indicates whether this date and time can be written to a zip archive.
+    pub fn is_valid(&self) -> bool {
+        DateTime::from_date_and_time(self.year, self.month, self.day, self.hour, self.minute, self.second).is_ok()
     }
 
     #[cfg(feature = "time")]

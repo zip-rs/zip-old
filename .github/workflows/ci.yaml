@@ -75,7 +75,7 @@ jobs:
     - name: Docs
       run: cargo doc
 
-  fuzz:
+  fuzz_read:
     runs-on: ubuntu-latest
 
     steps:
@@ -93,3 +93,22 @@ jobs:
       - name: run fuzz
         run: |
           cargo fuzz run fuzz_read -- -timeout=1s -runs=10000000
+
+  fuzz_write:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - run: cargo install cargo-fuzz
+      - name: compile fuzz
+        run: |
+          cargo fuzz build fuzz_write
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_write -- -timeout=1s -runs=10000000
