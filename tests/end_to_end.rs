@@ -103,6 +103,17 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
         .compression_method(method)
         .unix_permissions(0o755);
 
+    zip.start_file(ENTRY_NAME, options).unwrap();
+    zip.write_all(LOREM_IPSUM).unwrap();
+
+    if shallow_copy {
+        zip.shallow_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
+            .unwrap();
+    } else {
+        zip.deep_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
+            .unwrap();
+    }
+
     zip.start_file("test/☃.txt", options).unwrap();
     zip.write_all(b"Hello, World!\n").unwrap();
 
@@ -114,17 +125,6 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
     zip.write_all(EXTRA_DATA).unwrap();
     zip.end_extra_data().unwrap();
     zip.write_all(b"Hello, World! Again.\n").unwrap();
-
-    zip.start_file(ENTRY_NAME, options).unwrap();
-    zip.write_all(LOREM_IPSUM).unwrap();
-
-    if shallow_copy {
-        zip.shallow_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
-            .unwrap();
-    } else {
-        zip.deep_copy_file(ENTRY_NAME, INTERNAL_COPY_ENTRY_NAME)
-            .unwrap();
-    }
 
     zip.finish().unwrap();
 }
