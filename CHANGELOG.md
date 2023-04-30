@@ -69,3 +69,9 @@
 ### Fixed
 
  - Fixed a Clippy warning that was missed during the last release.
+
+## [0.6.13]
+
+### Fixed
+
+- Fixed a possible bug in deep_copy_file.

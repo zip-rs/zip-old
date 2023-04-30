@@ -31,14 +31,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip_next = "0.6.12"
+zip_next = "0.6.13"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip_next = { version = "0.6.12", default-features = false }
+zip_next = { version = "0.6.13", default-features = false }
 ```
 
 The features available are:
