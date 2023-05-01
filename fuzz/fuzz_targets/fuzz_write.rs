@@ -104,12 +104,13 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
         FileOperation::WriteLarge {file, mut options} => {
             options = options.large_file(true);
             writer.start_file(file.name.to_owned(), options)?;
-            let written: usize = 0;
+            let mut written: usize = 0;
             while written < LARGE_FILE_BUF_SIZE {
                 for chunk in &file.large_contents {
                     let chunk: Vec<u8> = chunk.to_owned().into_iter()
                         .flat_map(RepeatedBytes::into_iter)
                         .collect();
+                    written += chunk.len();
                     writer.write_all(chunk.as_slice())?;
                 }
             }
