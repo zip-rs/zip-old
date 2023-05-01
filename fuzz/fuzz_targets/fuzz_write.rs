@@ -1,12 +1,21 @@
 #![no_main]
+
 use libfuzzer_sys::fuzz_target;
 use arbitrary::Arbitrary;
 use std::io::{Cursor, Read, Seek, Write};
 
 #[derive(Arbitrary,Debug)]
+pub struct ExtraData {
+    pub header_id: u16,
+    pub data: Vec<u8>
+}
+
+#[derive(Arbitrary,Debug)]
 pub struct File {
     pub name: String,
-    pub contents: Vec<u8>
+    pub contents: Vec<Vec<u8>>,
+    pub local_extra_data: Vec<ExtraData>,
+    pub central_extra_data: Vec<ExtraData>
 }
 
 #[derive(Arbitrary,Debug)]
@@ -22,7 +31,7 @@ pub enum FileOperation {
     DeepCopy {
         base: Box<FileOperation>,
         new_name: String
-    },
+    }
 }
 
 impl FileOperation {
@@ -40,11 +49,13 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
                    where T: Read + Write + Seek {
     match operation {
         FileOperation::Write {file, mut options} => {
-            if (*file).contents.len() >= u32::MAX as usize {
+            if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
                 options = options.large_file(true);
             }
             writer.start_file(file.name.to_owned(), options)?;
-            writer.write_all(file.contents.as_slice())?;
+            for chunk in &file.contents {
+                writer.write_all(chunk.as_slice())?;
+            }
         }
         FileOperation::ShallowCopy {base, new_name} => {
             do_operation(writer, base)?;
@@ -63,5 +74,5 @@ fuzz_target!(|data: Vec<FileOperation>| {
     for operation in data {
         let _ = do_operation(&mut writer, &operation);
     }
-    writer.finish().unwrap();
+    let _ = zip_next::ZipArchive::new(writer.finish().unwrap());
 });
