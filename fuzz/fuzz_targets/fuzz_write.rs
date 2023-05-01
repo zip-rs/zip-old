@@ -1,10 +1,10 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use arbitrary::{Arbitrary, Unstructured};
-use arbitrary::size_hint::and_all;
-use std::fmt::{Debug, Formatter};
+use arbitrary::{Arbitrary};
+use std::fmt::Debug;
 use std::io::{Cursor, Read, Seek, Write};
+use std::iter::{repeat, Flatten, Repeat, Take};
 
 #[derive(Arbitrary,Debug)]
 pub struct File {
@@ -14,35 +14,42 @@ pub struct File {
 
 const LARGE_FILE_BUF_SIZE: usize = u32::MAX as usize + 1;
 
+#[derive(Arbitrary, Clone, Debug)]
+pub enum RepeatedBytes {
+    Once(Vec<u8>),
+    U8Times {
+        bytes: Vec<u8>,
+        repeats: u8,
+    },
+    U16Times {
+        bytes: Vec<u8>,
+        repeats: u16,
+    }
+}
+
+impl IntoIterator for RepeatedBytes {
+    type Item = u8;
+    type IntoIter = Flatten<Take<Repeat<Vec<u8>>>>;
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            RepeatedBytes::Once(bytes) => {
+                repeat(bytes).take(1)
+            },
+            RepeatedBytes::U8Times {bytes, repeats} => {
+                repeat(bytes).take(repeats as usize + 2)
+            },
+            RepeatedBytes::U16Times {bytes, repeats} => {
+                repeat(bytes).take(repeats as usize + u8::MAX as usize + 2)
+            }
+        }.flatten()
+    }
+}
+
+#[derive(Arbitrary,Debug)]
 pub struct LargeFile {
     pub name: String,
-    pub large_contents: Vec<u8>,
+    pub large_contents: Vec<Vec<RepeatedBytes>>,
     pub extra_contents: Vec<Vec<u8>>
-}
-
-impl Arbitrary<'_> for LargeFile {
-    fn arbitrary(u: &mut Unstructured) -> arbitrary::Result<Self> {
-        Ok(LargeFile {
-            name: String::arbitrary(u)?,
-            large_contents: u.bytes(LARGE_FILE_BUF_SIZE)?.to_vec(),
-            extra_contents: Vec::arbitrary(u)?
-        })
-    }
-
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        and_all(&[<String as Arbitrary>::size_hint(depth),
-                           <Vec<Vec<u8>> as Arbitrary>::size_hint(depth),
-                           (LARGE_FILE_BUF_SIZE, Some(LARGE_FILE_BUF_SIZE))])
-    }
-}
-
-impl Debug for LargeFile {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LargeFile")
-            .field("name", &self.name)
-            .field("extra_contents", &self.extra_contents)
-            .finish()
-    }
 }
 
 #[derive(Arbitrary,Debug)]
@@ -92,7 +99,15 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
         FileOperation::WriteLarge {file, mut options} => {
             options = options.large_file(true);
             writer.start_file(file.name.to_owned(), options)?;
-            writer.write_all(&*file.large_contents)?;
+            let written: usize = 0;
+            while written < LARGE_FILE_BUF_SIZE {
+                for chunk in &file.large_contents {
+                    let chunk: Vec<u8> = chunk.iter()
+                        .flat_map(RepeatedBytes::into_iter)
+                        .collect();
+                    writer.write_all(chunk.as_slice())?;
+                }
+            }
             for chunk in &file.extra_contents {
                 writer.write_all(chunk.as_slice())?;
             }
