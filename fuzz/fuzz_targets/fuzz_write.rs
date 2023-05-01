@@ -16,7 +16,10 @@ const LARGE_FILE_BUF_SIZE: usize = u32::MAX as usize + 1;
 
 #[derive(Arbitrary, Clone, Debug)]
 pub enum RepeatedBytes {
-    Once(Vec<u8>),
+    Once {
+        min_bytes: [u8; 1024],
+        extra_bytes: Vec<u8>
+    },
     U8Times {
         bytes: Vec<u8>,
         repeats: u8,
@@ -32,7 +35,9 @@ impl IntoIterator for RepeatedBytes {
     type IntoIter = Flatten<Take<Repeat<Vec<u8>>>>;
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            RepeatedBytes::Once(bytes) => {
+            RepeatedBytes::Once {min_bytes, extra_bytes} => {
+                let mut bytes = min_bytes.to_vec();
+                bytes.extend(extra_bytes);
                 repeat(bytes).take(1)
             },
             RepeatedBytes::U8Times {bytes, repeats} => {
@@ -102,7 +107,7 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
             let written: usize = 0;
             while written < LARGE_FILE_BUF_SIZE {
                 for chunk in &file.large_contents {
-                    let chunk: Vec<u8> = chunk.iter()
+                    let chunk: Vec<u8> = chunk.to_owned().into_iter()
                         .flat_map(RepeatedBytes::into_iter)
                         .collect();
                     writer.write_all(chunk.as_slice())?;
