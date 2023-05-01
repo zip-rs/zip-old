@@ -227,7 +227,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                             && !self.files.last_mut().unwrap().large_file
                         {
                             self.finish_file()?;
-                            self.files.pop();
+                            self.files_by_name.remove(&*self.files.pop().unwrap().file_name);
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
                                 "Large file option has not been set",
