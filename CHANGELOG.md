@@ -83,6 +83,8 @@
  - Calling `start_file` with invalid parameters no longer closes the `ZipWriter`.
  - Attempting to write a 4GiB file without calling `FileOptions::large_file(true)` now removes the file from the archive
    but does not close the `ZipWriter`.
+ - Attempting to write a file with an unrepresentable or invalid last-modified date will instead add it with a date of
+   1980-01-01 00:00:00.
 
 ### Added
 
