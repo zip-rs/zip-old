@@ -88,7 +88,7 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
                 let mut bytes = Vec::with_capacity(part.extra_bytes.len() + 1);
                 bytes.push(part.first_byte);
                 bytes.extend(part.extra_bytes);
-                for (index, byte) in repeat(bytes.iter()).take(part.repeats).flatten().enumerate() {
+                for (index, byte) in repeat(bytes.iter()).take(part.repeats as usize + 1).flatten().enumerate() {
                     sparse_file[part.start as usize + index] = *byte;
                 }
             }
