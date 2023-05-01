@@ -90,7 +90,7 @@ jobs:
           cargo fuzz build fuzz_read
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_read -- -timeout=1s -runs=10000000
+          cargo fuzz run fuzz_read -- -timeout=1 -runs=10000000
 
   fuzz_write:
     runs-on: ubuntu-latest
@@ -109,4 +109,4 @@ jobs:
           cargo fuzz build fuzz_write
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_write -- -timeout=2m
+          cargo fuzz run fuzz_write -- -timeout=120 -runs=1000000
