@@ -13,7 +13,6 @@ use std::fmt;
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
-#[allow(deprecated)]
 pub enum CompressionMethod {
     /// Store the file as is
     Stored,
@@ -37,7 +36,7 @@ pub enum CompressionMethod {
     #[cfg(feature = "zstd")]
     Zstd,
     /// Unsupported compression method
-    #[deprecated(since = "0.5.7", note = "use the constants instead")]
+    #[cfg_attr(not(fuzzing), deprecated(since = "0.5.7", note = "use the constants instead"))]
     Unsupported(u16),
 }
 #[allow(deprecated, missing_docs)]
