@@ -36,7 +36,10 @@ pub enum CompressionMethod {
     #[cfg(feature = "zstd")]
     Zstd,
     /// Unsupported compression method
-    #[cfg_attr(not(fuzzing), deprecated(since = "0.5.7", note = "use the constants instead"))]
+    #[cfg_attr(
+        not(fuzzing),
+        deprecated(since = "0.5.7", note = "use the constants instead")
+    )]
     Unsupported(u16),
 }
 #[allow(deprecated, missing_docs)]
