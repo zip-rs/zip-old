@@ -92,3 +92,9 @@ To start fuzzing zip extraction:
 ```bash
 cargo +nightly fuzz run fuzz_read
 ```
+
+To start fuzzing zip creation:
+
+```bash
+cargo +nightly fuzz run fuzz_write
+```
