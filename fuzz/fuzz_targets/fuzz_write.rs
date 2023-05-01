@@ -1,7 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use arbitrary::Arbitrary;
+use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::size_hint::and_all;
 use std::fmt::{Debug, Formatter};
 use std::io::{Cursor, Read, Seek, Write};
 
@@ -11,11 +12,28 @@ pub struct File {
     pub contents: Vec<Vec<u8>>
 }
 
-#[derive(Arbitrary)]
+const LARGE_FILE_BUF_SIZE: usize = u32::MAX as usize + 1;
+
 pub struct LargeFile {
     pub name: String,
-    pub large_contents: [u8; u32::MAX as usize + 1],
+    pub large_contents: Vec<u8>,
     pub extra_contents: Vec<Vec<u8>>
+}
+
+impl Arbitrary<'_> for LargeFile {
+    fn arbitrary(u: &mut Unstructured) -> arbitrary::Result<Self> {
+        Ok(LargeFile {
+            name: String::arbitrary(u)?,
+            large_contents: u.bytes(LARGE_FILE_BUF_SIZE)?.to_vec(),
+            extra_contents: Vec::arbitrary(u)?
+        })
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        and_all(&[<String as Arbitrary>::size_hint(depth),
+                           <Vec<Vec<u8>> as Arbitrary>::size_hint(depth),
+                           (LARGE_FILE_BUF_SIZE, Some(LARGE_FILE_BUF_SIZE))])
+    }
 }
 
 impl Debug for LargeFile {
@@ -74,7 +92,7 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
         FileOperation::WriteLarge {file, mut options} => {
             options = options.large_file(true);
             writer.start_file(file.name.to_owned(), options)?;
-            writer.write_all(&file.large_contents)?;
+            writer.write_all(&*file.large_contents)?;
             for chunk in &file.extra_contents {
                 writer.write_all(chunk.as_slice())?;
             }
