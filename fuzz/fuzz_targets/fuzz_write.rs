@@ -4,7 +4,7 @@ use libfuzzer_sys::fuzz_target;
 use arbitrary::{Arbitrary};
 use std::fmt::Debug;
 use std::io::{Cursor, Read, Seek, Write};
-use std::iter::{repeat, Flatten, Repeat, Take};
+use std::iter::{repeat};
 
 #[derive(Arbitrary,Debug)]
 pub struct File {
@@ -15,46 +15,18 @@ pub struct File {
 const LARGE_FILE_BUF_SIZE: usize = u32::MAX as usize + 1;
 
 #[derive(Arbitrary, Clone, Debug)]
-pub enum RepeatedBytes {
-    Once {
-        min_bytes: [u8; 1024],
-        extra_bytes: Vec<u8>
-    },
-    U8Times {
-        bytes: Vec<u8>,
-        repeats: u8,
-    },
-    U16Times {
-        bytes: Vec<u8>,
-        repeats: u16,
-    }
-}
-
-impl IntoIterator for RepeatedBytes {
-    type Item = u8;
-    type IntoIter = Flatten<Take<Repeat<Vec<u8>>>>;
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            RepeatedBytes::Once {min_bytes, extra_bytes} => {
-                let mut bytes = min_bytes.to_vec();
-                bytes.extend(extra_bytes);
-                repeat(bytes).take(1)
-            },
-            RepeatedBytes::U8Times {bytes, repeats} => {
-                repeat(bytes).take(repeats as usize + 2)
-            },
-            RepeatedBytes::U16Times {bytes, repeats} => {
-                repeat(bytes).take(repeats as usize + u8::MAX as usize + 2)
-            }
-        }.flatten()
-    }
+pub struct SparseFilePart {
+    pub start: u32,
+    pub contents: Vec<u8>
 }
 
 #[derive(Arbitrary,Debug)]
 pub struct LargeFile {
     pub name: String,
-    pub large_contents: Vec<Vec<RepeatedBytes>>,
-    pub extra_contents: Vec<Vec<u8>>
+    pub default_pattern_first_byte: u8,
+    pub default_pattern_extra_bytes: Vec<u8>,
+    pub parts: Vec<SparseFilePart>,
+    pub min_extra_length: u32
 }
 
 #[derive(Arbitrary,Debug)]
@@ -104,19 +76,18 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
         FileOperation::WriteLarge {file, mut options} => {
             options = options.large_file(true);
             writer.start_file(file.name.to_owned(), options)?;
-            let mut written: usize = 0;
-            while written < LARGE_FILE_BUF_SIZE {
-                for chunk in &file.large_contents {
-                    let chunk: Vec<u8> = chunk.to_owned().into_iter()
-                        .flat_map(RepeatedBytes::into_iter)
-                        .collect();
-                    written += chunk.len();
-                    writer.write_all(chunk.as_slice())?;
+            let mut default_pattern = Vec::with_capacity(file.default_pattern_extra_bytes.len() + 1);
+            default_pattern.push(file.default_pattern_first_byte);
+            default_pattern.extend(&file.default_pattern_extra_bytes);
+            let mut sparse_file: Vec<u8> =
+                repeat(default_pattern.into_iter()).flatten().take(LARGE_FILE_BUF_SIZE + file.min_extra_length as usize)
+                    .collect();
+            for part in &file.parts {
+                for (index, byte) in part.contents.iter().enumerate() {
+                    sparse_file[part.start as usize + index] = *byte;
                 }
             }
-            for chunk in &file.extra_contents {
-                writer.write_all(chunk.as_slice())?;
-            }
+            writer.write_all(sparse_file.as_slice())?;
         }
         FileOperation::ShallowCopy {base, new_name} => {
             do_operation(writer, base)?;
