@@ -128,6 +128,13 @@ impl FileOptions {
         self
     }
 
+    #[cfg(fuzzing)]
+    pub fn force_compression(mut self) {
+        if self.compression_method == CompressionMethod::Stored {
+            self.compression_method = CompressionMethod::Deflated;
+        }
+    }
+
     /// Set the compression level for the new file
     ///
     /// `None` value specifies default compression level.

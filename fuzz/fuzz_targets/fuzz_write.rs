@@ -76,7 +76,7 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
             }
         }
         FileOperation::WriteLarge {file, mut options} => {
-            options = options.large_file(true);
+            options = options.large_file(true).force_compression();
             writer.start_file(file.name.to_owned(), options)?;
             let mut default_pattern = Vec::with_capacity(file.default_pattern_extra_bytes.len() + 1);
             default_pattern.push(file.default_pattern_first_byte);
