@@ -11,8 +11,9 @@ use std::fmt;
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary), allow(deprecated))]
+#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
+#[allow(deprecated)]
 pub enum CompressionMethod {
     /// Store the file as is
     Stored,
