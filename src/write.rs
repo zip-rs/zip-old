@@ -227,7 +227,8 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                             && !self.files.last_mut().unwrap().large_file
                         {
                             self.finish_file()?;
-                            self.files_by_name.remove(&*self.files.pop().unwrap().file_name);
+                            self.files_by_name
+                                .remove(&*self.files.pop().unwrap().file_name);
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
                                 "Large file option has not been set",
@@ -355,6 +356,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Initializes the archive.
     ///
     /// Before writing to this object, the [`ZipWriter::start_file`] function should be called.
+    /// After a successful write, the file remains open for writing. After a failed write, call
+    /// [`ZipWriter::is_writing_file`] to determine if the file remains open.
     pub fn new(inner: W) -> ZipWriter<W> {
         ZipWriter {
             inner: Storer(inner),
@@ -367,6 +370,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             writing_raw: false,
             comment: Vec::new(),
         }
+    }
+
+    /// Returns true if a file is currently open for writing.
+    pub fn is_writing_file(&self) -> bool {
+        self.writing_to_file && !self.inner.is_closed()
     }
 
     /// Set ZIP archive comment.

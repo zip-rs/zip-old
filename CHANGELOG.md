@@ -74,4 +74,16 @@
 
 ### Fixed
 
-- Fixed a possible bug in deep_copy_file.
+ - Fixed a possible bug in deep_copy_file.
+
+## [0.7.0]
+
+### Fixed
+
+ - Calling `start_file` with invalid parameters no longer closes the `ZipWriter`.
+ - Attempting to write a 4GiB file without calling `FileOptions::large_file(true)` now removes the file from the archive
+   but does not close the `ZipWriter`.
+
+### Added
+
+ - Method `is_writing_file` - indicates whether a file is open for writing.
