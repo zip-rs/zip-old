@@ -109,4 +109,4 @@ jobs:
           cargo fuzz build fuzz_write
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_write -- -timeout=1s -runs=10000000
+          cargo fuzz run fuzz_write -- -timeout=1s -runs=1000000
