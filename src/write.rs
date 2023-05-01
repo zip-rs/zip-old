@@ -90,8 +90,8 @@ pub(crate) mod zip_writer {
         pub(super) comment: Vec<u8>,
     }
 }
-pub use zip_writer::ZipWriter;
 use crate::write::GenericZipWriter::{Closed, Storer};
+pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
 struct ZipWriterStats {
@@ -959,15 +959,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             _ => {}
         }
 
-        match self {
-            Closed => {
-                return Err(io::Error::new(
-                    io::ErrorKind::BrokenPipe,
-                    "ZipWriter was already closed",
-                )
-                .into())
-            }
-            _ => {}
+        if let Closed = self {
+            return Err(
+                io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed").into(),
+            );
         }
 
         let make_new_self: Box<dyn FnOnce(W) -> GenericZipWriter<W>> = {
@@ -990,27 +985,34 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 CompressionMethod::Deflated => {
                     let level = clamp_opt(
                         compression_level.unwrap_or(flate2::Compression::default().level() as i32),
-                        deflate_compression_level_range()
-                    ).ok_or(ZipError::UnsupportedArchive(
+                        deflate_compression_level_range(),
+                    )
+                    .ok_or(ZipError::UnsupportedArchive(
                         "Unsupported compression level",
                     ))? as u32;
-                    Box::new(move |bare|
-                        GenericZipWriter::Deflater(DeflateEncoder::new(bare, flate2::Compression::new(level)))
-                    )
+                    Box::new(move |bare| {
+                        GenericZipWriter::Deflater(DeflateEncoder::new(
+                            bare,
+                            flate2::Compression::new(level),
+                        ))
+                    })
                 }
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
                     let level = clamp_opt(
-                            compression_level
-                                .unwrap_or(bzip2::Compression::default().level() as i32),
-                            bzip2_compression_level_range(),
-                        ).ok_or(ZipError::UnsupportedArchive(
-                                "Unsupported compression level",
-                            ))? as u32;
-                    Box::new(move |bare|
-                        GenericZipWriter::Bzip2(BzEncoder::new(bare, bzip2::Compression::new(level)))
+                        compression_level.unwrap_or(bzip2::Compression::default().level() as i32),
+                        bzip2_compression_level_range(),
                     )
-                },
+                    .ok_or(ZipError::UnsupportedArchive(
+                        "Unsupported compression level",
+                    ))? as u32;
+                    Box::new(move |bare| {
+                        GenericZipWriter::Bzip2(BzEncoder::new(
+                            bare,
+                            bzip2::Compression::new(level),
+                        ))
+                    })
+                }
                 CompressionMethod::AES => {
                     return Err(ZipError::UnsupportedArchive(
                         "AES compression is not supported for writing",
@@ -1022,13 +1024,13 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL),
                         zstd::compression_level_range(),
                     )
-                        .ok_or(ZipError::UnsupportedArchive(
-                            "Unsupported compression level",
-                        ))?;
-                    Box::new(move |bare|
-                                 GenericZipWriter::Zstd(ZstdEncoder::new(bare, level).unwrap()
-                    ))
-                },
+                    .ok_or(ZipError::UnsupportedArchive(
+                        "Unsupported compression level",
+                    ))?;
+                    Box::new(move |bare| {
+                        GenericZipWriter::Zstd(ZstdEncoder::new(bare, level).unwrap())
+                    })
+                }
                 CompressionMethod::Unsupported(..) => {
                     return Err(ZipError::UnsupportedArchive("Unsupported compression"))
                 }
@@ -1038,9 +1040,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
             #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib"
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
             ))]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "bzip2")]
@@ -1052,7 +1054,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     io::ErrorKind::BrokenPipe,
                     "ZipWriter was already closed",
                 )
-                    .into())
+                .into())
             }
         };
         *self = (make_new_self)(bare);

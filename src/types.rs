@@ -176,7 +176,15 @@ impl DateTime {
 
     /// Indicates whether this date and time can be written to a zip archive.
     pub fn is_valid(&self) -> bool {
-        DateTime::from_date_and_time(self.year, self.month, self.day, self.hour, self.minute, self.second).is_ok()
+        DateTime::from_date_and_time(
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second,
+        )
+        .is_ok()
     }
 
     #[cfg(feature = "time")]
