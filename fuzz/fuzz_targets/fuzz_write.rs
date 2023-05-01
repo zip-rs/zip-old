@@ -28,7 +28,7 @@ pub struct LargeFile {
     pub default_pattern_first_byte: u8,
     pub default_pattern_extra_bytes: Vec<u8>,
     pub parts: Vec<SparseFilePart>,
-    pub min_extra_length: u32
+    pub min_extra_length: u16
 }
 
 #[derive(Arbitrary,Debug)]
@@ -87,7 +87,7 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
             for part in &file.parts {
                 let mut bytes = Vec::with_capacity(part.extra_bytes.len() + 1);
                 bytes.push(part.first_byte);
-                bytes.extend(part.extra_bytes);
+                bytes.extend(part.extra_bytes.iter());
                 for (index, byte) in repeat(bytes.iter()).take(part.repeats as usize + 1).flatten().enumerate() {
                     sparse_file[part.start as usize + index] = *byte;
                 }
