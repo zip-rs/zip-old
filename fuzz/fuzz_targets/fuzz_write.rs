@@ -17,7 +17,9 @@ const LARGE_FILE_BUF_SIZE: usize = u32::MAX as usize + 1;
 #[derive(Arbitrary, Clone, Debug)]
 pub struct SparseFilePart {
     pub start: u32,
-    pub contents: Vec<u8>
+    pub first_byte: u8,
+    pub extra_bytes: Vec<u8>,
+    pub repeats: u8
 }
 
 #[derive(Arbitrary,Debug)]
@@ -83,7 +85,10 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
                 repeat(default_pattern.into_iter()).flatten().take(LARGE_FILE_BUF_SIZE + file.min_extra_length as usize)
                     .collect();
             for part in &file.parts {
-                for (index, byte) in part.contents.iter().enumerate() {
+                let mut bytes = Vec::with_capacity(part.extra_bytes.len() + 1);
+                bytes.push(part.first_byte);
+                bytes.extend(part.extra_bytes);
+                for (index, byte) in repeat(bytes.iter()).take(part.repeats).flatten().enumerate() {
                     sparse_file[part.start as usize + index] = *byte;
                 }
             }
