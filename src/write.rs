@@ -128,16 +128,6 @@ impl FileOptions {
         self
     }
 
-    /// Changes the compression method to Deflate if it would otherwise be no compression.
-    #[must_use]
-    #[cfg(fuzzing)]
-    pub fn force_compression(mut self) -> FileOptions {
-        if self.compression_method == CompressionMethod::Stored {
-            self.compression_method = CompressionMethod::Deflated;
-        }
-        self
-    }
-
     /// Set the compression level for the new file
     ///
     /// `None` value specifies default compression level.
