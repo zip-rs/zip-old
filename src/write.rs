@@ -1345,28 +1345,14 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
 }
 
 fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
-    let mut data = file.extra_field.as_slice();
-
-    if data.len() > spec::ZIP64_ENTRY_THR {
-        return Err(ZipError::Io(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Extra data exceeds extra field",
-        )));
-    }
-
-    while !data.is_empty() {
-        let left = data.len();
-        if left < 4 {
+    for field in &file.extra_field {
+        if field.data.len() > u16::MAX as usize {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
-                "Incomplete extra data header",
+                "Extra-data field can't exceed u16::MAX bytes",
             )));
         }
-        let kind = data.read_u16::<LittleEndian>()?;
-        let size = data.read_u16::<LittleEndian>()? as usize;
-        let left = left - 4;
-
-        if kind == 0x0001 {
+        if field.header_id == 0x0001 {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 "No custom ZIP64 extra data allowed",
@@ -1375,24 +1361,15 @@ fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
 
         #[cfg(not(feature = "unreserved"))]
         {
-            if kind <= 31 || EXTRA_FIELD_MAPPING.iter().any(|&mapped| mapped == kind) {
+            if field.header_id <= 31 || EXTRA_FIELD_MAPPING.iter().any(|&mapped| mapped == kind) {
                 return Err(ZipError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     format!(
-                        "Extra data header ID {kind:#06} requires crate feature \"unreserved\"",
+                        "Extra data header ID {field.header_id:#06} requires crate feature \"unreserved\"",
                     ),
                 )));
             }
         }
-
-        if size > left {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Extra data size exceeds extra field",
-            )));
-        }
-
-        data = &data[size..];
     }
 
     Ok(())
