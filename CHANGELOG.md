@@ -90,7 +90,7 @@
 
  - Method `is_writing_file` - indicates whether a file is open for writing.
 
-## [0.7.0.1]
+## [0.7.1]
 
 ### Changed
 
