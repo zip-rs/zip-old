@@ -89,3 +89,9 @@
 ### Added
 
  - Method `is_writing_file` - indicates whether a file is open for writing.
+
+## [0.7.0.1]
+
+### Changed
+
+ - Bumped the version number in order to upload an updated README to crates.io.

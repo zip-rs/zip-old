@@ -10,7 +10,8 @@ Info
 ----
 
 
-A zip library for rust which supports reading and writing of simple ZIP files. Forked from https://crates.io/crates/zip to add more features and improve test coverage.
+A zip library for rust which supports reading and writing of simple ZIP files. Forked from https://crates.io/crates/zip 
+to add more features and improve test coverage.
 
 Supported compression formats:
 
@@ -31,14 +32,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip_next = "0.7.0"
+zip_next = "0.7.0.1"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip_next = { version = "0.7.0", default-features = false }
+zip_next = { version = "0.7.0.1", default-features = false }
 ```
 
 The features available are:
