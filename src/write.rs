@@ -1601,6 +1601,11 @@ mod test {
             .shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
             .unwrap();
         writer
+            .shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
+            .expect_err("Duplicate filename");
+        let zip = writer.finish().unwrap();
+        let mut writer = ZipWriter::new_append(zip).unwrap();
+        writer
             .shallow_copy_file(SECOND_FILENAME, SECOND_FILENAME)
             .expect_err("Duplicate filename");
         let zip = writer.finish().unwrap();
@@ -1643,7 +1648,9 @@ mod test {
             .unwrap();
         let zip = writer.finish().unwrap();
         let mut writer = ZipWriter::new_append(zip).unwrap();
-        writer.deep_copy_file(RT_TEST_FILENAME, THIRD_FILENAME).unwrap();
+        writer
+            .deep_copy_file(RT_TEST_FILENAME, THIRD_FILENAME)
+            .unwrap();
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
         let mut file_names: Vec<&str> = reader.file_names().collect();
