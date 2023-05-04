@@ -95,3 +95,13 @@
 ### Changed
 
  - Bumped the version number in order to upload an updated README to crates.io.
+
+## [0.7.2]
+
+### Added
+
+ - Method `abort_file` - removes the current or most recently-finished file from the archive.
+ 
+### Fixed
+
+ - Fixed a bug where a file could remain open for writing after validations failed.

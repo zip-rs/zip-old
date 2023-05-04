@@ -496,7 +496,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
-    /// Removes the file currently being written from the archive.
+    /// Removes the file currently being written from the archive if there is one, or else removes
+    /// the file most recently written.
     pub fn abort_file(&mut self) -> ZipResult<()> {
         let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
         self.files_by_name.remove(&last_file.file_name);
