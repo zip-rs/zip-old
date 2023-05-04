@@ -467,6 +467,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
+        if !self.writing_to_file {
+            return Ok(());
+        }
         if self.writing_to_extra_field {
             // Implicitly calling [`ZipWriter::end_extra_data`] for empty files.
             self.end_extra_data()?;
