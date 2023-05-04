@@ -505,6 +505,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_switch_to(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
+        self.inner
+            .get_plain()
+            .seek(SeekFrom::Start(last_file.header_start))?;
         self.writing_to_file = false;
         self.writing_raw = false;
         Ok(())
