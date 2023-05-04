@@ -468,7 +468,6 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     fn finish_file(&mut self) -> ZipResult<()> {
         if !self.writing_to_file {
-            debug_assert!(!self.writing_raw);
             debug_assert!(!self.writing_to_extra_field);
             return Ok(());
         }
@@ -1599,6 +1598,9 @@ mod test {
         writer
             .shallow_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
             .unwrap();
+        writer
+            .shallow_copy_file(SECOND_FILENAME, SECOND_FILENAME)
+            .expect_err("Duplicate filename");
         let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
         let mut file_names: Vec<&str> = reader.file_names().collect();
