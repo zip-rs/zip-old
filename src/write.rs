@@ -909,8 +909,11 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
-        self.write_all(target.into().as_bytes())?;
-        self.writing_to_file = false;
+        if let Err(e) = self.write_all(target.into().as_bytes()) {
+            self.abort_file().unwrap();
+            return Err(e.into());
+        }
+        self.finish_file()?;
 
         Ok(())
     }
