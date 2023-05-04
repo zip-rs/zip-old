@@ -501,13 +501,13 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn abort_file(&mut self) -> ZipResult<()> {
         let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
         self.files_by_name.remove(&last_file.file_name);
+        self.inner
+            .get_plain()
+            .seek(SeekFrom::Start(last_file.header_start))?;
         let make_plain_writer = self
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
-        self.inner
-            .get_plain()
-            .seek(SeekFrom::Start(last_file.header_start))?;
         self.writing_to_file = false;
         self.writing_raw = false;
         Ok(())
@@ -526,7 +526,10 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(options.compression_method, options.compression_level)?;
         self.start_entry(name, options, None)?;
-        self.inner.switch_to(make_new_self)?;
+        if let Err(e) = self.inner.switch_to(make_new_self) {
+            let _ = self.abort_file();
+            return Err(e);
+        }
         self.writing_to_file = true;
         Ok(())
     }
