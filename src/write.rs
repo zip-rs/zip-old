@@ -316,9 +316,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let src_data = &self.files[src_index];
         let data_start = src_data.data_start.load();
         let compressed_size = src_data.compressed_size;
-        if compressed_size > write_position - data_start {
-            return Err(ZipError::InvalidArchive("Source file size too large"));
-        }
+        debug_assert!(compressed_size <= write_position - data_start);
         let uncompressed_size = src_data.uncompressed_size;
         let mut options = FileOptions::default()
             .large_file(compressed_size.max(uncompressed_size) > spec::ZIP64_BYTES_THR)
@@ -346,7 +344,11 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         self.start_entry(dest_name, options, Some(raw_values))?;
         self.writing_to_file = true;
         self.writing_raw = true;
-        Ok(self.write_all(&copy)?)
+        if let Err(e) = self.write_all(&copy) {
+            self.abort_file().unwrap();
+            return Err(e.into());
+        }
+        self.finish_file()
     }
 }
 
