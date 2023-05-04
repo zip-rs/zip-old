@@ -468,6 +468,8 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     fn finish_file(&mut self) -> ZipResult<()> {
         if !self.writing_to_file {
+            debug_assert!(!self.writing_raw);
+            debug_assert!(!self.writing_to_extra_field);
             return Ok(());
         }
         if self.writing_to_extra_field {
