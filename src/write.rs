@@ -989,7 +989,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
 
 impl<W: Write + Seek> GenericZipWriter<W> {
     fn prepare_next_writer(
-        &mut self,
+        &self,
         compression: CompressionMethod,
         compression_level: Option<i32>,
     ) -> ZipResult<Box<dyn FnOnce(W) -> GenericZipWriter<W>>> {
