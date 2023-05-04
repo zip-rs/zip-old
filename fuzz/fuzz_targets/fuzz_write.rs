@@ -69,10 +69,13 @@ fn do_operation<T>(writer: &mut zip_next::ZipWriter<T>,
     Ok(())
 }
 
-fuzz_target!(|data: Vec<FileOperation>| {
+fuzz_target!(|data: Vec<(FileOperation, bool)>| {
     let mut writer = zip_next::ZipWriter::new(Cursor::new(Vec::new()));
-    for operation in data {
+    for (operation, close_and_reopen) in data {
         let _ = do_operation(&mut writer, &operation);
+        if close_and_reopen {
+            writer = zip_next::ZipWriter::new_append(writer.finish().unwrap()).unwrap();
+        }
     }
     let _ = zip_next::ZipArchive::new(writer.finish().unwrap());
 });
