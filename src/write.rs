@@ -498,7 +498,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
 
         self.writing_to_file = false;
-        self.writing_raw = false;
         Ok(())
     }
 
@@ -538,6 +537,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             return Err(e);
         }
         self.writing_to_file = true;
+        self.writing_raw = false;
         Ok(())
     }
 
