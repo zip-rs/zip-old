@@ -1582,6 +1582,8 @@ mod test {
     const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
     #[cfg(test)]
     const SECOND_FILENAME: &str = "different_name.xyz";
+    #[cfg(test)]
+    const THIRD_FILENAME: &str = "third_name.xyz";
 
     #[test]
     fn test_shallow_copy() {
@@ -1640,10 +1642,13 @@ mod test {
             .deep_copy_file(RT_TEST_FILENAME, SECOND_FILENAME)
             .unwrap();
         let zip = writer.finish().unwrap();
+        let mut writer = ZipWriter::new_append(zip).unwrap();
+        writer.deep_copy_file(RT_TEST_FILENAME, THIRD_FILENAME).unwrap();
+        let zip = writer.finish().unwrap();
         let mut reader = ZipArchive::new(zip).unwrap();
         let mut file_names: Vec<&str> = reader.file_names().collect();
         file_names.sort();
-        let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME];
+        let mut expected_file_names = vec![RT_TEST_FILENAME, SECOND_FILENAME, THIRD_FILENAME];
         expected_file_names.sort();
         assert_eq!(file_names, expected_file_names);
         let mut first_file_content = String::new();
