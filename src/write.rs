@@ -226,7 +226,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                         if self.stats.bytes_written > spec::ZIP64_BYTES_THR
                             && !self.files.last_mut().unwrap().large_file
                         {
-                            let _ = self.abort_file();
+                            self.abort_file().unwrap();
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,
                                 "Large file option has not been set",
@@ -527,7 +527,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             .prepare_next_writer(options.compression_method, options.compression_level)?;
         self.start_entry(name, options, None)?;
         if let Err(e) = self.inner.switch_to(make_new_self) {
-            let _ = self.abort_file();
+            self.abort_file().unwrap();
             return Err(e);
         }
         self.writing_to_file = true;
@@ -692,7 +692,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let file = self.files.last_mut().unwrap();
 
         if let Err(e) = validate_extra_data(file) {
-            let _ = self.abort_file();
+            self.abort_file().unwrap();
             return Err(e);
         }
 
@@ -702,7 +702,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             Ok(writer) => writer,
             Err(e) => {
-                let _ = self.abort_file();
+                self.abort_file().unwrap();
                 return Err(e);
             }
         };
