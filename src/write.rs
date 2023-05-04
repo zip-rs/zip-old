@@ -348,7 +348,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             self.abort_file().unwrap();
             return Err(e.into());
         }
-        self.finish_file()
+        self.writing_to_file = false;
+        self.writing_raw = false;
+        Ok(())
     }
 }
 
