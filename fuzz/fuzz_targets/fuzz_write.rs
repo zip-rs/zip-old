@@ -5,17 +5,9 @@ use arbitrary::Arbitrary;
 use std::io::{Cursor, Read, Seek, Write};
 
 #[derive(Arbitrary,Debug)]
-pub struct ExtraData {
-    pub header_id: u16,
-    pub data: Vec<u8>
-}
-
-#[derive(Arbitrary,Debug)]
 pub struct File {
     pub name: String,
-    pub contents: Vec<Vec<u8>>,
-    pub local_extra_data: Vec<ExtraData>,
-    pub central_extra_data: Vec<ExtraData>
+    pub contents: Vec<Vec<u8>>
 }
 
 #[derive(Arbitrary,Debug)]
