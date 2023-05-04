@@ -498,8 +498,8 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Removes the file currently being written from the archive.
     pub fn abort_file(&mut self) -> ZipResult<()> {
-        self.files_by_name
-            .remove(&*self.files.pop().unwrap().file_name);
+        let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
+        self.files_by_name.remove(&last_file.file_name);
         let make_plain_writer = self
             .inner
             .prepare_switch_to(CompressionMethod::Stored, None)?;
