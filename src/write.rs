@@ -471,7 +471,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let make_plain_writer = self
             .inner
-            .prepare_switch_to(CompressionMethod::Stored, None)?;
+            .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
         let writer = self.inner.get_plain();
 
@@ -503,7 +503,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.files_by_name.remove(&last_file.file_name);
         let make_plain_writer = self
             .inner
-            .prepare_switch_to(CompressionMethod::Stored, None)?;
+            .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.inner
             .get_plain()
@@ -524,7 +524,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         Self::normalize_options(&mut options);
         let make_new_self = self
             .inner
-            .prepare_switch_to(options.compression_method, options.compression_level)?;
+            .prepare_next_writer(options.compression_method, options.compression_level)?;
         self.start_entry(name, options, None)?;
         self.inner.switch_to(make_new_self)?;
         self.writing_to_file = true;
@@ -695,7 +695,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         let make_compressing_writer = match self
             .inner
-            .prepare_switch_to(file.compression_method, file.compression_level)
+            .prepare_next_writer(file.compression_method, file.compression_level)
         {
             Ok(writer) => writer,
             Err(e) => {
@@ -988,7 +988,7 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
 }
 
 impl<W: Write + Seek> GenericZipWriter<W> {
-    fn prepare_switch_to(
+    fn prepare_next_writer(
         &mut self,
         compression: CompressionMethod,
         compression_level: Option<i32>,
