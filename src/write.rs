@@ -510,6 +510,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
+        self.writing_to_extra_field = false;
         self.writing_to_file = false;
         self.writing_raw = false;
         Ok(())
