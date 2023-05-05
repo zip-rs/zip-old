@@ -105,3 +105,9 @@
 ### Fixed
 
  - Fixed a bug where a file could remain open for writing after validations failed.
+
+## [0.7.3]
+
+### Fixed
+
+ - Fixed a bug that occurs when a filename in a ZIP32 file includes the ZIP64 magic bytes.
