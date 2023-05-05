@@ -325,11 +325,6 @@ impl<R: Read + Seek> ZipArchive<R> {
             -(20 + 22 + footer.zip_file_comment.len() as i64),
         ))?;
         let locator64 = spec::Zip64CentralDirectoryEndLocator::parse(reader)?;
-        if !footer.record_too_small()
-            && footer.disk_number as u32 != locator64.disk_with_central_directory
-        {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
-        }
 
         // We need to reassess `archive_offset`. We know where the ZIP64
         // central-directory-end structure *should* be, but unfortunately we
@@ -344,27 +339,33 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
             ))?;
-        let (footer, archive_offset) = spec::Zip64CentralDirectoryEnd::find_and_parse(
+        let (footer64, archive_offset) = spec::Zip64CentralDirectoryEnd::find_and_parse(
             reader,
             locator64.end_of_central_directory_offset,
             search_upper_bound,
         )?;
 
-        if footer.disk_number != footer.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
-        }
-
-        let directory_start = footer
+        let directory_start = footer64
             .central_directory_offset
             .checked_add(archive_offset)
             .ok_or(ZipError::InvalidArchive(
                 "Invalid central directory size or offset",
             ))?;
 
+        if footer64.disk_number != footer64.disk_with_central_directory {
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
+        }
+
+        if !footer.record_too_small()
+            && footer.disk_number as u32 != locator64.disk_with_central_directory
+        {
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
+        }
+
         Ok((
             archive_offset,
             directory_start,
-            footer.number_of_files as usize,
+            footer64.number_of_files as usize,
         ))
     }
 
@@ -376,8 +377,11 @@ impl<R: Read + Seek> ZipArchive<R> {
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
         // Check if file is valid as ZIP64 first; if not, try it as ZIP32
-        Self::get_directory_counts_zip64(reader, footer, cde_start_pos)
-            .or_else(|_| Self::get_directory_counts_zip32(footer, cde_start_pos))
+        match Self::get_directory_counts_zip64(reader, footer, cde_start_pos) {
+            Ok(result) => Ok(result),
+            Err(ZipError::UnsupportedArchive(e)) => Err(ZipError::UnsupportedArchive(e)),
+            Err(_) => Self::get_directory_counts_zip32(footer, cde_start_pos),
+        }
     }
 
     /// Read a ZIP archive, collecting the files it contains
