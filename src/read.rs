@@ -70,7 +70,9 @@ pub(crate) mod zip_archive {
     }
 }
 
+use crate::spec::CentralDirectoryEnd;
 pub use zip_archive::ZipArchive;
+
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
     Plaintext(io::Take<&'a mut dyn Read>),
@@ -121,14 +123,14 @@ impl<'a> CryptoReader<'a> {
 
 pub(crate) enum ZipFileReader<'a> {
     NoReader,
-    Raw(io::Take<&'a mut dyn io::Read>),
+    Raw(io::Take<&'a mut dyn Read>),
     Stored(Crc32Reader<CryptoReader<'a>>),
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     ))]
-    Deflated(Crc32Reader<flate2::read::DeflateDecoder<CryptoReader<'a>>>),
+    Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "zstd")]
@@ -207,11 +209,11 @@ pub(crate) fn find_content<'a>(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn make_crypto_reader<'a>(
-    compression_method: crate::compression::CompressionMethod,
+    compression_method: CompressionMethod,
     crc32: u32,
     last_modified_time: DateTime,
     using_data_descriptor: bool,
-    reader: io::Take<&'a mut dyn io::Read>,
+    reader: io::Take<&'a mut dyn Read>,
     password: Option<&[u8]>,
     aes_info: Option<(AesMode, AesVendorVersion)>,
     #[cfg(feature = "aes-crypto")] compressed_size: u64,
@@ -291,12 +293,12 @@ pub(crate) fn make_reader(
     }
 }
 
-impl<R: Read + io::Seek> ZipArchive<R> {
+impl<R: Read + Seek> ZipArchive<R> {
     /// Get the directory start offset and number of files. This is done in a
     /// separate function to ease the control flow design.
     pub(crate) fn get_directory_counts(
         reader: &mut R,
-        footer: &spec::CentralDirectoryEnd,
+        footer: &CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
@@ -327,24 +329,18 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         };
 
         match zip64locator {
-            None => {
-                // Some zip files have data prepended to them, resulting in the
-                // offsets all being too small. Get the amount of error by comparing
-                // the actual file position we found the CDE at with the offset
-                // recorded in the CDE.
-                let archive_offset = cde_start_pos
-                    .checked_sub(footer.central_directory_size as u64)
-                    .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
-                    .ok_or(ZipError::InvalidArchive(
-                        "Invalid central directory size or offset",
-                    ))?;
-
-                let directory_start = footer.central_directory_offset as u64 + archive_offset;
-                let number_of_files = footer.number_of_files_on_this_disk as usize;
-                Ok((archive_offset, directory_start, number_of_files))
-            }
+            None => Self::get_directory_counts_zip32(footer, cde_start_pos),
             Some(locator64) => {
-                // If we got here, this is indeed a ZIP64 file.
+                if let Ok((archive_offset, directory_start, number_of_files)) =
+                    Self::get_directory_counts_zip32(footer, cde_start_pos)
+                {
+                    if directory_start >= locator64.end_of_central_directory_offset {
+                        // This isn't a ZIP64, it's a ZIP that happens to have ZIP64 magic in a filename
+                        return Ok((archive_offset, directory_start, number_of_files));
+                    }
+                }
+
+                // If we got here, we're pretty sure this is a ZIP64 file.
 
                 if !footer.record_too_small()
                     && footer.disk_number as u32 != locator64.disk_with_central_directory
@@ -395,11 +391,31 @@ impl<R: Read + io::Seek> ZipArchive<R> {
         }
     }
 
+    fn get_directory_counts_zip32(
+        footer: &CentralDirectoryEnd,
+        cde_start_pos: u64,
+    ) -> Result<(u64, u64, usize), ZipError> {
+        // Some zip files have data prepended to them, resulting in the
+        // offsets all being too small. Get the amount of error by comparing
+        // the actual file position we found the CDE at with the offset
+        // recorded in the CDE.
+        let archive_offset = cde_start_pos
+            .checked_sub(footer.central_directory_size as u64)
+            .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
+            .ok_or(ZipError::InvalidArchive(
+                "Invalid central directory size or offset",
+            ))?;
+
+        let directory_start = footer.central_directory_offset as u64 + archive_offset;
+        let number_of_files = footer.number_of_files_on_this_disk as usize;
+        Ok((archive_offset, directory_start, number_of_files))
+    }
+
     /// Read a ZIP archive, collecting the files it contains
     ///
     /// This uses the central directory record of the ZIP file, and ignores local file headers
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
-        let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
+        let (footer, cde_start_pos) = CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
         if !footer.record_too_small() && footer.disk_number != footer.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
@@ -643,7 +659,7 @@ fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
 }
 
 /// Parse a central directory entry to collect the information for the file.
-pub(crate) fn central_header_to_zip_file<R: Read + io::Seek>(
+pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     reader: &mut R,
     archive_offset: u64,
 ) -> ZipResult<ZipFileData> {
@@ -873,7 +889,7 @@ impl<'a> ZipFile<'a> {
         note = "by stripping `..`s from the path, the meaning of paths can change.
                 `mangled_name` can be used if this behaviour is desirable"
     )]
-    pub fn sanitized_name(&self) -> ::std::path::PathBuf {
+    pub fn sanitized_name(&self) -> std::path::PathBuf {
         self.mangled_name()
     }
 
@@ -889,7 +905,7 @@ impl<'a> ZipFile<'a> {
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> ::std::path::PathBuf {
+    pub fn mangled_name(&self) -> std::path::PathBuf {
         self.data.file_name_sanitized()
     }
 
@@ -989,13 +1005,13 @@ impl<'a> Drop for ZipFile<'a> {
             let mut buffer = [0; 1 << 16];
 
             // Get the inner `Take` reader so all decryption, decompression and CRC calculation is skipped.
-            let mut reader: std::io::Take<&mut dyn std::io::Read> = match &mut self.reader {
+            let mut reader: io::Take<&mut dyn Read> = match &mut self.reader {
                 ZipFileReader::NoReader => {
                     let innerreader = self.crypto_reader.take();
                     innerreader.expect("Invalid reader state").into_inner()
                 }
                 reader => {
-                    let innerreader = ::std::mem::replace(reader, ZipFileReader::NoReader);
+                    let innerreader = std::mem::replace(reader, ZipFileReader::NoReader);
                     innerreader.into_inner()
                 }
             };
@@ -1029,9 +1045,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: io::Read>(
-    reader: &'a mut R,
-) -> ZipResult<Option<ZipFile<'_>>> {
+pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
     let signature = reader.read_u32::<LittleEndian>()?;
 
     match signature {
@@ -1105,7 +1119,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         return unsupported_zip_error("The file length is not available in the local header");
     }
 
-    let limit_reader = (reader as &'a mut dyn io::Read).take(result.compressed_size);
+    let limit_reader = (reader as &'a mut dyn Read).take(result.compressed_size);
 
     let result_crc32 = result.crc32;
     let result_compression_method = result.compression_method;

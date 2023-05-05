@@ -1689,6 +1689,19 @@ mod test {
     }
 
     #[test]
+    fn test_filename_looks_like_zip64_locator() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "PK\u{6}\u{7}\0\0\0\u{11}\0\0\0\0\0\0\0\0\0\0\0\0",
+                FileOptions::default(),
+            )
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        let _ = ZipArchive::new(zip).unwrap();
+    }
+
+    #[test]
     fn path_to_string() {
         let mut path = std::path::PathBuf::new();
         #[cfg(windows)]
