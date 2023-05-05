@@ -321,16 +321,14 @@ impl<R: Read + Seek> ZipArchive<R> {
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
-        let locator64 = reader
-            .seek(io::SeekFrom::End(
-                -(20 + 22 + footer.zip_file_comment.len() as i64),
-            ))?;
+        reader.seek(io::SeekFrom::End(
+            -(20 + 22 + footer.zip_file_comment.len() as i64),
+        ))?;
+        let locator64 = spec::Zip64CentralDirectoryEndLocator::parse(reader)?;
         if !footer.record_too_small()
             && footer.disk_number as u32 != locator64.disk_with_central_directory
         {
-            return unsupported_zip_error(
-                "Support for multi-disk files is not implemented",
-            );
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
         // We need to reassess `archive_offset`. We know where the ZIP64
@@ -353,17 +351,15 @@ impl<R: Read + Seek> ZipArchive<R> {
         )?;
 
         if footer.disk_number != footer.disk_with_central_directory {
-            return unsupported_zip_error(
-                "Support for multi-disk files is not implemented",
-            );
+            return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
         let directory_start = footer
             .central_directory_offset
             .checked_add(archive_offset)
-            .ok_or({
-                ZipError::InvalidArchive("Invalid central directory size or offset")
-            })?;
+            .ok_or(ZipError::InvalidArchive(
+                "Invalid central directory size or offset",
+            ))?;
 
         Ok((
             archive_offset,
@@ -380,9 +376,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
         // Check if file is valid as ZIP64 first; if not, try it as ZIP32
-        Self::get_directory_counts_zip64(reader, footer, cde_start_pos).or_else(
-            || get_directory_counts_zip32(footer, cde_start_pos)
-        )
+        Self::get_directory_counts_zip64(reader, footer, cde_start_pos)
+            .or_else(|_| Self::get_directory_counts_zip32(footer, cde_start_pos))
     }
 
     /// Read a ZIP archive, collecting the files it contains
@@ -1019,9 +1014,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `comment`: set to an empty string
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
-pub fn read_zipfile_from_stream<'a, R: Read>(
-    reader: &'a mut R,
-) -> ZipResult<Option<ZipFile<'_>>> {
+pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
     let signature = reader.read_u32::<LittleEndian>()?;
 
     match signature {
