@@ -454,7 +454,6 @@ impl<R: Read + io::Seek> ZipArchive<R> {
             let filepath = file
                 .enclosed_name()
                 .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
-            println!("file {}", &file.name());
 
             let outpath = directory.as_ref().join(filepath);
 
