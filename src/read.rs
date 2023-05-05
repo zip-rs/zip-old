@@ -450,13 +450,15 @@ impl<R: Read + io::Seek> ZipArchive<R> {
 
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
+
             let filepath = file
                 .enclosed_name()
                 .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+            println!("file {}", &file.name());
 
             let outpath = directory.as_ref().join(filepath);
 
-            if file.name().ends_with('/') {
+            if file.name().ends_with('/') || file.name().ends_with('\\') {
                 fs::create_dir_all(&outpath)?;
             } else {
                 if let Some(p) = outpath.parent() {
@@ -1131,6 +1133,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
 
 #[cfg(test)]
 mod test {
+
     #[test]
     fn invalid_offset() {
         use super::ZipArchive;
@@ -1282,5 +1285,23 @@ mod test {
         ));
         let reader = ZipArchive::new(io::Cursor::new(v));
         assert!(reader.is_err());
+    }
+
+    /// test case to ensure that extract handles zips with backslashes.
+    /// These zips can be created on windows by any framework that uses dotnet < 4.6.1.
+    /// @see https://learn.microsoft.com/en-us/dotnet/framework/migration-guide/mitigation-ziparchiveentry-fullname-path-separator
+    #[test]
+    fn zip_with_backslashes() {
+        use super::ZipArchive;
+        use std::io;
+
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!(
+            "../tests/data/powershell-5-with-backslashes.zip"
+        ));
+        let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let extract_result = reader.extract(&destination);
+        assert!(extract_result.is_ok())
     }
 }
