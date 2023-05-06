@@ -29,19 +29,37 @@ use time::OffsetDateTime;
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
 
+enum MaybeEncrypted<W> {
+    Unencrypted(W),
+    Encrypted(crate::zipcrypto::ZipCryptoWriter<W>),
+}
+impl<W: Write> Write for MaybeEncrypted<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => w.write(buf),
+            MaybeEncrypted::Encrypted(w) => w.write(buf),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            MaybeEncrypted::Unencrypted(w) => w.flush(),
+            MaybeEncrypted::Encrypted(w) => w.flush(),
+        }
+    }
+}
 enum GenericZipWriter<W: Write + io::Seek> {
     Closed,
-    Storer(W),
+    Storer(MaybeEncrypted<W>),
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     ))]
-    Deflater(DeflateEncoder<W>),
+    Deflater(DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "bzip2")]
-    Bzip2(BzEncoder<W>),
+    Bzip2(BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
-    Zstd(ZstdEncoder<'static, W>),
+    Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
 }
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
@@ -108,6 +126,7 @@ pub struct FileOptions {
     last_modified_time: DateTime,
     permissions: Option<u32>,
     large_file: bool,
+    encrypt_with: Option<crate::zipcrypto::ZipCryptoKeys>,
 }
 
 impl FileOptions {
@@ -171,6 +190,10 @@ impl FileOptions {
         self.large_file = large;
         self
     }
+    pub(crate) fn with_deprecated_encryption(mut self, password: &[u8]) -> FileOptions {
+        self.encrypt_with = Some(crate::zipcrypto::ZipCryptoKeys::derive(password));
+        self
+    }
 }
 
 impl Default for FileOptions {
@@ -196,6 +219,7 @@ impl Default for FileOptions {
             last_modified_time: DateTime::default(),
             permissions: None,
             large_file: false,
+            encrypt_with: None,
         }
     }
 }
@@ -284,7 +308,7 @@ impl<A: Read + Write + io::Seek> ZipWriter<A> {
         let _ = readwriter.seek(io::SeekFrom::Start(directory_start)); // seek directory_start to overwrite it
 
         Ok(ZipWriter {
-            inner: GenericZipWriter::Storer(readwriter),
+            inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(readwriter)),
             files,
             stats: Default::default(),
             writing_to_file: false,
@@ -302,7 +326,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
     /// Before writing to this object, the [`ZipWriter::start_file`] function should be called.
     pub fn new(inner: W) -> ZipWriter<W> {
         ZipWriter {
-            inner: GenericZipWriter::Storer(inner),
+            inner: GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(inner)),
             files: Vec::new(),
             stats: Default::default(),
             writing_to_file: false,
@@ -355,7 +379,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             let mut file = ZipFileData {
                 system: System::Unix,
                 version_made_by: DEFAULT_VERSION,
-                encrypted: false,
+                encrypted: options.encrypt_with.is_some(),
                 using_data_descriptor: false,
                 compression_method: options.compression_method,
                 compression_level: options.compression_level,
@@ -385,7 +409,13 @@ impl<W: Write + io::Seek> ZipWriter<W> {
 
             self.files.push(file);
         }
+        if let Some(keys) = options.encrypt_with {
+            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter { writer: core::mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(), buffer: vec![], keys };
+            let mut crypto_header = [0u8; 12];
 
+            zipwriter.write_all(&crypto_header)?;
+            self.inner = GenericZipWriter::Storer(MaybeEncrypted::Encrypted(zipwriter));
+        }
         Ok(())
     }
 
@@ -395,6 +425,14 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             self.end_extra_data()?;
         }
         self.inner.switch_to(CompressionMethod::Stored, None)?;
+        match core::mem::replace(&mut self.inner, GenericZipWriter::Closed) {
+            GenericZipWriter::Storer(MaybeEncrypted::Encrypted(writer)) => {
+                let crc32 = self.stats.hasher.clone().finalize();
+                self.inner = GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
+            }
+            GenericZipWriter::Storer(w) => self.inner = GenericZipWriter::Storer(w),
+            _ => unreachable!()
+        }
         let writer = self.inner.get_plain();
 
         if !self.writing_raw {
@@ -985,8 +1023,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
 
     fn get_plain(&mut self) -> &mut W {
         match *self {
-            GenericZipWriter::Storer(ref mut w) => w,
-            _ => panic!("Should have switched to stored beforehand"),
+            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(ref mut w)) => w,
+            _ => panic!("Should have switched to stored and unencrypted beforehand"),
         }
     }
 
@@ -1009,8 +1047,8 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
 
     fn unwrap(self) -> W {
         match self {
-            GenericZipWriter::Storer(w) => w,
-            _ => panic!("Should have switched to stored beforehand"),
+            GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(w)) => w,
+            _ => panic!("Should have switched to stored and unencrypted beforehand"),
         }
     }
 }
@@ -1058,7 +1096,7 @@ fn write_local_file_header<T: Write>(writer: &mut T, file: &ZipFileData) -> ZipR
         1u16 << 11
     } else {
         0
-    };
+    } | if file.encrypted { 1u16 << 0 } else { 0 };
     writer.write_u16::<LittleEndian>(flag)?;
     // Compression method
     #[allow(deprecated)]
@@ -1133,7 +1171,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
         1u16 << 11
     } else {
         0
-    };
+    } | if file.encrypted { 1u16 << 0 } else { 0 };
     writer.write_u16::<LittleEndian>(flag)?;
     // compression method
     #[allow(deprecated)]
@@ -1428,6 +1466,7 @@ mod test {
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
             large_file: false,
+            encrypt_with: None,
         };
         writer.start_file("mimetype", options).unwrap();
         writer
