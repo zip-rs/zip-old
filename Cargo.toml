@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "0.6.4"
+version = "0.6.5"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/zip-rs/zip.git"

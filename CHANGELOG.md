@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.5]
+### Changed
+
+- Added experimental [`zip::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting files with PKWARE encryption.
+
 ## [0.6.4]
 
 ### Changed
