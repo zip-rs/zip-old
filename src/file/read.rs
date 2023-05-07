@@ -122,6 +122,7 @@ impl<D: io::Read> ReadBuilder<D, Found> {
 }
 impl<D> ReadBuilder<D, Found, Decrypted> {
     // FIXME: recommend self-reference for owning the store?
+    #[cfg(feature = "std")]
     pub fn build_with_buffering<Buffered: std::io::Read>(
         self,
         store: &mut Store,

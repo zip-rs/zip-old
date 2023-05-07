@@ -15,7 +15,7 @@ default = ["read", "write"]
 read = ["read-deflate"]
 write = ["write-deflate"]
 
-read-deflate = ["miniz_oxide"]
+read-deflate = ["miniz_oxide", "std"]
 write-deflate = ["miniz_oxide"]
 
 [[example]]

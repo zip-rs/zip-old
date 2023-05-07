@@ -35,7 +35,7 @@ pub fn main() -> io::Result<()> {
             .reader_with_decryption()?
             // If the file is locked, try to decrypt it with this password
             .or_else(|d| d.try_password(b"password"))?
-            .build_io(&mut datastore, std::io::BufReader::new);
+            .build_with_buffering(&mut datastore, std::io::BufReader::new);
         
         // finally, read everything out of the archive!
         std::io::copy(&mut data, &mut std::io::stdout().lock())?;
