@@ -3,7 +3,7 @@ use crate::error;
 #[path = "file/read.rs"]
 mod read_imp;
 pub mod read {
-    pub use super::read_imp::{DecryptBuilder, Decrypted, MaybeEncrypted, ReadBuilder, Store};
+    pub use super::read_imp::{DecryptBuilder, Decrypted, MaybeEncrypted, NotEncrypted, ReadBuilder, Store};
 }
 use read_imp::*;
 pub use read_imp::{Decrypt, Read};
@@ -82,7 +82,7 @@ impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
     /// ```
     pub fn reader_with_decryption(
         self,
-    ) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>> {
+    ) -> std::io::Result<Result<NotEncrypted<D>, DecryptBuilder<D>>> {
         self.reader()?.remove_encryption_io()
     }
 }

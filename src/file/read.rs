@@ -80,7 +80,7 @@ impl<D: io::Read + io::Seek> ReadBuilder<D> {
         })
     }
 }
-
+pub type NotEncrypted<D> = ReadBuilder<Decrypt<D>, Decrypted>;
 impl<D> ReadBuilder<D, MaybeEncrypted> {
     pub fn assert_no_password(self) -> Result<ReadBuilder<D, Decrypted>, error::FileLocked> {
         Ok(ReadBuilder {
@@ -97,7 +97,7 @@ impl<D> ReadBuilder<D, MaybeEncrypted> {
     #[cfg(feature = "std")]
     pub fn remove_encryption_io(
         self,
-    ) -> io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>>
+    ) -> io::Result<Result<NotEncrypted<D>, DecryptBuilder<D>>>
     where
         D: io::Read,
     {
