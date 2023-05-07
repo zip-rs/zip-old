@@ -74,7 +74,7 @@ impl<D> ReadBuilder<D> {
 }
 
 impl<D, F> ReadBuilder<D, F, Not<Decrypted>> {
-    pub fn assert_no_password(self) -> Result<ReadBuilder<D, F, Decrypted>, error::FileLocked> {
+    fn assert_no_password(self) -> Result<ReadBuilder<D, F, Decrypted>, error::FileLocked> {
         (!self.storage.encrypted)
             .then(|| ReadBuilder {
                 disk: self.disk,
