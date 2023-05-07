@@ -130,16 +130,12 @@ impl<D> ReadBuilder<D, Found, Decrypted> {
     ) -> Read<'_, D, Buffered> {
         Read(match self.storage.kind {
             FileStorageKind::Stored => ReadImpl::Stored {
-                remaining: self.storage.len,
+                remaining: self.storage.len.expect("todo: error handling when file is STORED and len is not present"),
                 disk: self.disk,
             },
             #[cfg(feature = "read-deflate")]
             FileStorageKind::Deflated => ReadImpl::Deflate {
-                disk: f(self.disk).take(if self.storage.unknown_size {
-                    u64::MAX
-                } else {
-                    self.storage.len
-                }),
+                disk: f(self.disk).take(self.storage.len.unwrap_or(u64::MAX)),
                 decompressor: {
                     let deflate = store.deflate.get_or_insert_with(Default::default);
                     deflate.0.init();
@@ -209,10 +205,9 @@ impl Default for InflateBuffer {
 #[derive(Debug, Clone)]
 pub(crate) struct FileStorage {
     pub(crate) start: u64,
-    pub(crate) len: u64,
+    pub(crate) len: Option<u64>,
     pub(crate) crc32: u32,
     pub(crate) encrypted: bool,
-    pub(crate) unknown_size: bool,
     pub(crate) kind: FileStorageKind,
 }
 

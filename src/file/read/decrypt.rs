@@ -18,7 +18,7 @@ impl<D: io::Read> DecryptBuilder<D> {
         let mut seed = [0; 12];
         builder.disk.read_exact(&mut seed)?;
         // TODO: Clarify the meaning of `storage.len` so that it can be used consistently by readers
-        builder.storage.len -= core::mem::size_of_val(&seed) as u64;
+        // builder.storage.len -= core::mem::size_of_val(&seed) as u64;
         Ok(Self {
             seed,
             builder,

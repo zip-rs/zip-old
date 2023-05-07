@@ -31,9 +31,8 @@ impl FileLocator {
         let storage = storage_kind.map(|kind| crate::file::FileStorage {
             kind,
             encrypted: flags & 0b1 != 0,
-            unknown_size: flags & 0b100 != 0,
             crc32: entry.crc32.get(),
-            len: entry.compressed_size.get() as u64,
+            len: (flags & 0b1000 != 0).then(|| entry.compressed_size.get() as u64),
             start: entry.offset_from_start.get() as u64,
         });
         Self {
