@@ -51,7 +51,7 @@ enum ReadImpl<'a, D, Buffered> {
     },
 }
 impl<D, F, E> ReadBuilder<D, F, E> {
-    pub fn map_disk<D2>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, F, E>
+    pub(super) fn map_disk<D2>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, F, E>
     {
         ReadBuilder {
             disk: f(self.disk),
