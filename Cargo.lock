@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "0.10.0-pre1"
+version = "0.10.0-alpha.1"
 dependencies = [
  "miniz_oxide",
  "zip-format",
