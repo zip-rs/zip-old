@@ -8,6 +8,8 @@ pub mod file;
 pub mod metadata;
 
 pub use archive::{Directory, Footer};
+#[cfg(feature = "std")]
+pub use archive::Archive;
 
 #[cfg(feature = "std")]
 use std::io::*;

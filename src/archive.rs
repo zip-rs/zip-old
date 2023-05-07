@@ -2,6 +2,49 @@ use crate::{error, file, metadata};
 
 #[cfg(feature = "std")]
 use std::io;
+#[cfg(feature = "std")]
+pub struct Archive<M = metadata::std::Full, D = std::fs::File> {
+    disks: Vec<D>,
+    files: Vec<file::File<M, ()>>,
+}
+#[cfg(feature = "std")]
+/// # Warning
+/// 
+/// This can be used to iterate through an [`Archive<std::fs::File>`](Archive),
+/// but you must take care to only use the [`file::File::reader`] method on
+/// one file at a time. This is because each file will be located in a shared [`std::fs::File`].
+impl<'a, M, D: 'a> IntoIterator for &'a Archive<M, D> {
+    type IntoIter = Iter<'a, M, D>;
+    type Item = file::File<&'a M, &'a D>;
+    fn into_iter(self) -> Self::IntoIter {
+        Iter(&self.disks, self.files.iter())
+    }
+}
+#[cfg(feature = "std")]
+pub struct Iter<'a, M, D>(&'a [D], core::slice::Iter<'a, file::File<M, ()>>);
+#[cfg(feature = "std")]
+impl<'a, M, D> Iterator for Iter<'a, M, D> {
+    type Item = file::File<&'a M, &'a D>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.1.next().map(|file| file::File {
+            disk: &self.0[file.locator.disk_id as usize],
+            meta: &file.meta,
+            locator: file.locator.clone(),
+        })
+    }
+}
+#[cfg(feature = "std")]
+impl Archive<metadata::std::Full> {
+    pub fn open_at(path: impl AsRef<std::path::Path>) -> io::Result<Self> {
+        let mut last_disk = Footer::from_io(std::fs::File::open(path)?)?;
+        assert_eq!(last_disk.descriptor.disk_id(), 0);
+        let files = last_disk.as_mut().into_directory()?.seek_to_files()?.collect::<Result<_, _>>()?;
+        Ok(Self {
+            files,
+            disks: vec![last_disk.disk],
+        })
+    }
+}
 
 pub struct Footer<D> {
     pub disk: D,

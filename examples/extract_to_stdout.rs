@@ -1,44 +1,21 @@
 use std::io;
 
-/// TODO: slim down the API so that this file can be written somewhat like:
-/// ```
-/// let archive = "archive.zip";
-/// let reader = io::BufReader::new(fs::File::open(archive)?);
-/// let out = std::io::stdout().lock();
-/// for file in zip::files(fs::File::open(archive))? {
-///     out.write(&file.name)?;
-///     file?.with_store(&mut reader).copy_to(out)?;
-/// }
-/// ```
 pub fn main() -> io::Result<()> {
     let path = std::env::args().nth(1).expect("Usage: zip-extract <path>");
-
-    // open up the zip archive and prepare an extra file handle to read the file directory
-    let footer = zip::Footer::from_io(std::fs::File::open(&path)?)?;
-    let mut reader = footer.with_disk(std::fs::File::open(&path)?);
-
-    // also, allocate the structures we will use for decompression
-    let mut datastore = zip::file::Store::default();
-
-    // look for the directory in this disk, and start scanning it
-    let files = footer
-        .into_directory()?
-        .seek_to_files::<zip::metadata::std::Full>()?;
-    for file in files {
-        // resolve the files within the open archive
-        // NOTE: `in_disk` could be pointed at another file for multi-file archives
-        let file = file?.in_disk(reader.as_mut())?;
-        println!("{}", String::from_utf8_lossy(file.name()));
-
-        // construct the decompression state and seek to the file contents
-        let mut data = file
-            .reader_with_decryption()?
-            // If the file is locked, try to decrypt it with this password
-            .or_else(|d| d.try_password(b"password"))?
-            .build_with_buffering(&mut datastore, std::io::BufReader::new);
-        
-        // finally, read everything out of the archive!
-        std::io::copy(&mut data, &mut std::io::stdout().lock())?;
+    
+    let mut decompressor = Default::default();
+    for file in &zip::Archive::open_at(path)? {
+        // TODO: Rework the API to allow
+        //   A) extractor.bufread(file)?.copy_to(stdout);
+        //   B) file.extract_to(stdout)?;
+        //   C) file.bufread()?.copy_to(stdout); // note that this requires an owned Read<'extractor>
+        let mut reader = file
+            .reader()?
+            .assert_no_password()?
+            .seek_to_data()?
+            .build_with_buffering(&mut decompressor, std::io::BufReader::new);
+        io::copy(&mut reader,
+                 &mut std::io::stdout())?;
     }
 
     Ok(())

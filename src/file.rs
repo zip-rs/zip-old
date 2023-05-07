@@ -12,10 +12,10 @@ pub struct File<M = Default, D = ()> {
     pub meta: M,
     pub locator: FileLocator,
 }
-
+#[derive(Clone)]
 pub struct FileLocator {
     storage: Option<read::FileStorage>,
-    disk_id: u32,
+    pub(crate) disk_id: u32,
 }
 impl FileLocator {
     pub(crate) fn from_entry(entry: &zip_format::DirectoryEntry) -> Self {
@@ -70,6 +70,18 @@ impl<D, M> File<M, D> {
 }
 #[cfg(feature = "std")]
 impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> {
+    /// # let archive = zip::Archive::open_at("").unwrap();
+    /// # let file = archive.into_iter().next().unwrap();
+    /// # let mut decompressor = Default::default();
+    /// let reader = file
+    ///     .reader_with_decryption()?
+    ///     .or_else(|d| d.try_password(b"password"))?
+    ///     .build_with_buffering(&mut decompressor, std::io::BufReader::new);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, read::Found, read::Decrypted>, read::DecryptBuilder<D>>> {
         Ok(self
             .reader()?
