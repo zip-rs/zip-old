@@ -13,6 +13,7 @@ zip-format = { version = "0.1.0", path = "./zip-format" }
 
 [dev-dependencies]
 file-content = { path = "./file-content" }
+tempdir = "0.3.7"
 
 [features]
 std = []
@@ -24,7 +25,7 @@ read-deflate = ["miniz_oxide", "std"]
 write-deflate = ["miniz_oxide"]
 
 [[example]]
-name = "extract_to_stdout"
+name = "extract_to_tempdir"
 required-features = ["std"]
 [[example]]
 name = "simple_inspection"
