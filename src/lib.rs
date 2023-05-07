@@ -21,7 +21,7 @@ use std::io::*;
 ///
 /// ```
 /// # use zip::*; fn f(disk: std::fs::File) -> std::io::Result<()> {
-/// Footer::from_io(disk)?.into_directory()?.seek_to_files::<metadata::std::Full>()
+/// DirectoryLocator::from_io(disk)?.into_directory()?.seek_to_files::<metadata::std::Full>()
 /// # ;Ok(())}
 /// ```
 #[cfg(feature = "std")]
