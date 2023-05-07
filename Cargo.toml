@@ -13,6 +13,7 @@ zip-format = { version = "0.1.0", path = "./zip-format" }
 
 [dev-dependencies]
 file-content = { path = "./file-content" }
+rayon = "1.7.0"
 tempdir = "0.3.7"
 
 [features]
