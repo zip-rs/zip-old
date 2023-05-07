@@ -49,7 +49,14 @@ impl Archive<metadata::std::Full> {
         })
     }
 }
-
+impl<M, D> Archive<M, D> {
+    pub fn try_map_disks<D2, E>(self, f: impl FnMut(D) -> Result<D2, E>) -> Result<Archive<M, D2>, E> {
+        Ok(Archive {
+            disks: self.disks.into_iter().map(f).collect::<Result<_, _>>()?,
+            files: self.files,
+        })
+    }
+}
 pub struct DirectoryLocator<D> {
     pub disk: D,
     pub descriptor: DiskDescriptor,

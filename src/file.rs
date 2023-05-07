@@ -39,7 +39,7 @@ impl FileLocator {
     }
 }
 
-impl<M> File<M, ()> {
+impl<M, D2> File<M, D2> {
     pub fn in_disk<D>(
         self,
         disk: crate::DirectoryLocator<D>,
@@ -51,6 +51,13 @@ impl<M> File<M, ()> {
     pub fn assume_in_disk<D>(self, disk: D) -> File<M, D> {
         File {
             disk,
+            meta: self.meta,
+            locator: self.locator,
+        }
+    }
+    pub fn map_disk<D>(self, f: impl FnOnce(D2) -> D) -> File<M, D> {
+        File {
+            disk: f(self.disk),
             meta: self.meta,
             locator: self.locator,
         }
