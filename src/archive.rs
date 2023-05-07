@@ -7,6 +7,22 @@ pub struct Archive<M = metadata::std::Full, D = std::fs::File> {
     disks: Vec<D>,
     files: Vec<file::File<M, ()>>,
 }
+#[cfg(feature = "rayon")]
+impl<'a, M: Sync, D: Sync> rayon::iter::IntoParallelIterator for &'a Archive<M, D> {
+    type Item = file::File<&'a M, &'a D>;
+    type Iter = rayon::iter::Map<rayon::slice::Iter<'a, file::File<M, ()>>, Box<dyn 'a + Send + Sync + Fn(&'a file::File<M, ()>) -> Self::Item>>;
+    fn into_par_iter(self) -> Self::Iter {
+        use rayon::iter::ParallelIterator;
+        let Archive { files, disks } = self;
+        files.as_slice().into_par_iter().map(Box::new(move |file| {
+            file::File {
+                disk: &disks[file.locator.disk_id as usize],
+                meta: &file.meta,
+                locator: file.locator.clone(),
+            }
+        }))
+    }
+}
 #[cfg(feature = "std")]
 /// # Warning
 ///

@@ -4,11 +4,12 @@ use rayon::prelude::*;
 pub fn main() -> io::Result<()> {
     let path = std::env::args().nth(1).expect("Usage: zip-extract <path>");
     let dir = tempdir::TempDir::new("zip-extract")?;
+    rayon::ThreadPoolBuilder::new().build_global().unwrap();
     println!("{dir:?}");
     let start = std::time::Instant::now();
     zip::Archive::open_at(path)?.try_map_disks(|f| file_content::FileContent::from_file(&f))?
-        .into_iter()
-        .par_bridge()
+    .into_iter().par_bridge()
+        // FIXME: Why is .into_par_iter() slower? par_bridge is using a mutex for every .next!
         .try_for_each_init(Default::default, |mut decompressor, file| {
     //     let mut decompressor = Default::default();
     // for file in &zip::Archive::open_at(path)?.try_map_disks(|f| file_content::FileContent::from_file(&f))? {
