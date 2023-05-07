@@ -1,18 +1,12 @@
-use crate::error::{self, MethodNotSupported};
+use crate::error;
 
 #[path = "file/read.rs"]
 mod read_imp;
 pub mod read {
-    pub use super::read_imp::{
-        DecryptBuilder,
-
-        ReadBuilder, MaybeEncrypted, Decrypted,
-
-        Store,
-    };
+    pub use super::read_imp::{DecryptBuilder, Decrypted, MaybeEncrypted, ReadBuilder, Store};
 }
-pub use read_imp::{Read, Decrypt};
 use read_imp::*;
+pub use read_imp::{Decrypt, Read};
 
 #[cfg(not(feature = "std"))]
 type Default = ();
@@ -39,14 +33,17 @@ impl FileLocator {
         Self {
             encrypted: (flags & 0b1 != 0).then(|| (entry.crc32.get() >> 24) as u8),
             header_start: entry.offset_from_start.get() as u64,
-            content_len: (!has_data_descriptor || size != 0).then(|| size),
+            content_len: (!has_data_descriptor || size != 0).then_some(size),
             disk_id: entry.disk_number.get() as u32,
         }
     }
 }
 
 impl<M> File<M, ()> {
-    pub fn in_disk<D>(self, disk: crate::DirectoryLocator<D>) -> Result<File<M, D>, error::DiskMismatch> {
+    pub fn in_disk<D>(
+        self,
+        disk: crate::DirectoryLocator<D>,
+    ) -> Result<File<M, D>, error::DiskMismatch> {
         (self.locator.disk_id == disk.descriptor.disk_id())
             .then(move || self.assume_in_disk(disk.disk))
             .ok_or(error::DiskMismatch(()))
@@ -70,7 +67,7 @@ impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
     pub fn reader(self) -> std::io::Result<ReadBuilder<D>> {
         ReadBuilder::new(self.disk, self.locator)
     }
-    
+
     /// ```no_run
     /// # fn main() -> std::io::Result<()> {
     /// # let archive = zip::Archive::open_at("").unwrap();
@@ -83,10 +80,10 @@ impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>> {
-        self
-            .reader()?
-            .remove_encryption_io()
+    pub fn reader_with_decryption(
+        self,
+    ) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>> {
+        self.reader()?.remove_encryption_io()
     }
 }
 

@@ -20,20 +20,14 @@ impl<D: io::Read> DecryptBuilder<D> {
         builder.disk.read_exact(&mut seed)?;
         // TODO: Clarify the meaning of `storage.len` so that it can be used consistently by readers
         // builder.storage.len -= core::mem::size_of_val(&seed) as u64;
-        Ok(Self {
-            seed,
-            builder,
-        })
+        Ok(Self { seed, builder })
     }
 }
 
 pub struct Decrypt<D>(DecryptImpl<D>);
 pub(crate) enum DecryptImpl<D> {
     Stored(D),
-    PkzipCrypto {
-        keys: [u32; 3],
-        disk: D,
-    }
+    PkzipCrypto { keys: [u32; 3], disk: D },
 }
 impl<D> Decrypt<D> {
     pub(crate) fn from_unlocked(disk: D) -> Self {
@@ -101,7 +95,9 @@ impl<D> DecryptBuilder<D> {
     }
     fn update_keys(keys: &mut [u32; 3], byte: u8) {
         keys[0] = Self::crc32(keys[0], byte);
-        keys[1] = (keys[1] + (keys[0] & 0xff)).wrapping_mul(0x08088405).wrapping_add(1);
+        keys[1] = (keys[1] + (keys[0] & 0xff))
+            .wrapping_mul(0x08088405)
+            .wrapping_add(1);
         keys[2] = Self::crc32(keys[2], (keys[1] >> 24) as u8);
     }
     fn stream_byte(keys: &[u32; 3]) -> u8 {
@@ -135,7 +131,8 @@ impl<D> DecryptBuilder<D> {
                 disk: Decrypt(DecryptImpl::PkzipCrypto {
                     keys,
                     disk: self.builder.disk.into_inner(),
-                }).take(limit),
+                })
+                .take(limit),
             })
         } else {
             Err(self)

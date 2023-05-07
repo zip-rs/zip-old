@@ -9,7 +9,7 @@ pub struct Archive<M = metadata::std::Full, D = std::fs::File> {
 }
 #[cfg(feature = "std")]
 /// # Warning
-/// 
+///
 /// This can be used to iterate through an [`Archive<std::fs::File>`](Archive),
 /// but you must take care to only use the [`file::File::reader`] method on
 /// one file at a time. This is because each file will be located in a shared [`std::fs::File`].
@@ -38,7 +38,11 @@ impl Archive<metadata::std::Full> {
     pub fn open_at(path: impl AsRef<std::path::Path>) -> io::Result<Self> {
         let mut last_disk = DirectoryLocator::from_io(std::fs::File::open(path)?)?;
         assert_eq!(last_disk.descriptor.disk_id(), 0);
-        let files = last_disk.as_mut().into_directory()?.seek_to_files()?.collect::<Result<_, _>>()?;
+        let files = last_disk
+            .as_mut()
+            .into_directory()?
+            .seek_to_files()?
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             files,
             disks: vec![last_disk.disk],
@@ -132,7 +136,7 @@ impl<'a> DirectoryLocator<&'a [u8]> {
 impl<D> DirectoryLocator<D> {
     pub fn into_directory(self) -> Result<Directory<D>, error::DiskMismatch> {
         (self.descriptor.directory_location_disk == self.descriptor.disk_id())
-            .then(|| Directory {
+            .then_some(Directory {
                 disk: self.disk,
                 span: DirectorySpan {
                     offset: self.descriptor.directory_location_offset,
@@ -146,13 +150,13 @@ impl<D> DirectoryLocator<D> {
     pub fn with_disk<U>(&self, disk: U) -> DirectoryLocator<U> {
         DirectoryLocator {
             disk,
-            descriptor: self.descriptor.clone(),
+            descriptor: self.descriptor,
         }
     }
     pub fn as_mut(&mut self) -> DirectoryLocator<&mut D> {
         DirectoryLocator {
             disk: &mut self.disk,
-            descriptor: self.descriptor.clone(),
+            descriptor: self.descriptor,
         }
     }
 }
@@ -165,21 +169,28 @@ pub struct DirectorySpan {
     entries: u64,
 }
 impl<'a> Directory<&'a [u8]> {
-    pub fn iter(self) -> impl Iterator<Item = Result<file::File<metadata::RawDirectoryEntry<'a>, &'a [u8]>, error::NotAnArchive>> {
+    pub fn iter(
+        self,
+    ) -> impl Iterator<
+        Item = Result<file::File<metadata::RawDirectoryEntry<'a>, &'a [u8]>, error::NotAnArchive>,
+    > {
         let Directory { disk, span } = self;
         // FIXME: checked conversions
         let mut offset = span.offset as usize;
         let mut entries = span.entries;
         core::iter::from_fn(move || {
             (entries != 0).then(|| {
-                let entry = zip_format::DirectoryEntry::as_prefix(&disk[offset..]).ok_or(error::NotAnArchive(()))?;
+                let entry = zip_format::DirectoryEntry::as_prefix(&disk[offset..])
+                    .ok_or(error::NotAnArchive(()))?;
                 offset += core::mem::size_of::<zip_format::DirectoryEntry>() + 4;
-                let size = entry.name_len.get() as usize + entry.metadata_len.get() as usize + entry.comment_len.get() as usize;
+                let size = entry.name_len.get() as usize
+                    + entry.metadata_len.get() as usize
+                    + entry.comment_len.get() as usize;
                 let metadata = &disk[offset..offset + size];
                 offset += size;
                 entries -= 1;
                 Ok(file::File {
-                    disk: disk,
+                    disk,
                     meta: metadata::RawDirectoryEntry::new(entry, metadata),
                     locator: file::FileLocator::from_entry(entry),
                 })
@@ -196,8 +207,7 @@ impl<D: io::Seek + io::Read> Directory<D> {
     where
         M::Error: Into<io::Error>,
     {
-        self.disk
-            .seek(std::io::SeekFrom::Start(self.span.offset as u64))?;
+        self.disk.seek(std::io::SeekFrom::Start(self.span.offset))?;
         Ok(DirectoryIter {
             disk: self.disk,
             entries: self.span.entries,
@@ -220,10 +230,7 @@ where
 }
 #[cfg(feature = "std")]
 // TODO: Design an API for reading metadata from an entry
-impl<
-        D: io::Read + io::Seek,
-        M: metadata::Metadata<D>,
-    > Iterator for DirectoryIter<M, D>
+impl<D: io::Read + io::Seek, M: metadata::Metadata<D>> Iterator for DirectoryIter<M, D>
 where
     M::Error: Into<std::io::Error>,
 {
@@ -237,7 +244,10 @@ where
                 zip_format::DirectoryEntry::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
             Ok(file::File {
                 disk: (),
-                meta: M::from_entry(entry, &mut self.disk).map_err(|e| {let e: io::Error = e.into(); e})?,
+                meta: M::from_entry(entry, &mut self.disk).map_err(|e| {
+                    let e: io::Error = e.into();
+                    e
+                })?,
                 locator: file::FileLocator::from_entry(entry),
             })
         })

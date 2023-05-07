@@ -47,8 +47,7 @@ enum ReadImpl<'a, D, Buffered> {
     },
 }
 impl<D, E> ReadBuilder<D, E> {
-    pub(super) fn map_disk<D2: std::io::Read>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, E>
-    {
+    pub(super) fn map_disk<D2: std::io::Read>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, E> {
         let limit = self.disk.limit();
         ReadBuilder {
             disk: f(self.disk.into_inner()).take(limit),
@@ -58,26 +57,22 @@ impl<D, E> ReadBuilder<D, E> {
     }
 }
 impl<D: io::Read + io::Seek> ReadBuilder<D> {
-    pub(super) fn new(
-        mut disk: D,
-        locator: super::FileLocator,
-    ) -> io::Result<Self>
-    {
+    pub(super) fn new(mut disk: D, locator: super::FileLocator) -> io::Result<Self> {
         let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
         disk.seek(std::io::SeekFrom::Start(locator.header_start))?;
         disk.read_exact(&mut buf)?;
         let header = zip_format::Header::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
         let storage = match header.method {
-            zip_format::CompressionMethod::STORED if locator.content_len.is_some()=> {
+            zip_format::CompressionMethod::STORED if locator.content_len.is_some() => {
                 crate::file::FileStorageKind::Stored
-            },
-            #[cfg(feature = "read-deflate")]
-            zip_format::CompressionMethod::DEFLATE => {
-                crate::file::FileStorageKind::Deflated
             }
+            #[cfg(feature = "read-deflate")]
+            zip_format::CompressionMethod::DEFLATE => crate::file::FileStorageKind::Deflated,
             _ => return Err(error::MethodNotSupported(()).into()),
         };
-        disk.seek(std::io::SeekFrom::Current(header.name_len.get() as i64 + header.metadata_len.get() as i64))?;
+        disk.seek(std::io::SeekFrom::Current(
+            header.name_len.get() as i64 + header.metadata_len.get() as i64,
+        ))?;
         Ok(Self {
             disk: disk.take(locator.content_len.unwrap_or(u64::MAX)),
             storage,
@@ -91,12 +86,21 @@ impl<D> ReadBuilder<D, MaybeEncrypted> {
         Ok(ReadBuilder {
             disk: self.disk,
             storage: self.storage,
-            encryption: self.encryption.0.is_none().then(|| Decrypted(())).ok_or(error::FileLocked(()))?,
+            encryption: self
+                .encryption
+                .0
+                .is_none()
+                .then_some(Decrypted(()))
+                .ok_or(error::FileLocked(()))?,
         })
     }
     #[cfg(feature = "std")]
-    pub fn remove_encryption_io(self) -> io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>>
-    where D: io::Read {
+    pub fn remove_encryption_io(
+        self,
+    ) -> io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>>
+    where
+        D: io::Read,
+    {
         Ok(Ok(ReadBuilder {
             encryption: match self.encryption.0 {
                 Some(expected_byte) => {
@@ -104,13 +108,15 @@ impl<D> ReadBuilder<D, MaybeEncrypted> {
                         disk: self.disk,
                         storage: self.storage,
                         encryption: expected_byte,
-                    }).map(Err);
+                    })
+                    .map(Err);
                 }
-                None => Decrypted(())
+                None => Decrypted(()),
             },
             disk: self.disk,
             storage: self.storage,
-        }.map_disk(Decrypt::from_unlocked)))
+        }
+        .map_disk(Decrypt::from_unlocked)))
     }
 }
 impl<D> ReadBuilder<D, Decrypted> {

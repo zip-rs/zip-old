@@ -6,7 +6,6 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-
 #[derive(Debug)]
 struct Error(Box<dyn core::fmt::Debug>);
 impl<T: 'static + Clone + core::fmt::Debug> From<T> for Error {
