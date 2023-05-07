@@ -4,7 +4,7 @@ use std::io;
 #[derive(Debug)]
 pub struct DecryptBuilder<D> {
     seed: [u8; 12],
-    builder: super::ReadBuilder<D, super::Found>,
+    builder: super::ReadBuilder<D, u8>,
 }
 #[cfg(feature = "std")]
 impl<D> From<DecryptBuilder<D>> for io::Error {
@@ -14,8 +14,9 @@ impl<D> From<DecryptBuilder<D>> for io::Error {
 }
 #[cfg(feature = "std")]
 impl<D: io::Read> DecryptBuilder<D> {
-    pub(crate) fn from_io(mut builder: super::ReadBuilder<D, super::Found>) -> io::Result<Self> {
+    pub(crate) fn from_io(mut builder: super::ReadBuilder<D, u8>) -> io::Result<Self> {
         let mut seed = [0; 12];
+        use std::io::Read;
         builder.disk.read_exact(&mut seed)?;
         // TODO: Clarify the meaning of `storage.len` so that it can be used consistently by readers
         // builder.storage.len -= core::mem::size_of_val(&seed) as u64;
@@ -110,7 +111,10 @@ impl<D> DecryptBuilder<D> {
     pub fn try_password(
         self,
         password: &[u8],
-    ) -> Result<super::ReadBuilder<Decrypt<D>, super::Found, super::Decrypted>, Self> {
+    ) -> Result<super::ReadBuilder<Decrypt<D>, super::Decrypted>, Self>
+    where
+        D: std::io::Read, // only needed to unwrap the `take` below
+    {
         let mut keys = [0x12345678, 0x23456789, 0x34567890];
         for &byte in password {
             Self::update_keys(&mut keys, byte);
@@ -120,15 +124,18 @@ impl<D> DecryptBuilder<D> {
             last_byte = Self::stream_byte(&keys) ^ byte;
             Self::update_keys(&mut keys, last_byte);
         }
-        if (self.builder.storage.crc32 >> 24) as u8 == last_byte {
+        if self.builder.encryption == last_byte {
+            // FIXME: I'm unwrapping the `take`, and it's fine because decryption doesn't change the data's length.
+            // this might need to be refactored for AES?
+            use std::io::Read;
+            let limit = self.builder.disk.limit();
             Ok(super::ReadBuilder {
                 storage: self.builder.storage,
-                state: core::marker::PhantomData,
-
+                encryption: super::Decrypted(()),
                 disk: Decrypt(DecryptImpl::PkzipCrypto {
                     keys,
-                    disk: self.builder.disk,
-                }),
+                    disk: self.builder.disk.into_inner(),
+                }).take(limit),
             })
         } else {
             Err(self)

@@ -6,7 +6,7 @@ pub mod read {
     pub use super::read_imp::{
         DecryptBuilder,
 
-        ReadBuilder, Not, Found, Decrypted,
+        ReadBuilder, MaybeEncrypted, Decrypted,
 
         Store,
     };
@@ -23,31 +23,23 @@ pub struct File<M = Default, D = ()> {
     pub meta: M,
     pub locator: FileLocator,
 }
-#[derive(Clone)]
+// metadata needed for this crate to read the contents of the file
+#[derive(Clone, Debug)]
 pub struct FileLocator {
-    storage: Option<FileStorage>,
     pub(crate) disk_id: u32,
+    pub(crate) header_start: u64,
+    pub(crate) content_len: Option<u64>,
+    pub(crate) encrypted: Option<u8>,
 }
 impl FileLocator {
     pub(crate) fn from_entry(entry: &zip_format::DirectoryEntry) -> Self {
-        let storage_kind = match entry.method {
-            zip_format::CompressionMethod::STORED => Some(crate::file::FileStorageKind::Stored),
-            #[cfg(feature = "read-deflate")]
-            zip_format::CompressionMethod::DEFLATE => {
-                Some(crate::file::FileStorageKind::Deflated)
-            }
-            _ => None,
-        };
         let flags = entry.flags.get();
-        let storage = storage_kind.map(|kind| crate::file::FileStorage {
-            kind,
-            encrypted: flags & 0b1 != 0,
-            crc32: entry.crc32.get(),
-            len: (flags & 0b1000 != 0).then(|| entry.compressed_size.get() as u64),
-            start: entry.offset_from_start.get() as u64,
-        });
+        let size = entry.compressed_size.get() as u64;
+        let has_data_descriptor = flags & 0b1000 != 0;
         Self {
-            storage,
+            encrypted: (flags & 0b1 != 0).then(|| (entry.crc32.get() >> 24) as u8),
+            header_start: entry.offset_from_start.get() as u64,
+            content_len: (!has_data_descriptor || size != 0).then(|| size),
             disk_id: entry.disk_number.get() as u32,
         }
     }
@@ -67,19 +59,18 @@ impl<M> File<M, ()> {
         }
     }
 }
-impl<D, M> File<M, D> {
+#[cfg(feature = "std")]
+impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
     /// Build an extractor for the data stored in this file.
     ///
     /// ## Errors
     ///
     /// If the file uses a [`zip_format::CompressionMethod`] that isn't enabled in the
     /// crate features, a [`MethodNotSupported`] is returned instead.
-    pub fn reader(self) -> Result<ReadBuilder<D>, MethodNotSupported> {
+    pub fn reader(self) -> std::io::Result<ReadBuilder<D>> {
         ReadBuilder::new(self.disk, self.locator)
     }
-}
-#[cfg(feature = "std")]
-impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
+    
     /// ```no_run
     /// # fn main() -> std::io::Result<()> {
     /// # let archive = zip::Archive::open_at("").unwrap();
@@ -92,12 +83,10 @@ impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, Found, Decrypted>, DecryptBuilder<D>>> {
-        Ok(self
+    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>> {
+        self
             .reader()?
-            .seek_to_data()?
-            .remove_encryption_io()?
-            .map(|read| read.map_disk(Decrypt::from_unlocked)))
+            .remove_encryption_io()
     }
 }
 

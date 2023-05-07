@@ -1,5 +1,4 @@
 use crate::error;
-use core::marker::PhantomData;
 #[cfg(feature = "std")]
 use std::io;
 
@@ -29,21 +28,16 @@ pub struct Store {
 #[derive(Debug)]
 pub struct Decrypted(());
 #[derive(Debug)]
-pub struct Found(());
+pub struct MaybeEncrypted(Option<u8>);
 #[derive(Debug)]
-pub struct Not<T>(T);
-#[derive(Debug)]
-pub struct ReadBuilder<D, F = Not<Found>, E = Not<Decrypted>> {
-    disk: D,
-    storage: FileStorage,
-    state: PhantomData<(F, E)>,
+pub struct ReadBuilder<D, E = MaybeEncrypted> {
+    disk: std::io::Take<D>,
+    storage: FileStorageKind,
+    encryption: E,
 }
 
 enum ReadImpl<'a, D, Buffered> {
-    Stored {
-        disk: D,
-        remaining: u64,
-    },
+    Stored(std::io::Take<D>),
     #[cfg(feature = "read-deflate")]
     Deflate {
         disk: std::io::Take<Buffered>,
@@ -52,77 +46,74 @@ enum ReadImpl<'a, D, Buffered> {
         read_cursor: u16,
     },
 }
-impl<D, F, E> ReadBuilder<D, F, E> {
-    pub(super) fn map_disk<D2>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, F, E>
+impl<D, E> ReadBuilder<D, E> {
+    pub(super) fn map_disk<D2: std::io::Read>(self, f: impl FnOnce(D) -> D2) -> ReadBuilder<D2, E>
     {
+        let limit = self.disk.limit();
         ReadBuilder {
-            disk: f(self.disk),
+            disk: f(self.disk.into_inner()).take(limit),
             storage: self.storage,
-            state: self.state,
+            encryption: self.encryption,
         }
     }
 }
-impl<D> ReadBuilder<D> {
+impl<D: io::Read + io::Seek> ReadBuilder<D> {
     pub(super) fn new(
-        disk: D,
-        header: super::FileLocator,
-    ) -> Result<Self, error::MethodNotSupported> {
+        mut disk: D,
+        locator: super::FileLocator,
+    ) -> io::Result<Self>
+    {
+        let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
+        disk.seek(std::io::SeekFrom::Start(locator.header_start))?;
+        disk.read_exact(&mut buf)?;
+        let header = zip_format::Header::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
+        let storage = match header.method {
+            zip_format::CompressionMethod::STORED if locator.content_len.is_some()=> {
+                crate::file::FileStorageKind::Stored
+            },
+            #[cfg(feature = "read-deflate")]
+            zip_format::CompressionMethod::DEFLATE => {
+                crate::file::FileStorageKind::Deflated
+            }
+            _ => return Err(error::MethodNotSupported(()).into()),
+        };
+        disk.seek(std::io::SeekFrom::Current(header.name_len.get() as i64 + header.metadata_len.get() as i64))?;
         Ok(Self {
-            disk,
-            storage: header.storage.ok_or(error::MethodNotSupported(()))?,
-            state: PhantomData,
+            disk: disk.take(locator.content_len.unwrap_or(u64::MAX)),
+            storage,
+            encryption: MaybeEncrypted(locator.encrypted),
         })
     }
 }
 
-impl<D, F> ReadBuilder<D, F, Not<Decrypted>> {
-    fn assert_no_password(self) -> Result<ReadBuilder<D, F, Decrypted>, error::FileLocked> {
-        (!self.storage.encrypted)
-            .then(|| ReadBuilder {
-                disk: self.disk,
-                storage: self.storage,
-                state: PhantomData,
-            })
-            .ok_or(error::FileLocked(()))
-    }
-}
-
-#[cfg(feature = "std")]
-impl<D: io::Seek + io::Read, E> ReadBuilder<D, Not<Found>, E> {
-    pub fn seek_to_data(mut self) -> io::Result<ReadBuilder<D, Found, E>> {
-        // TODO: avoid seeking if we can, since this will often be done in a loop
-        // FIXME: should we be using the local header? This will disagree with most other tools
-        //        really, we want a side channel for "nonfatal errors".
-        self.disk
-            .seek(std::io::SeekFrom::Start(self.storage.start))?;
-        let mut buf = [0; std::mem::size_of::<zip_format::Header>() + 4];
-        self.disk.read_exact(&mut buf)?;
-        let header = zip_format::Header::as_prefix(&buf).ok_or(error::NotAnArchive(()))?;
-        self.disk.seek(std::io::SeekFrom::Current(
-            header.name_len.get() as i64 + header.metadata_len.get() as i64,
-        ))?;
+impl<D> ReadBuilder<D, MaybeEncrypted> {
+    pub fn assert_no_password(self) -> Result<ReadBuilder<D, Decrypted>, error::FileLocked> {
         Ok(ReadBuilder {
             disk: self.disk,
             storage: self.storage,
-            state: PhantomData,
+            encryption: self.encryption.0.is_none().then(|| Decrypted(())).ok_or(error::FileLocked(()))?,
         })
     }
-}
-#[cfg(feature = "std")]
-impl<D: io::Read> ReadBuilder<D, Found> {
-    pub fn remove_encryption_io(self) -> io::Result<Result<ReadBuilder<D, Found, Decrypted>, DecryptBuilder<D>>> {
-        if !self.storage.encrypted {
-            Ok(Ok(ReadBuilder {
-                disk: self.disk,
-                storage: self.storage,
-                state: PhantomData,
-            }))
-        } else {
-            DecryptBuilder::from_io(self).map(Err)
-        }
+    #[cfg(feature = "std")]
+    pub fn remove_encryption_io(self) -> io::Result<Result<ReadBuilder<Decrypt<D>, Decrypted>, DecryptBuilder<D>>>
+    where D: io::Read {
+        Ok(Ok(ReadBuilder {
+            encryption: match self.encryption.0 {
+                Some(expected_byte) => {
+                    return DecryptBuilder::from_io(ReadBuilder {
+                        disk: self.disk,
+                        storage: self.storage,
+                        encryption: expected_byte,
+                    }).map(Err);
+                }
+                None => Decrypted(())
+            },
+            disk: self.disk,
+            storage: self.storage,
+        }.map_disk(Decrypt::from_unlocked)))
     }
 }
-impl<D> ReadBuilder<D, Found, Decrypted> {
+impl<D> ReadBuilder<D, Decrypted> {
     // FIXME: recommend self-reference for owning the store?
     #[cfg(feature = "std")]
     pub fn build_with_buffering<Buffered: std::io::Read>(
@@ -130,14 +121,12 @@ impl<D> ReadBuilder<D, Found, Decrypted> {
         store: &mut Store,
         f: impl FnOnce(D) -> Buffered,
     ) -> Read<'_, D, Buffered> {
-        Read(match self.storage.kind {
-            FileStorageKind::Stored => ReadImpl::Stored {
-                remaining: self.storage.len.expect("todo: error handling when file is STORED and len is not present"),
-                disk: self.disk,
-            },
+        let limit = self.disk.limit();
+        Read(match self.storage {
+            FileStorageKind::Stored => ReadImpl::Stored(self.disk),
             #[cfg(feature = "read-deflate")]
             FileStorageKind::Deflated => ReadImpl::Deflate {
-                disk: f(self.disk).take(self.storage.len.unwrap_or(u64::MAX)),
+                disk: f(self.disk.into_inner()).take(limit),
                 decompressor: {
                     let deflate = store.deflate.get_or_insert_with(Default::default);
                     deflate.0.init();
@@ -154,11 +143,7 @@ impl<D> ReadBuilder<D, Found, Decrypted> {
 impl<D: io::Read, Buffered: io::BufRead> io::Read for Read<'_, D, Buffered> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match &mut self.0 {
-            ReadImpl::Stored { disk, remaining } => {
-                let n = disk.take(*remaining).read(buf)?;
-                *remaining -= n as u64;
-                Ok(n)
-            }
+            ReadImpl::Stored(disk) => disk.read(buf),
             #[cfg(feature = "read-deflate")]
             ReadImpl::Deflate {
                 disk,
@@ -201,16 +186,6 @@ impl Default for InflateBuffer {
     fn default() -> Self {
         Self([0; 32 * 1024])
     }
-}
-
-/// We use an `Option<FileStorage>` in [`super::FileLocator`] to represent files that we might not be able to read.
-#[derive(Debug, Clone)]
-pub(crate) struct FileStorage {
-    pub(crate) start: u64,
-    pub(crate) len: Option<u64>,
-    pub(crate) crc32: u32,
-    pub(crate) encrypted: bool,
-    pub(crate) kind: FileStorageKind,
 }
 
 /// List of available [`zip_format::CompressionMethod`] implementations.

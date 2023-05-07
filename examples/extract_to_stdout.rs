@@ -11,7 +11,6 @@ pub fn main() -> io::Result<()> {
         //   C) file.bufread()?.copy_to(stdout); // note that this requires an owned Read<'extractor>
         let mut reader = file
             .reader()?
-            .seek_to_data()?
             .remove_encryption_io()??
             .build_with_buffering(&mut decompressor, std::io::BufReader::new);
         io::copy(&mut reader,
