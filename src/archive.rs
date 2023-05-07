@@ -36,7 +36,7 @@ impl<'a, M, D> Iterator for Iter<'a, M, D> {
 #[cfg(feature = "std")]
 impl Archive<metadata::std::Full> {
     pub fn open_at(path: impl AsRef<std::path::Path>) -> io::Result<Self> {
-        let mut last_disk = Footer::from_io(std::fs::File::open(path)?)?;
+        let mut last_disk = DirectoryLocator::from_io(std::fs::File::open(path)?)?;
         assert_eq!(last_disk.descriptor.disk_id(), 0);
         let files = last_disk.as_mut().into_directory()?.seek_to_files()?.collect::<Result<_, _>>()?;
         Ok(Self {
@@ -46,7 +46,7 @@ impl Archive<metadata::std::Full> {
     }
 }
 
-pub struct Footer<D> {
+pub struct DirectoryLocator<D> {
     pub disk: D,
     pub descriptor: DiskDescriptor,
 }
@@ -63,7 +63,7 @@ impl DiskDescriptor {
     }
 }
 #[cfg(feature = "std")]
-impl<D: io::Read + io::Seek> Footer<D> {
+impl<D: io::Read + io::Seek> DirectoryLocator<D> {
     pub fn from_io(mut disk: D) -> io::Result<Self> {
         // TODO: optimize this
         let mut buf = vec![];
@@ -72,10 +72,10 @@ impl<D: io::Read + io::Seek> Footer<D> {
             64 * 1024 + core::mem::size_of::<zip_format::Footer>() as u64 + 4 - 2,
         )))?;
         disk.read_to_end(&mut buf)?;
-        Ok(Footer::from_buf_at_offset(&buf, offset)?.with_disk(disk))
+        Ok(DirectoryLocator::from_buf_at_offset(&buf, offset)?.with_disk(disk))
     }
 }
-impl<'a> Footer<&'a [u8]> {
+impl<'a> DirectoryLocator<&'a [u8]> {
     /// Load a zip central directory from a buffer
     pub fn from_buf(disk: &'a [u8]) -> Result<Self, error::NotAnArchive> {
         Self::from_buf_at_offset(disk, 0)
@@ -129,7 +129,7 @@ impl<'a> Footer<&'a [u8]> {
             .ok_or(error::NotAnArchive(()))
     }
 }
-impl<D> Footer<D> {
+impl<D> DirectoryLocator<D> {
     pub fn into_directory(self) -> Result<Directory<D>, error::DiskMismatch> {
         (self.descriptor.directory_location_disk == self.descriptor.disk_id())
             .then(|| Directory {
@@ -142,15 +142,15 @@ impl<D> Footer<D> {
             .ok_or(error::DiskMismatch(()))
     }
 }
-impl<D> Footer<D> {
-    pub fn with_disk<U>(&self, disk: U) -> Footer<U> {
-        Footer {
+impl<D> DirectoryLocator<D> {
+    pub fn with_disk<U>(&self, disk: U) -> DirectoryLocator<U> {
+        DirectoryLocator {
             disk,
             descriptor: self.descriptor.clone(),
         }
     }
-    pub fn as_mut(&mut self) -> Footer<&mut D> {
-        Footer {
+    pub fn as_mut(&mut self) -> DirectoryLocator<&mut D> {
+        DirectoryLocator {
             disk: &mut self.disk,
             descriptor: self.descriptor.clone(),
         }

@@ -1,7 +1,18 @@
 use crate::error::{self, MethodNotSupported};
 
-mod read;
-pub use read::*;
+#[path = "file/read.rs"]
+mod read_imp;
+pub mod read {
+    pub use super::read_imp::{
+        DecryptBuilder,
+
+        ReadBuilder, Not, Found, Decrypted,
+
+        Store,
+    };
+}
+pub use read_imp::{Read, Decrypt};
+use read_imp::*;
 
 #[cfg(not(feature = "std"))]
 type Default = ();
@@ -14,7 +25,7 @@ pub struct File<M = Default, D = ()> {
 }
 #[derive(Clone)]
 pub struct FileLocator {
-    storage: Option<read::FileStorage>,
+    storage: Option<FileStorage>,
     pub(crate) disk_id: u32,
 }
 impl FileLocator {
@@ -43,7 +54,7 @@ impl FileLocator {
 }
 
 impl<M> File<M, ()> {
-    pub fn in_disk<D>(self, disk: crate::Footer<D>) -> Result<File<M, D>, error::DiskMismatch> {
+    pub fn in_disk<D>(self, disk: crate::DirectoryLocator<D>) -> Result<File<M, D>, error::DiskMismatch> {
         (self.locator.disk_id == disk.descriptor.disk_id())
             .then(move || self.assume_in_disk(disk.disk))
             .ok_or(error::DiskMismatch(()))
@@ -81,12 +92,12 @@ impl<D: std::io::Read + std::io::Seek, M> File<M, D> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, read::Found, read::Decrypted>, read::DecryptBuilder<D>>> {
+    pub fn reader_with_decryption(self) -> std::io::Result<Result<ReadBuilder<Decrypt<D>, Found, Decrypted>, DecryptBuilder<D>>> {
         Ok(self
             .reader()?
             .seek_to_data()?
             .remove_encryption_io()?
-            .map(|read| read.map_disk(read::Decrypt::from_unlocked)))
+            .map(|read| read.map_disk(Decrypt::from_unlocked)))
     }
 }
 

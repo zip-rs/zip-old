@@ -1,3 +1,6 @@
+#![no_std]
+#![doc = include_str!("../README.md")]
+
 use core::fmt;
 
 macro_rules! gen {

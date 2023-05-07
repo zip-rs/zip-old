@@ -3,6 +3,8 @@ use core::marker::PhantomData;
 #[cfg(feature = "std")]
 use std::io;
 
+// we're imported by `file.rs` using a path attribute, so our imports are wonky
+#[path = "read/decrypt.rs"]
 mod decrypt;
 pub use decrypt::{Decrypt, DecryptBuilder};
 
@@ -108,7 +110,7 @@ impl<D: io::Seek + io::Read, E> ReadBuilder<D, Not<Found>, E> {
 }
 #[cfg(feature = "std")]
 impl<D: io::Read> ReadBuilder<D, Found> {
-    pub fn remove_encryption_io(self) -> io::Result<Result<ReadBuilder<D, Found, Decrypted>, decrypt::DecryptBuilder<D>>> {
+    pub fn remove_encryption_io(self) -> io::Result<Result<ReadBuilder<D, Found, Decrypted>, DecryptBuilder<D>>> {
         if !self.storage.encrypted {
             Ok(Ok(ReadBuilder {
                 disk: self.disk,
@@ -116,7 +118,7 @@ impl<D: io::Read> ReadBuilder<D, Found> {
                 state: PhantomData,
             }))
         } else {
-            decrypt::DecryptBuilder::from_io(self).map(Err)
+            DecryptBuilder::from_io(self).map(Err)
         }
     }
 }

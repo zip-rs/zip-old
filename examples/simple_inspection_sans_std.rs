@@ -1,5 +1,5 @@
 fn main() -> Result<(), Error> {
-    let disk = zip::Footer::from_buf(include_bytes!("example.zip"))?;
+    let disk = zip::DirectoryLocator::from_buf(include_bytes!("example.zip"))?;
     for file in disk.into_directory()?.iter() {
         println!("{}", core::str::from_utf8(file?.name())?);
     }

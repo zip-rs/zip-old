@@ -2,12 +2,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
 mod archive;
 pub mod error;
 pub mod file;
 pub mod metadata;
 
-pub use archive::{Directory, Footer};
+pub use archive::{Directory, DirectoryLocator};
 #[cfg(feature = "std")]
 pub use archive::Archive;
 
@@ -24,5 +26,5 @@ use std::io::*;
 /// ```
 #[cfg(feature = "std")]
 pub fn files(disk: impl Read + Seek) -> Result<impl Iterator<Item = Result<file::File>>> {
-    Footer::from_io(disk)?.into_directory()?.seek_to_files()
+    DirectoryLocator::from_io(disk)?.into_directory()?.seek_to_files()
 }

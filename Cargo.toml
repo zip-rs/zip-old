@@ -2,12 +2,14 @@
 name = "zip"
 version = "0.10.0-alpha.1"
 edition = "2021"
+description = "A library about ZIP files!"
+license-file = "./LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 miniz_oxide = { version = "0.5.1", optional = true }
-zip-format = { path = "zip-format" }
+zip-format = { version = "0.1.0", path = "zip-format" }
 
 [features]
 std = []
@@ -24,3 +26,17 @@ required-features = ["std"]
 [[example]]
 name = "simple_inspection"
 required-features = ["std"]
+
+
+[package.metadata.docs.rs]
+# We want to document all features.
+all-features = true
+# Since this crate's feature setup is pretty complicated, it is worth opting
+# into a nightly unstable option to show the features that need to be enabled
+# for public API items. To do that, we set 'docsrs', and when that's enabled,
+# we enable the 'doc_auto_cfg' feature.
+#
+# To test this locally, run:
+#
+#     RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+rustdoc-args = ["--cfg", "docsrs"]
