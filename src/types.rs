@@ -557,27 +557,6 @@ mod test {
 
     #[cfg(feature = "time")]
     #[test]
-    fn datetime_from_time_bounds() {
-        use std::convert::TryFrom;
-
-        use super::DateTime;
-        use time::macros::datetime;
-
-        // 1979-12-31 23:59:59
-        assert!(DateTime::try_from(datetime!(1979-12-31 23:59:59 UTC)).is_err());
-
-        // 1980-01-01 00:00:00
-        assert!(DateTime::try_from(datetime!(1980-01-01 00:00:00 UTC)).is_ok());
-
-        // 2107-12-31 23:59:59
-        assert!(DateTime::try_from(datetime!(2107-12-31 23:59:59 UTC)).is_ok());
-
-        // 2108-01-01 00:00:00
-        assert!(DateTime::try_from(datetime!(2108-01-01 00:00:00 UTC)).is_err());
-    }
-
-    #[cfg(feature = "time")]
-    #[test]
     fn datetime_try_from_bounds() {
         use std::convert::TryFrom;
 
