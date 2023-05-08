@@ -64,6 +64,15 @@ enum GenericZipWriter<W: Write + Seek> {
     Zstd(ZstdEncoder<'static, MaybeEncrypted<W>>),
 }
 
+enum ZipWriterState {
+    NotWritingFile,
+    WritingLocalExtraData,
+    WritingCentralOnlyExtraData,
+    WritingFileContents,
+    WritingFileContentsRaw,
+    Closed
+}
+
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
     use super::*;
@@ -101,16 +110,15 @@ pub(crate) mod zip_writer {
         pub(super) files: Vec<ZipFileData>,
         pub(super) files_by_name: HashMap<String, usize>,
         pub(super) stats: ZipWriterStats,
-        pub(super) writing_to_file: bool,
-        pub(super) writing_to_extra_field: bool,
-        pub(super) writing_to_central_extra_field_only: bool,
-        pub(super) writing_raw: bool,
+        pub(super) state: ZipWriterState,
         pub(super) comment: Vec<u8>,
     }
 }
 use crate::result::ZipError::InvalidArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
 pub use zip_writer::ZipWriter;
+use crate::write::ZipFileInitialWritingMode::Content;
+use crate::write::ZipWriterState::NotWritingFile;
 
 #[derive(Default)]
 struct ZipWriterStats {
@@ -125,6 +133,23 @@ struct ZipRawValues {
     uncompressed_size: u64,
 }
 
+/// What operation the new file will be ready for when it is opened.
+#[derive(Copy, Clone, Debug)]
+pub enum ZipFileInitialWritingMode {
+    /// File will be empty and not opened for writing.
+    Empty,
+    /// File will be ready to have extra data added.
+    ExtraData,
+    /// File will be open for writing its contents.
+    Content
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ZipExtraDataField {
+    header_id: u16,
+    data: Vec<u8>
+}
+
 /// Metadata for a file to be written
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
@@ -135,6 +160,7 @@ pub struct FileOptions {
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
     encrypt_with: Option<crate::zipcrypto::ZipCryptoKeys>,
+    pub(crate) write_first: ZipFileInitialWritingMode,
 }
 
 impl FileOptions {
@@ -202,6 +228,14 @@ impl FileOptions {
         self.encrypt_with = Some(crate::zipcrypto::ZipCryptoKeys::derive(password));
         self
     }
+
+    /// Set whether extra data will be written before the content, or only content, or nothing at
+    /// all (the file will be empty).
+    #[must_use]
+    pub fn write_first(mut self, write_first: ZipFileInitialWritingMode) -> FileOptions {
+        self.write_first = write_first;
+        self
+    }
 }
 
 impl Default for FileOptions {
@@ -228,22 +262,38 @@ impl Default for FileOptions {
             permissions: None,
             large_file: false,
             encrypt_with: None,
+            write_first: Content
         }
     }
 }
 
 impl<W: Write + Seek> Write for ZipWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if !self.writing_to_file {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "No file has been started",
-            ));
-        }
         match self.inner.ref_mut() {
             Some(ref mut w) => {
+                match self.state {
+                    NotWritingFile => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "No file has been started",
+                        ));
+                    },
+                    ZipWriterState::Closed => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            "ZipWriter is closed",
+                        ));
+                    },
+                    ZipWriterState::WritingLocalExtraData => {
+                        self.files.last_mut().unwrap().extra_field.write(buf)
+                    }
+                    ZipWriterState::WritingCentralOnlyExtraData => {
+
+                    }
+                    ZipWriterState::WritingFileContents => {}
+                    ZipWriterState::WritingFileContentsRaw => {}
+                }
                 if self.writing_to_extra_field {
-                    self.files.last_mut().unwrap().extra_field.write(buf)
                 } else {
                     let write_result = w.write(buf);
                     if let Ok(count) = write_result {
@@ -322,11 +372,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             files,
             files_by_name,
             stats: Default::default(),
-            writing_to_file: false,
-            writing_to_extra_field: false,
-            writing_to_central_extra_field_only: false,
-            comment: footer.zip_file_comment,
-            writing_raw: true, // avoid recomputing the last file's header
+            state: NotWritingFile,
+            comment: footer.zip_file_comment
         })
     }
 }
@@ -389,17 +436,21 @@ impl<W: Write + Seek> ZipWriter<W> {
             files: Vec::new(),
             files_by_name: HashMap::new(),
             stats: Default::default(),
-            writing_to_file: false,
-            writing_to_extra_field: false,
-            writing_to_central_extra_field_only: false,
-            writing_raw: false,
+            state: NotWritingFile,
             comment: Vec::new(),
         }
     }
 
     /// Returns true if a file is currently open for writing.
     pub fn is_writing_file(&self) -> bool {
-        self.writing_to_file && !self.inner.is_closed()
+        match self.state {
+            NotWritingFile => false,
+            ZipWriterState::WritingLocalExtraData => true,
+            ZipWriterState::WritingCentralOnlyExtraData => true,
+            ZipWriterState::WritingFileContents => true,
+            ZipWriterState::WritingFileContentsRaw => true,
+            ZipWriterState::Closed => false
+        }
     }
 
     /// Set ZIP archive comment.
@@ -502,19 +553,22 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
-        if !self.writing_to_file {
-            debug_assert!(!self.writing_to_extra_field);
-            return Ok(());
-        }
-        if self.writing_to_extra_field {
-            // Implicitly calling [`ZipWriter::end_extra_data`] for empty files.
-            self.end_extra_data()?;
-        }
-        let make_plain_writer = self
-            .inner
-            .prepare_next_writer(CompressionMethod::Stored, None)?;
-        self.inner.switch_to(make_plain_writer)?;
-        match mem::replace(&mut self.inner, Closed) {
+        match self.state {
+            NotWritingFile => {
+                return Ok(());
+            }
+            ZipWriterState::WritingLocalExtraData => {
+                self.end_extra_data()?;
+            }
+            ZipWriterState::WritingCentralOnlyExtraData => {
+                self.end_extra_data()?;
+            }
+            ZipWriterState::WritingFileContents => {
+                let make_plain_writer = self
+                    .inner
+                    .prepare_next_writer(CompressionMethod::Stored, None)?;
+                self.inner.switch_to(make_plain_writer)?;
+                match mem::replace(&mut self.inner, Closed) {
             Storer(MaybeEncrypted::Encrypted(writer)) => {
                 let crc32 = self.stats.hasher.clone().finalize();
                 self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
@@ -524,23 +578,28 @@ impl<W: Write + Seek> ZipWriter<W> {
         }
         let writer = self.inner.get_plain();
 
-        if !self.writing_raw {
-            let file = match self.files.last_mut() {
-                None => return Ok(()),
-                Some(f) => f,
-            };
-            file.crc32 = self.stats.hasher.clone().finalize();
-            file.uncompressed_size = self.stats.bytes_written;
+                if !self.writing_raw {
+                    let file = match self.files.last_mut() {
+                        None => return Ok(()),
+                        Some(f) => f,
+                    };
+                    file.crc32 = self.stats.hasher.clone().finalize();
+                    file.uncompressed_size = self.stats.bytes_written;
 
-            let file_end = writer.stream_position()?;
-            debug_assert!(file_end >= self.stats.start);
-            file.compressed_size = file_end - self.stats.start;
+                    let file_end = writer.stream_position()?;
+                    debug_assert!(file_end >= self.stats.start);
+                    file.compressed_size = file_end - self.stats.start;
 
-            update_local_file_header(writer, file)?;
-            writer.seek(SeekFrom::Start(file_end))?;
+                    update_local_file_header(writer, file)?;
+                    writer.seek(SeekFrom::Start(file_end))?;
+                }
+            }
+            ZipWriterState::WritingFileContentsRaw => {}
+            ZipWriterState::Closed => {
+                return Ok(());
+            }
         }
-
-        self.writing_to_file = false;
+        self.state = NotWritingFile;
         Ok(())
     }
 
@@ -556,9 +615,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
-        self.writing_to_extra_field = false;
-        self.writing_to_file = false;
-        self.writing_raw = false;
+        self.state = NotWritingFile;
         Ok(())
     }
 
@@ -1344,31 +1401,29 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     Ok(())
 }
 
-fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
-    for field in &file.extra_field {
-        if field.data.len() > u16::MAX as usize {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Extra-data field can't exceed u16::MAX bytes",
-            )));
-        }
-        if field.header_id == 0x0001 {
-            return Err(ZipError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "No custom ZIP64 extra data allowed",
-            )));
-        }
+fn validate_extra_data(field: &ZipExtraDataField) -> ZipResult<()> {
+    if field.data.len() > u16::MAX as usize {
+        return Err(ZipError::Io(io::Error::new(
+            io::ErrorKind::Other,
+            "Extra-data field can't exceed u16::MAX bytes",
+        )));
+    }
+    if field.header_id == 0x0001 {
+        return Err(ZipError::Io(io::Error::new(
+            io::ErrorKind::Other,
+            "No custom ZIP64 extra data allowed",
+        )));
+    }
 
-        #[cfg(not(feature = "unreserved"))]
-        {
-            if field.header_id <= 31 || EXTRA_FIELD_MAPPING.iter().any(|&mapped| mapped == kind) {
-                return Err(ZipError::Io(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "Extra data header ID {field.header_id:#06} requires crate feature \"unreserved\"",
-                    ),
-                )));
-            }
+    #[cfg(not(feature = "unreserved"))]
+    {
+        if field.header_id <= 31 || EXTRA_FIELD_MAPPING.iter().any(|&mapped| mapped == kind) {
+            return Err(ZipError::Io(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Extra data header ID {field.header_id:#06} requires crate feature \"unreserved\"",
+                ),
+            )));
         }
     }
 
