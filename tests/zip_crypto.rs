@@ -21,6 +21,23 @@ use std::io::Cursor;
 use std::io::Read;
 
 #[test]
+fn encrypting_file() {
+    use zip::unstable::write::FileOptionsExt;
+    use std::io::{Read, Write};
+    let mut buf = vec![0; 2048];
+    let mut archive = zip::write::ZipWriter::new(std::io::Cursor::new(&mut buf));
+    archive.start_file("name", zip::write::FileOptions::default().with_deprecated_encryption(b"password")).unwrap();
+    archive.write_all(b"test").unwrap();
+    archive.finish().unwrap();
+    drop(archive);
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&mut buf)).unwrap();
+    let mut file = archive.by_index_decrypt(0, b"password").unwrap().unwrap();
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).unwrap();
+    assert_eq!(buf, b"test");
+
+}
+#[test]
 fn encrypted_file() {
     let zip_file_bytes = &mut Cursor::new(vec![
         0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0x54, 0xbd, 0xb5, 0x50, 0x2f,
