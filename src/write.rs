@@ -475,12 +475,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             self.stats.hasher = Hasher::new();
         }
         if let Some(keys) = options.encrypt_with {
-            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
-                writer: mem::replace(&mut self.inner, Closed).unwrap(),
-                buffer: vec![],
-                keys,
-            };
-            let crypto_header = [0u8; 12];
+            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter { writer: core::mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(), buffer: vec![], keys };
+            let mut crypto_header = [0u8; 12];
 
             zipwriter.write_all(&crypto_header)?;
             self.inner = Storer(MaybeEncrypted::Encrypted(zipwriter));
@@ -509,9 +505,15 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Implicitly calling [`ZipWriter::end_extra_data`] for empty files.
             self.end_extra_data()?;
         }
-        let make_plain_writer = self
+        let make_plain_writer = match self
             .inner
-            .prepare_next_writer(CompressionMethod::Stored, None)?;
+            .prepare_next_writer(CompressionMethod::Stored, None)? {
+            MaybeEncrypted::Encrypted(writer) => {
+                let crc32 = self.stats.hasher.clone().finalize();
+                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
+            },
+            MaybeEncrypted::Unencrypted(writer) => writer
+        }
         self.inner.switch_to(make_plain_writer)?;
         let writer = self.inner.get_plain();
 
