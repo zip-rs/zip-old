@@ -8,7 +8,6 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::num::Wrapping;
 
-
 /// A container to hold the current key state
 #[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
