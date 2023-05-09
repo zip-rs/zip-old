@@ -3,13 +3,26 @@
 //! The following paper was used to implement the ZipCrypto algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
+use std::collections::hash_map::DefaultHasher;
+use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::num::Wrapping;
 
+
 /// A container to hold the current key state
-struct ZipCryptoKeys {
+#[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
+pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
     key_1: Wrapping<u32>,
     key_2: Wrapping<u32>,
+}
+
+impl Debug for ZipCryptoKeys {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut t = DefaultHasher::new();
+        self.hash(&mut t);
+        f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()))
+    }
 }
 
 impl ZipCryptoKeys {
@@ -49,6 +62,13 @@ impl ZipCryptoKeys {
     fn crc32(crc: Wrapping<u32>, input: u8) -> Wrapping<u32> {
         (crc >> 8) ^ Wrapping(CRCTABLE[((crc & Wrapping(0xff)).0 as u8 ^ input) as usize])
     }
+    pub(crate) fn derive(password: &[u8]) -> ZipCryptoKeys {
+        let mut keys = ZipCryptoKeys::new();
+        for byte in password.iter() {
+            keys.update(*byte);
+        }
+        keys
+    }
 }
 
 /// A ZipCrypto reader with unverified password
@@ -70,17 +90,10 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
     /// would be impossible to decrypt files that were encrypted with a
     /// password byte sequence that is unrepresentable in UTF-8.
     pub fn new(file: R, password: &[u8]) -> ZipCryptoReader<R> {
-        let mut result = ZipCryptoReader {
+        ZipCryptoReader {
             file,
-            keys: ZipCryptoKeys::new(),
-        };
-
-        // Key the cipher by updating the keys with the password.
-        for byte in password.iter() {
-            result.keys.update(*byte);
+            keys: ZipCryptoKeys::derive(password),
         }
-
-        result
     }
 
     /// Read the ZipCrypto header bytes and validate the password.
@@ -120,6 +133,31 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         }
 
         Ok(Some(ZipCryptoReaderValid { reader: self }))
+    }
+}
+pub(crate) struct ZipCryptoWriter<W> {
+    pub(crate) writer: W,
+    pub(crate) buffer: Vec<u8>,
+    pub(crate) keys: ZipCryptoKeys,
+}
+impl<W: std::io::Write> ZipCryptoWriter<W> {
+    pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
+        self.buffer[11] = (crc32 >> 24) as u8;
+        for byte in self.buffer.iter_mut() {
+            *byte = self.keys.encrypt_byte(*byte);
+        }
+        self.writer.write_all(&self.buffer)?;
+        self.writer.flush()?;
+        Ok(self.writer)
+    }
+}
+impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
