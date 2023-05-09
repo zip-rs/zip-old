@@ -23,19 +23,19 @@ use std::io::Read;
 #[test]
 fn encrypting_file() {
     use std::io::{Read, Write};
-    use zip::unstable::write::FileOptionsExt;
+    use zip_next::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
-    let mut archive = zip::write::ZipWriter::new(Cursor::new(&mut buf));
+    let mut archive = zip_next::write::ZipWriter::new(Cursor::new(&mut buf));
     archive
         .start_file(
             "name",
-            zip::write::FileOptions::default().with_deprecated_encryption(b"password"),
+            zip_next::write::FileOptions::default().with_deprecated_encryption(b"password"),
         )
         .unwrap();
     archive.write_all(b"test").unwrap();
     archive.finish().unwrap();
     drop(archive);
-    let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
+    let mut archive = zip_next::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap().unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
