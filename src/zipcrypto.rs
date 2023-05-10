@@ -4,7 +4,7 @@
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash};
+use std::hash::Hash;
 use std::num::Wrapping;
 
 /// A container to hold the current key state
@@ -19,7 +19,7 @@ pub(crate) struct ZipCryptoKeys {
 impl Debug for ZipCryptoKeys {
     #[allow(unreachable_code)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        #[cfg(not(any(test,fuzzing)))]
+        #[cfg(not(any(test, fuzzing)))]
         {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::Hasher;
@@ -27,9 +27,11 @@ impl Debug for ZipCryptoKeys {
             self.hash(&mut t);
             return f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()));
         }
-        #[cfg(any(test,fuzzing))]
-        return f.write_fmt(format_args!("ZipCryptoKeys({:#10x},{:#10x},{:#10x})",
-                                        self.key_0, self.key_1, self.key_2));
+        #[cfg(any(test, fuzzing))]
+        return f.write_fmt(format_args!(
+            "ZipCryptoKeys({:#10x},{:#10x},{:#10x})",
+            self.key_0, self.key_1, self.key_2
+        ));
     }
 }
 
