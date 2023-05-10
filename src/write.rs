@@ -475,8 +475,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             self.stats.hasher = Hasher::new();
         }
         if let Some(keys) = options.encrypt_with {
-            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter { writer: core::mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(), buffer: vec![], keys };
-            let mut crypto_header = [0u8; 12];
+            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter { writer: mem::replace(&mut self.inner, Closed).unwrap(), buffer: vec![], keys };
+            let crypto_header = [0u8; 12];
 
             zipwriter.write_all(&crypto_header)?;
             self.inner = Storer(MaybeEncrypted::Encrypted(zipwriter));
@@ -505,15 +505,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             // Implicitly calling [`ZipWriter::end_extra_data`] for empty files.
             self.end_extra_data()?;
         }
-        let make_plain_writer = match self
+        let make_plain_writer = self
             .inner
-            .prepare_next_writer(CompressionMethod::Stored, None)? {
-            MaybeEncrypted::Encrypted(writer) => {
-                let crc32 = self.stats.hasher.clone().finalize();
-                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
-            },
-            MaybeEncrypted::Unencrypted(writer) => writer
-        }
+            .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
         let writer = self.inner.get_plain();
 
@@ -1036,12 +1030,14 @@ impl<W: Write + Seek> Drop for ZipWriter<W> {
     }
 }
 
+type SwitchWriterFunction<W> = Box<dyn FnOnce(MaybeEncrypted<W>) -> GenericZipWriter<W>>;
+
 impl<W: Write + Seek> GenericZipWriter<W> {
     fn prepare_next_writer(
         &self,
         compression: CompressionMethod,
         compression_level: Option<i32>,
-    ) -> ZipResult<Box<dyn FnOnce(MaybeEncrypted<W>) -> GenericZipWriter<W>>> {
+    ) -> ZipResult<SwitchWriterFunction<W>> {
         if let Closed = self {
             return Err(
                 io::Error::new(io::ErrorKind::BrokenPipe, "ZipWriter was already closed").into(),
@@ -1121,7 +1117,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
     fn switch_to(
         &mut self,
-        make_new_self: Box<dyn FnOnce(MaybeEncrypted<W>) -> GenericZipWriter<W>>,
+        make_new_self: SwitchWriterFunction<W>,
     ) -> ZipResult<()> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
