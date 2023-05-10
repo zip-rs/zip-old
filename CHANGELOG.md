@@ -111,3 +111,10 @@
 ### Fixed
 
  - Fixed a bug that occurs when a filename in a ZIP32 file includes the ZIP64 magic bytes.
+
+## [0.7.4]
+
+### Merged from upstream
+
+- Added experimental [`zip_next::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting
+  files with PKWARE encryption.

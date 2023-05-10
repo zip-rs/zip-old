@@ -57,7 +57,7 @@ pub(crate) mod zip_archive {
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i)?;
     ///         println!("Filename: {}", file.name());
-    ///         std::io::copy(&mut file, &mut std::io::stdout());
+    ///         std::io::copy(&mut file, &mut std::io::stdout())?;
     ///     }
     ///
     ///     Ok(())
