@@ -519,7 +519,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
             }
             Storer(w) => self.inner = Storer(w),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
         let writer = self.inner.get_plain();
 
