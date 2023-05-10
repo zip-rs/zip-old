@@ -475,7 +475,11 @@ impl<W: Write + Seek> ZipWriter<W> {
             self.stats.hasher = Hasher::new();
         }
         if let Some(keys) = options.encrypt_with {
-            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter { writer: mem::replace(&mut self.inner, Closed).unwrap(), buffer: vec![], keys };
+            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
+                writer: mem::replace(&mut self.inner, Closed).unwrap(),
+                buffer: vec![],
+                keys,
+            };
             let crypto_header = [0u8; 12];
 
             zipwriter.write_all(&crypto_header)?;
@@ -1115,10 +1119,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         }
     }
 
-    fn switch_to(
-        &mut self,
-        make_new_self: SwitchWriterFunction<W>,
-    ) -> ZipResult<()> {
+    fn switch_to(&mut self, make_new_self: SwitchWriterFunction<W>) -> ZipResult<()> {
         let bare = match mem::replace(self, Closed) {
             Storer(w) => w,
             #[cfg(any(
