@@ -513,6 +513,14 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
+        match mem::replace(&mut self.inner, Closed) {
+            Storer(MaybeEncrypted::Encrypted(writer)) => {
+                let crc32 = self.stats.hasher.clone().finalize();
+                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
+            }
+            Storer(w) => self.inner = Storer(w),
+            _ => unreachable!()
+        }
         let writer = self.inner.get_plain();
 
         if !self.writing_raw {
