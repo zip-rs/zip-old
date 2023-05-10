@@ -3,9 +3,8 @@
 //! The following paper was used to implement the ZipCrypto algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
-use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 use std::num::Wrapping;
 
 /// A container to hold the current key state
@@ -22,6 +21,8 @@ impl Debug for ZipCryptoKeys {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         #[cfg(not(any(test,fuzzing)))]
         {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::Hasher;
             let mut t = DefaultHasher::new();
             self.hash(&mut t);
             return f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()));
