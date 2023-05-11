@@ -92,12 +92,12 @@ jobs:
         run: |
           cargo fuzz run fuzz_read -- -timeout=1s -jobs=10 -workers=2 -runs=1000000 -max_len=5000000000
       - name: Upload any failure inputs
-        if-no-files-found: ignore
         if: always()
         uses: actions/upload-artifact@v3
         with:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
+          if-no-files-found: ignore
 
   fuzz_write:
     runs-on: ubuntu-latest
@@ -118,9 +118,9 @@ jobs:
         run: |
           cargo fuzz run fuzz_write -- -timeout=1s -jobs=30 -workers=2 -runs=100000 -max_len=5000000000
       - name: Upload any failure inputs
-        if-no-files-found: ignore
         if: always()
         uses: actions/upload-artifact@v3
         with:
           name: fuzz_write_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
+          if-no-files-found: ignore
