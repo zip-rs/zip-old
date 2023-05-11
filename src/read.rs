@@ -352,7 +352,9 @@ impl<R: Read + Seek> ZipArchive<R> {
                 "Invalid central directory size or offset",
             ))?;
         if directory_start > search_upper_bound {
-            return Err(ZipError::InvalidArchive("Invalid central directory size or offset"));
+            return Err(ZipError::InvalidArchive(
+                "Invalid central directory size or offset",
+            ));
         }
 
         if footer64.disk_number != footer64.disk_with_central_directory {

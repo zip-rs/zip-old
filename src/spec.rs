@@ -61,9 +61,7 @@ impl CentralDirectoryEnd {
         })
     }
 
-    pub fn find_and_parse<T: Read + Seek>(
-        reader: &mut T,
-    ) -> ZipResult<(CentralDirectoryEnd, u64)> {
+    pub fn find_and_parse<T: Read + Seek>(reader: &mut T) -> ZipResult<(CentralDirectoryEnd, u64)> {
         const HEADER_SIZE: u64 = 22;
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
