@@ -1481,6 +1481,7 @@ mod test {
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
+    use zstd::zstd_safe::WriteBuf;
 
     #[test]
     fn write_empty_zip() {
@@ -1730,6 +1731,62 @@ mod test {
         writer
             .start_file("foo/bar/test", FileOptions::default())
             .expect_err("Expected duplicate filename not to be allowed");
+    }
+
+    #[test]
+    fn test_filename_looks_like_zip64_locator() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "PK\u{6}\u{7}\0\0\0\u{11}\0\0\0\0\0\0\0\0\0\0\0\0",
+                FileOptions::default(),
+            )
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        let _ = ZipArchive::new(zip).unwrap();
+    }
+
+    #[test]
+    fn test_filename_looks_like_zip64_locator_2() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+                FileOptions::default(),
+            )
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        println!("{:02x?}", zip.get_ref());
+        let _ = ZipArchive::new(zip).unwrap();
+    }
+
+    #[test]
+    fn test_filename_looks_like_zip64_locator_2a() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "PK\u{6}\u{6}PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+                FileOptions::default(),
+            )
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        println!("{:02x?}", zip.get_ref());
+        let _ = ZipArchive::new(zip).unwrap();
+    }
+
+    #[test]
+    fn test_filename_looks_like_zip64_locator_3() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.start_file("\0PK\u{6}\u{6}", FileOptions::default()).unwrap();
+        writer
+            .start_file(
+                "\0\u{4}\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{3}",
+                FileOptions::default(),
+            )
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        println!("{:02x?}", zip.get_ref());
+        let _ = ZipArchive::new(zip).unwrap();
     }
 
     #[test]

@@ -351,6 +351,9 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::InvalidArchive(
                 "Invalid central directory size or offset",
             ))?;
+        if directory_start > search_upper_bound {
+            return Err(ZipError::InvalidArchive("Invalid central directory size or offset"));
+        }
 
         if footer64.disk_number != footer64.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");

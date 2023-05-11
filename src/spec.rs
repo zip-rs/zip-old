@@ -61,14 +61,14 @@ impl CentralDirectoryEnd {
         })
     }
 
-    pub fn find_and_parse<T: Read + io::Seek>(
+    pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
     ) -> ZipResult<(CentralDirectoryEnd, u64)> {
         const HEADER_SIZE: u64 = 22;
         const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + ::std::u16::MAX as u64);
+        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + u16::MAX as u64);
 
         if file_length < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
@@ -155,14 +155,14 @@ pub struct Zip64CentralDirectoryEnd {
 }
 
 impl Zip64CentralDirectoryEnd {
-    pub fn find_and_parse<T: Read + io::Seek>(
+    pub fn find_and_parse<T: Read + Seek>(
         reader: &mut T,
         nominal_offset: u64,
         search_upper_bound: u64,
     ) -> ZipResult<(Zip64CentralDirectoryEnd, u64)> {
-        let mut pos = nominal_offset;
+        let mut pos = search_upper_bound;
 
-        while pos <= search_upper_bound {
+        while pos >= nominal_offset {
             reader.seek(io::SeekFrom::Start(pos))?;
 
             if reader.read_u32::<LittleEndian>()? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
@@ -195,7 +195,7 @@ impl Zip64CentralDirectoryEnd {
                 ));
             }
 
-            pos += 1;
+            pos -= 1;
         }
 
         Err(ZipError::InvalidArchive(
