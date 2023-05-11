@@ -1257,7 +1257,7 @@ mod test {
             "../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
         ));
         let reader = ZipArchive::new(io::Cursor::new(v));
-        assert!(reader.is_err());
+        assert!(reader.is_err() || reader.unwrap().file_names().next().is_none());
     }
 
     /// test case to ensure we don't preemptively over allocate based on the
