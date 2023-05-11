@@ -192,8 +192,11 @@ impl Zip64CentralDirectoryEnd {
                     archive_offset,
                 ));
             }
-
-            pos -= 1;
+            if pos > 0 {
+                pos -= 1;
+            } else {
+                break;
+            }
         }
 
         Err(ZipError::InvalidArchive(
