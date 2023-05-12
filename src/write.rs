@@ -439,7 +439,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             let header_start = self.inner.get_plain().stream_position()?;
             let name = name.into();
-            validate_name(&name)?;
 
             let permissions = options.permissions.unwrap_or(0o100644);
             let file = ZipFileData {
@@ -1032,29 +1031,6 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.insert_file_data(dest_data)?;
         Ok(())
     }
-}
-
-#[cfg_attr(fuzzing, visibility::make(pub))]
-#[cfg_attr(fuzzing, allow(missing_docs))]
-pub(crate) fn validate_name(name: &String) -> ZipResult<()> {
-    let bytes = name.as_bytes();
-    let mut current_window = [0u8; 4];
-    for window in bytes.windows(4) {
-        current_window.copy_from_slice(window);
-        let magic_number = u32::from_le_bytes(current_window);
-        match magic_number {
-            spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
-                return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
-            }
-            spec::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE => {
-                return Err(InvalidArchive(
-                    "Filename can't contain ZIP64 end-locator signature",
-                ));
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 impl<W: Write + Seek> Drop for ZipWriter<W> {

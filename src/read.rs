@@ -357,10 +357,9 @@ impl<R: Read + Seek> ZipArchive<R> {
             ));
         }
 
-        let supported = if footer64.disk_number != footer64.disk_with_central_directory {
-            unsupported_zip_error("Support for multi-disk files is not implemented")
-        } else if !footer.record_too_small()
-            && footer.disk_number as u32 != locator64.disk_with_central_directory
+        let supported = if (footer64.disk_number != footer64.disk_with_central_directory)
+            || (!footer.record_too_small()
+                && footer.disk_number as u32 != locator64.disk_with_central_directory)
         {
             unsupported_zip_error("Support for multi-disk files is not implemented")
         } else {
@@ -371,7 +370,7 @@ impl<R: Read + Seek> ZipArchive<R> {
             archive_offset,
             directory_start,
             footer64.number_of_files as usize,
-            supported
+            supported,
         ))
     }
 
@@ -383,37 +382,39 @@ impl<R: Read + Seek> ZipArchive<R> {
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
         // Check if file has a zip64 footer
-        let (archive_offset_64, directory_start_64, number_of_files_64,
-                supported_64) =
+        let (archive_offset_64, directory_start_64, number_of_files_64, supported_64) =
             match Self::get_directory_counts_zip64(reader, footer, cde_start_pos) {
-            Ok(result) => result,
-            Err(_) => return Self::get_directory_counts_zip32(footer, cde_start_pos)
-        };
+                Ok(result) => result,
+                Err(_) => return Self::get_directory_counts_zip32(footer, cde_start_pos),
+            };
         // Check if it also has a zip32 footer
         let (archive_offset_32, directory_start_32, number_of_files_32) =
             match Self::get_directory_counts_zip32(footer, cde_start_pos) {
-            Ok(result) => result,
-            Err(_) => {
-                supported_64?;
-                return Ok((archive_offset_64, directory_start_64, number_of_files_64))
-            }
-        };
+                Ok(result) => result,
+                Err(_) => {
+                    supported_64?;
+                    return Ok((archive_offset_64, directory_start_64, number_of_files_64));
+                }
+            };
         // It has both, so check if the zip64 footer is valid; if not, assume zip32
         if archive_offset_64 < u32::MAX as u64 && archive_offset_64 != archive_offset_32
-                || archive_offset_32 != u32::MAX as u64 {
+            || archive_offset_32 != u32::MAX as u64
+        {
             return Ok((archive_offset_32, directory_start_32, number_of_files_32));
         }
         if directory_start_64 < u32::MAX as u64 && directory_start_64 != directory_start_32
-            || directory_start_32 != u32::MAX as u64 {
+            || directory_start_32 != u32::MAX as u64
+        {
             return Ok((archive_offset_32, directory_start_32, number_of_files_32));
         }
         if number_of_files_64 < u32::MAX as usize && number_of_files_64 != number_of_files_32
-            || number_of_files_32 != u32::MAX as usize {
+            || number_of_files_32 != u32::MAX as usize
+        {
             return Ok((archive_offset_32, directory_start_32, number_of_files_32));
         }
         // It is, so we assume a zip64
         supported_64?;
-        return Ok((archive_offset_64, directory_start_64, number_of_files_64))
+        Ok((archive_offset_64, directory_start_64, number_of_files_64))
     }
 
     /// Read a ZIP archive, collecting the files it contains
