@@ -1244,16 +1244,14 @@ mod test {
     #[test]
     fn zip64_magic_in_filenames() {
         let files = vec![
-            include_bytes!("../tests/data/zip64_magic_in_filename_1.zip"),
-            include_bytes!("../tests/data/zip64_magic_in_filename_2.zip"),
-            include_bytes!("../tests/data/zip64_magic_in_filename_3.zip"),
+            include_bytes!("../tests/data/zip64_magic_in_filename_1.zip").to_vec(),
+            include_bytes!("../tests/data/zip64_magic_in_filename_2.zip").to_vec(),
+            include_bytes!("../tests/data/zip64_magic_in_filename_3.zip").to_vec()
         ];
         // Although we don't allow adding files whose names contain the ZIP64 CDB-end or
         // CDB-end-locator signatures, we still read them when they aren't genuinely ambiguous.
         for file in files {
-            let mut v = Vec::new();
-            v.extend_from_slice(file);
-            ZipArchive::new(Cursor::new(v)).unwrap();
+            ZipArchive::new(Cursor::new(file)).unwrap();
         }
     }
 
