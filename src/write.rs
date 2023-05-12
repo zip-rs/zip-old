@@ -1037,11 +1037,10 @@ impl<W: Write + Seek> ZipWriter<W> {
 #[cfg_attr(fuzzing, visibility::make(pub))]
 #[cfg_attr(fuzzing, allow(missing_docs))]
 pub(crate) fn validate_name(name: &String) -> ZipResult<()> {
+    let bytes = name.as_bytes();
     for (index, _) in name.match_indices("PK") {
-        if name.len() >= index + 4 {
-            let magic_number = name[index..index + 4]
-                .as_bytes()
-                .read_u32::<LittleEndian>()?;
+        if bytes.len() >= index + 4 {
+            let magic_number = (&bytes[index..]).read_u32::<LittleEndian>()?;
             match magic_number {
                 spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
                     return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
