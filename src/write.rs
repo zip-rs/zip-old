@@ -1777,7 +1777,9 @@ mod test {
     #[test]
     fn test_filename_looks_like_zip64_locator_3() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer.start_file("\0PK\u{6}\u{6}", FileOptions::default()).unwrap();
+        writer
+            .start_file("\0PK\u{6}\u{6}", FileOptions::default())
+            .unwrap();
         writer
             .start_file(
                 "\0\u{4}\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{3}",
