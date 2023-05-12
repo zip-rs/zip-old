@@ -397,9 +397,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                 }
             };
         // It has both, so check if the zip64 footer is valid; if not, assume zip32
-        if directory_start_64 - archive_offset_64 != directory_start_32 - archive_offset_32 {
-            return Ok((archive_offset_32, directory_start_32, number_of_files_32));
-        }
         if number_of_files_64 != number_of_files_32 && number_of_files_32 != u16::MAX as usize {
             return Ok((archive_offset_32, directory_start_32, number_of_files_32));
         }
