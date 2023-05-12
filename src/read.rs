@@ -1124,13 +1124,11 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 #[cfg(test)]
 mod test {
     use crate::ZipArchive;
-    use io::Cursor;
-    use std::io;
+    use std::io::Cursor;
 
     #[test]
     fn invalid_offset() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset.zip"));
@@ -1141,7 +1139,6 @@ mod test {
     #[test]
     fn invalid_offset2() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset2.zip"));
@@ -1152,7 +1149,6 @@ mod test {
     #[test]
     fn zip64_with_leading_junk() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
@@ -1163,7 +1159,6 @@ mod test {
     #[test]
     fn zip_contents() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -1175,7 +1170,6 @@ mod test {
     #[test]
     fn zip_read_streaming() {
         use super::read_zipfile_from_stream;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -1190,7 +1184,7 @@ mod test {
     #[test]
     fn zip_clone() {
         use super::ZipArchive;
-        use std::io::{self, Read};
+        use std::io::Read;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
@@ -1231,7 +1225,6 @@ mod test {
     #[test]
     fn file_and_dir_predicates() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/files_and_dirs.zip"));
@@ -1270,7 +1263,6 @@ mod test {
     #[test]
     fn invalid_cde_number_of_files_allocation_smaller_offset() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!(
@@ -1286,7 +1278,6 @@ mod test {
     #[test]
     fn invalid_cde_number_of_files_allocation_greater_offset() {
         use super::ZipArchive;
-        use std::io;
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!(
