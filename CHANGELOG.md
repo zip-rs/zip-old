@@ -116,5 +116,11 @@
 
 ### Merged from upstream
 
-- Added experimental [`zip_next::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting
-  files with PKWARE encryption.
+ - Added experimental [`zip_next::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting
+   files with PKWARE encryption.
+
+## [0.7.5]
+
+### Fixed
+
+ - Fixed a bug that occurs when ZIP64 magic bytes occur twice in a filename or across two filenames.
