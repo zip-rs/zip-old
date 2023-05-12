@@ -51,6 +51,9 @@ impl FileOperation {
 fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    operation: &FileOperation) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
+    if zip_next::write::validate_name(&operation.get_name()).is_err() {
+        return Ok(());
+    }
     match operation {
         FileOperation::Write {file, mut options, ..} => {
             if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {

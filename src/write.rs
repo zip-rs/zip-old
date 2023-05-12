@@ -439,7 +439,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             let header_start = self.inner.get_plain().stream_position()?;
             let name = name.into();
-            Self::validate_name(&name)?;
+            validate_name(&name)?;
 
             let permissions = options.permissions.unwrap_or(0o100644);
             let file = ZipFileData {
@@ -1032,27 +1032,30 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.insert_file_data(dest_data)?;
         Ok(())
     }
-    fn validate_name(name: &String) -> ZipResult<()> {
-        for (index, _) in name.match_indices("PK") {
-            if name.len() >= index + 4 {
-                let magic_number = name[index..index + 4]
-                    .as_bytes()
-                    .read_u32::<LittleEndian>()?;
-                match magic_number {
-                    spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
-                        return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
-                    }
-                    spec::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE => {
-                        return Err(InvalidArchive(
-                            "Filename can't contain ZIP64 end-locator signature",
-                        ));
-                    }
-                    _ => {}
+}
+
+#[cfg_attr(fuzzing, visibility::make(pub))]
+#[cfg_attr(fuzzing, allow(missing_docs))]
+pub(crate) fn validate_name(name: &String) -> ZipResult<()> {
+    for (index, _) in name.match_indices("PK") {
+        if name.len() >= index + 4 {
+            let magic_number = name[index..index + 4]
+                .as_bytes()
+                .read_u32::<LittleEndian>()?;
+            match magic_number {
+                spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
+                    return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
                 }
+                spec::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE => {
+                    return Err(InvalidArchive(
+                        "Filename can't contain ZIP64 end-locator signature",
+                    ));
+                }
+                _ => {}
             }
         }
-        Ok(())
     }
+    Ok(())
 }
 
 impl<W: Write + Seek> Drop for ZipWriter<W> {
