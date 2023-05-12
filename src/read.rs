@@ -1123,6 +1123,10 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 
 #[cfg(test)]
 mod test {
+    use crate::ZipArchive;
+    use io::Cursor;
+    use std::io;
+
     #[test]
     fn invalid_offset() {
         use super::ZipArchive;
@@ -1130,7 +1134,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset.zip"));
-        let reader = ZipArchive::new(io::Cursor::new(v));
+        let reader = ZipArchive::new(Cursor::new(v));
         assert!(reader.is_err());
     }
 
@@ -1141,7 +1145,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/invalid_offset2.zip"));
-        let reader = ZipArchive::new(io::Cursor::new(v));
+        let reader = ZipArchive::new(Cursor::new(v));
         assert!(reader.is_err());
     }
 
@@ -1152,7 +1156,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/zip64_demo.zip"));
-        let reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let reader = ZipArchive::new(Cursor::new(v)).unwrap();
         assert_eq!(reader.len(), 1);
     }
 
@@ -1163,7 +1167,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
-        let mut reader = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
         assert_eq!(reader.comment(), b"");
         assert_eq!(reader.by_index(0).unwrap().central_header_start(), 77);
     }
@@ -1175,7 +1179,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
-        let mut reader = io::Cursor::new(v);
+        let mut reader = Cursor::new(v);
         loop {
             if read_zipfile_from_stream(&mut reader).unwrap().is_none() {
                 break;
@@ -1190,7 +1194,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/mimetype.zip"));
-        let mut reader1 = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let mut reader1 = ZipArchive::new(Cursor::new(v)).unwrap();
         let mut reader2 = reader1.clone();
 
         let mut file1 = reader1.by_index(0).unwrap();
@@ -1231,7 +1235,7 @@ mod test {
 
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/files_and_dirs.zip"));
-        let mut zip = ZipArchive::new(io::Cursor::new(v)).unwrap();
+        let mut zip = ZipArchive::new(Cursor::new(v)).unwrap();
 
         for i in 0..zip.len() {
             let zip_file = zip.by_index(i).unwrap();
@@ -1241,6 +1245,22 @@ mod test {
                 (file_name.starts_with("dir") && zip_file.is_dir())
                     || (file_name.starts_with("file") && zip_file.is_file())
             );
+        }
+    }
+
+    #[test]
+    fn zip64_magic_in_filenames() {
+        let files = vec![
+            include_bytes!("../tests/data/zip64_magic_in_filename_1.zip"),
+            include_bytes!("../tests/data/zip64_magic_in_filename_2.zip"),
+            include_bytes!("../tests/data/zip64_magic_in_filename_3.zip"),
+        ];
+        // Although we don't allow adding files whose names contain the ZIP64 CDB-end or
+        // CDB-end-locator signatures, we still read them when they aren't genuinely ambiguous.
+        for file in files {
+            let mut v = Vec::new();
+            v.extend_from_slice(file);
+            ZipArchive::new(Cursor::new(v)).unwrap();
         }
     }
 
@@ -1256,7 +1276,7 @@ mod test {
         v.extend_from_slice(include_bytes!(
             "../tests/data/invalid_cde_number_of_files_allocation_smaller_offset.zip"
         ));
-        let reader = ZipArchive::new(io::Cursor::new(v));
+        let reader = ZipArchive::new(Cursor::new(v));
         assert!(reader.is_err() || reader.unwrap().is_empty());
     }
 
@@ -1272,7 +1292,7 @@ mod test {
         v.extend_from_slice(include_bytes!(
             "../tests/data/invalid_cde_number_of_files_allocation_greater_offset.zip"
         ));
-        let reader = ZipArchive::new(io::Cursor::new(v));
+        let reader = ZipArchive::new(Cursor::new(v));
         assert!(reader.is_err());
     }
 }

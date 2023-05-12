@@ -108,6 +108,7 @@ pub(crate) mod zip_writer {
         pub(super) comment: Vec<u8>,
     }
 }
+use crate::result::ZipError::InvalidArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
 pub use zip_writer::ZipWriter;
 
@@ -300,7 +301,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             ZipArchive::get_directory_counts(&mut readwriter, &footer, cde_start_pos)?;
 
         if readwriter.seek(SeekFrom::Start(directory_start)).is_err() {
-            return Err(ZipError::InvalidArchive(
+            return Err(InvalidArchive(
                 "Could not seek to start of central directory",
             ));
         }
@@ -438,6 +439,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         {
             let header_start = self.inner.get_plain().stream_position()?;
             let name = name.into();
+            Self::validate_name(&name)?;
 
             let permissions = options.permissions.unwrap_or(0o100644);
             let file = ZipFileData {
@@ -491,7 +493,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
         let name = &file.file_name;
         if self.files_by_name.contains_key(name) {
-            return Err(ZipError::InvalidArchive("Duplicate filename"));
+            return Err(InvalidArchive("Duplicate filename"));
         }
         let name = name.to_owned();
         self.files.push(file);
@@ -1028,6 +1030,27 @@ impl<W: Write + Seek> ZipWriter<W> {
         let mut dest_data = self.files[src_index].to_owned();
         dest_data.file_name = dest_name.into();
         self.insert_file_data(dest_data)?;
+        Ok(())
+    }
+    fn validate_name(name: &String) -> ZipResult<()> {
+        for (index, _) in name.match_indices("PK") {
+            if name.len() >= index + 4 {
+                let magic_number = name[index..index + 4]
+                    .as_bytes()
+                    .read_u32::<LittleEndian>()?;
+                match magic_number {
+                    spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
+                        return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
+                    }
+                    spec::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE => {
+                        return Err(InvalidArchive(
+                            "Filename can't contain ZIP64 end-locator signature",
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1730,79 +1753,6 @@ mod test {
         writer
             .start_file("foo/bar/test", FileOptions::default())
             .expect_err("Expected duplicate filename not to be allowed");
-    }
-
-    #[test]
-    fn test_filename_looks_like_zip64_locator() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer
-            .start_file(
-                "PK\u{6}\u{7}\0\0\0\u{11}\0\0\0\0\0\0\0\0\0\0\0\0",
-                FileOptions::default(),
-            )
-            .unwrap();
-        let zip = writer.finish().unwrap();
-        let _ = ZipArchive::new(zip).unwrap();
-    }
-
-    #[test]
-    fn test_filename_looks_like_zip64_locator_2() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer
-            .start_file(
-                "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-                FileOptions::default(),
-            )
-            .unwrap();
-        let zip = writer.finish().unwrap();
-        println!("{:02x?}", zip.get_ref());
-        let _ = ZipArchive::new(zip).unwrap();
-    }
-
-    #[test]
-    fn test_filename_looks_like_zip64_locator_2a() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer
-            .start_file(
-                "PK\u{6}\u{6}PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-                FileOptions::default(),
-            )
-            .unwrap();
-        let zip = writer.finish().unwrap();
-        println!("{:02x?}", zip.get_ref());
-        let _ = ZipArchive::new(zip).unwrap();
-    }
-
-    #[test]
-    fn test_filename_looks_like_zip64_locator_3() {
-        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer
-            .start_file("\0PK\u{6}\u{6}", FileOptions::default())
-            .unwrap();
-        writer
-            .start_file(
-                "\0\u{4}\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{3}",
-                FileOptions::default(),
-            )
-            .unwrap();
-        let zip = writer.finish().unwrap();
-        println!("{:02x?}", zip.get_ref());
-        let _ = ZipArchive::new(zip).unwrap();
-    }
-
-    #[test]
-    fn path_to_string() {
-        let mut path = std::path::PathBuf::new();
-        #[cfg(windows)]
-        path.push(r"C:\");
-        #[cfg(unix)]
-        path.push("/");
-        path.push("windows");
-        path.push("..");
-        path.push(".");
-        path.push("system32");
-        let path_str = super::path_to_string(&path);
-        assert_eq!(path_str, "windows/system32");
     }
 }
 
