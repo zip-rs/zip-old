@@ -1246,7 +1246,7 @@ mod test {
         let files = vec![
             include_bytes!("../tests/data/zip64_magic_in_filename_1.zip").to_vec(),
             include_bytes!("../tests/data/zip64_magic_in_filename_2.zip").to_vec(),
-            include_bytes!("../tests/data/zip64_magic_in_filename_3.zip").to_vec()
+            include_bytes!("../tests/data/zip64_magic_in_filename_3.zip").to_vec(),
         ];
         // Although we don't allow adding files whose names contain the ZIP64 CDB-end or
         // CDB-end-locator signatures, we still read them when they aren't genuinely ambiguous.
