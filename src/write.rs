@@ -1038,20 +1038,20 @@ impl<W: Write + Seek> ZipWriter<W> {
 #[cfg_attr(fuzzing, allow(missing_docs))]
 pub(crate) fn validate_name(name: &String) -> ZipResult<()> {
     let bytes = name.as_bytes();
-    for (index, _) in name.match_indices("PK") {
-        if bytes.len() >= index + 4 {
-            let magic_number = (&bytes[index..]).read_u32::<LittleEndian>()?;
-            match magic_number {
-                spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
-                    return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
-                }
-                spec::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE => {
-                    return Err(InvalidArchive(
-                        "Filename can't contain ZIP64 end-locator signature",
-                    ));
-                }
-                _ => {}
+    let mut current_window = [0u8; 4];
+    for window in bytes.windows(4) {
+        current_window.copy_from_slice(window);
+        let magic_number = u32::from_le_bytes(current_window);
+        match magic_number {
+            spec::ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE => {
+                return Err(InvalidArchive("Filename can't contain ZIP64 end signature"));
             }
+            spec::ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE => {
+                return Err(InvalidArchive(
+                    "Filename can't contain ZIP64 end-locator signature",
+                ));
+            }
+            _ => {}
         }
     }
     Ok(())
