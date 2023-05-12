@@ -316,7 +316,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         reader: &mut R,
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
-    ) -> ZipResult<(u64, u64, usize)> {
+    ) -> ZipResult<(u64, u64, usize, ZipResult<()>)> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
@@ -357,20 +357,21 @@ impl<R: Read + Seek> ZipArchive<R> {
             ));
         }
 
-        if footer64.disk_number != footer64.disk_with_central_directory {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
-        }
-
-        if !footer.record_too_small()
+        let supported = if footer64.disk_number != footer64.disk_with_central_directory {
+            unsupported_zip_error("Support for multi-disk files is not implemented")
+        } else if !footer.record_too_small()
             && footer.disk_number as u32 != locator64.disk_with_central_directory
         {
-            return unsupported_zip_error("Support for multi-disk files is not implemented");
-        }
+            unsupported_zip_error("Support for multi-disk files is not implemented")
+        } else {
+            Ok(())
+        };
 
         Ok((
             archive_offset,
             directory_start,
             footer64.number_of_files as usize,
+            supported
         ))
     }
 
@@ -381,12 +382,38 @@ impl<R: Read + Seek> ZipArchive<R> {
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
-        // Check if file is valid as ZIP64 first; if not, try it as ZIP32
-        match Self::get_directory_counts_zip64(reader, footer, cde_start_pos) {
-            Ok(result) => Ok(result),
-            Err(ZipError::UnsupportedArchive(e)) => Err(ZipError::UnsupportedArchive(e)),
-            Err(_) => Self::get_directory_counts_zip32(footer, cde_start_pos),
+        // Check if file has a zip64 footer
+        let (archive_offset_64, directory_start_64, number_of_files_64,
+                supported_64) =
+            match Self::get_directory_counts_zip64(reader, footer, cde_start_pos) {
+            Ok(result) => result,
+            Err(_) => return Self::get_directory_counts_zip32(footer, cde_start_pos)
+        };
+        // Check if it also has a zip32 footer
+        let (archive_offset_32, directory_start_32, number_of_files_32) =
+            match Self::get_directory_counts_zip32(footer, cde_start_pos) {
+            Ok(result) => result,
+            Err(_) => {
+                supported_64?;
+                return Ok((archive_offset_64, directory_start_64, number_of_files_64))
+            }
+        };
+        // It has both, so check if the zip64 footer is valid; if not, assume zip32
+        if archive_offset_64 < u32::MAX as u64 && archive_offset_64 != archive_offset_32
+                || archive_offset_32 != u32::MAX as u64 {
+            return Ok((archive_offset_32, directory_start_32, number_of_files_32));
         }
+        if directory_start_64 < u32::MAX as u64 && directory_start_64 != directory_start_32
+            || directory_start_32 != u32::MAX as u64 {
+            return Ok((archive_offset_32, directory_start_32, number_of_files_32));
+        }
+        if number_of_files_64 < u32::MAX as usize && number_of_files_64 != number_of_files_32
+            || number_of_files_32 != u32::MAX as usize {
+            return Ok((archive_offset_32, directory_start_32, number_of_files_32));
+        }
+        // It is, so we assume a zip64
+        supported_64?;
+        return Ok((archive_offset_64, directory_start_64, number_of_files_64))
     }
 
     /// Read a ZIP archive, collecting the files it contains
@@ -1247,6 +1274,7 @@ mod test {
             include_bytes!("../tests/data/zip64_magic_in_filename_1.zip").to_vec(),
             include_bytes!("../tests/data/zip64_magic_in_filename_2.zip").to_vec(),
             include_bytes!("../tests/data/zip64_magic_in_filename_3.zip").to_vec(),
+            include_bytes!("../tests/data/zip64_magic_in_filename_4.zip").to_vec(),
         ];
         // Although we don't allow adding files whose names contain the ZIP64 CDB-end or
         // CDB-end-locator signatures, we still read them when they aren't genuinely ambiguous.

@@ -118,3 +118,10 @@
 
 - Added experimental [`zip_next::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting
   files with PKWARE encryption.
+
+## [0.7.5]
+
+### Fixed
+
+- Two magic strings are no longer allowed in filenames, because they can make files impossible to read correctly.
+- Archives containing these magic files can still be opened in many cases.
