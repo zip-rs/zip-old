@@ -152,7 +152,7 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             central_extra_data: Vec::with_capacity(u16::MAX as usize),
             alignment: u16::arbitrary(u)?,
         };
-        u.arbitrary_loop(None, Some((u16::MAX / 4) as u32), |u| {
+        u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
             options
                 .add_extra_data(
                     u16::arbitrary(u)?,
