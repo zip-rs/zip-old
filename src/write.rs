@@ -160,7 +160,8 @@ impl arbitrary::Arbitrary for FileOptions {
         }
         let extra_data = Vec::<ExtraDataField>::arbitrary(&mut u)?;
         for field in extra_data {
-            options.add_extra_data(field.header_id, field.data.as_slice(), field.central_only)?;
+            options.add_extra_data(field.header_id, field.data.as_slice(), field.central_only)
+                .map_err(|_| arbitrary::Error::IncorrectFormat);
         }
         Ok(options)
     }
