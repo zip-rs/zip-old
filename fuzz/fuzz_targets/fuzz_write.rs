@@ -49,8 +49,9 @@ impl FileOperation {
 }
 
 fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
-                   operation: &FileOperation) -> Result<(), Box<dyn std::error::Error>>
+                   operation: FileOperation) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
+    let should_reopen = operation.should_reopen();
     match operation {
         FileOperation::Write {file, mut options, ..} => {
             if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
@@ -61,16 +62,18 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                 writer.borrow_mut().write_all(chunk.as_slice())?;
             }
         }
-        FileOperation::ShallowCopy {base, new_name, .. } => {
-            do_operation(writer, base)?;
-            writer.borrow_mut().shallow_copy_file(&base.get_name(), new_name)?;
+        FileOperation::ShallowCopy {base, ref new_name, .. } => {
+            let base_name = base.get_name();
+            do_operation(writer, *base)?;
+            writer.borrow_mut().shallow_copy_file(&base_name, new_name)?;
         }
-        FileOperation::DeepCopy {base, new_name, .. } => {
-            do_operation(writer, base)?;
-            writer.borrow_mut().deep_copy_file(&base.get_name(), new_name)?;
+        FileOperation::DeepCopy {base, ref new_name, .. } => {
+            let base_name = base.get_name();
+            do_operation(writer, *base)?;
+            writer.borrow_mut().deep_copy_file(&base_name, new_name)?;
         }
     }
-    if operation.should_reopen() {
+    if should_reopen {
         let new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
         *writer = new_writer.into();
     }
@@ -80,7 +83,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
 fuzz_target!(|data: Vec<FileOperation>| {
     let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new())));
     for operation in data {
-        let _ = do_operation(&mut writer, &operation);
+        let _ = do_operation(&mut writer, operation);
     }
     let _ = zip_next::ZipArchive::new(writer.borrow_mut().finish().unwrap());
 });

@@ -1247,6 +1247,7 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
     // extra field
     writer.write_all(&file.extra_field)?;
+    writer.write_all(&file.central_extra_field)?;
     // file comment
     // <none>
 
