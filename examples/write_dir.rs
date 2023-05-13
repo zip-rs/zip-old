@@ -88,7 +88,7 @@ where
         if path.is_file() {
             println!("adding file {path:?} as {name:?} ...");
             #[allow(deprecated)]
-            zip.start_file_from_path(name, options)?;
+            zip.start_file_from_path(name, options.clone())?;
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
@@ -99,7 +99,7 @@ where
             // and mapname conversion failed error on unzip
             println!("adding dir {path:?} as {name:?} ...");
             #[allow(deprecated)]
-            zip.add_directory_from_path(name, options)?;
+            zip.add_directory_from_path(name, options.clone())?;
         }
     }
     zip.finish()?;

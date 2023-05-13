@@ -99,11 +99,11 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
 
     zip.add_directory("test/", Default::default()).unwrap();
 
-    let options = FileOptions::default()
+    let mut options = FileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
-    zip.start_file(ENTRY_NAME, options).unwrap();
+    zip.start_file(ENTRY_NAME, options.clone()).unwrap();
     zip.write_all(LOREM_IPSUM).unwrap();
 
     if shallow_copy {
@@ -114,16 +114,12 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
             .unwrap();
     }
 
-    zip.start_file("test/☃.txt", options).unwrap();
+    zip.start_file("test/☃.txt", options.clone()).unwrap();
     zip.write_all(b"Hello, World!\n").unwrap();
 
-    zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)
-        .unwrap();
-    zip.write_u16::<LittleEndian>(0xbeef).unwrap();
-    zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)
-        .unwrap();
-    zip.write_all(EXTRA_DATA).unwrap();
-    zip.end_extra_data().unwrap();
+    options.add_extra_data(0xbeef, EXTRA_DATA, false).unwrap();
+
+    zip.start_file("test_with_extra_data/🐢.txt", options).unwrap();
     zip.write_all(b"Hello, World! Again.\n").unwrap();
 
     zip.finish().unwrap();

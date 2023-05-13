@@ -320,13 +320,6 @@ impl Clone for AtomicU64 {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ZipExtraDataField {
-    /// Header ID; indicates the type of the extra data
-    pub(crate) header_id: u16,
-    pub(crate) data: Vec<u8>
-}
-
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone)]
 pub struct ZipFileData {
@@ -355,7 +348,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Vec<u8>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Vec<ZipExtraDataField>,
+    pub extra_field: Vec<u8>,
+    /// Extra field only written to central directory
+    pub central_extra_field: Vec<u8>,
     /// File comment
     pub file_comment: String,
     /// Specifies where the local header of the file starts
@@ -523,6 +518,7 @@ mod test {
             file_name: file_name.clone(),
             file_name_raw: file_name.into_bytes(),
             extra_field: Vec::new(),
+            central_extra_field: vec![],
             file_comment: String::new(),
             header_start: 0,
             data_start: AtomicU64::new(0),

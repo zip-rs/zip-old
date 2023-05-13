@@ -727,6 +727,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         file_name,
         file_name_raw,
         extra_field,
+        central_extra_field: vec![],
         file_comment,
         header_start: offset,
         central_header_start,
@@ -1087,6 +1088,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         file_name,
         file_name_raw,
         extra_field,
+        central_extra_field: vec![],
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
