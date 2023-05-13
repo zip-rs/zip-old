@@ -393,7 +393,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Adds another copy of a file already in this archive. This will produce a larger but more
-    /// widely-compatible archive compared to [shallow_copy_file].
+    /// widely-compatible archive compared to [shallow_copy_file]. Does not copy alignment.
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         let write_position = self.inner.get_plain().stream_position()?;
@@ -403,10 +403,17 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let compressed_size = src_data.compressed_size;
         debug_assert!(compressed_size <= write_position - data_start);
         let uncompressed_size = src_data.uncompressed_size;
-        let mut options = FileOptions::default()
-            .large_file(compressed_size.max(uncompressed_size) > spec::ZIP64_BYTES_THR)
-            .last_modified_time(src_data.last_modified_time)
-            .compression_method(src_data.compression_method);
+        let mut options = FileOptions {
+            compression_method: src_data.compression_method,
+            compression_level: src_data.compression_level,
+            last_modified_time: src_data.last_modified_time,
+            permissions: src_data.unix_mode(),
+            large_file: src_data.large_file,
+            encrypt_with: None,
+            extra_data: src_data.extra_field.clone(),
+            central_extra_data: src_data.central_extra_field.clone(),
+            alignment: 1,
+        };
         if let Some(perms) = src_data.unix_mode() {
             options = options.unix_permissions(perms);
         }
