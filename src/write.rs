@@ -148,8 +148,9 @@ impl arbitrary::Arbitrary for FileOptions {
             permissions: Option::<u32>::arbitrary(&mut u)?,
             large_file: bool::arbitrary(&mut u)?,
             encrypt_with: Option::<ZipCryptoKeys>::arbitrary(&mut u)?,
-            extra_data: Vec::with_capacity(u16::MAX as usize)?,
-            central_extra_data: Vec::with_capacity(u16::MAX as usize)?,
+            extra_data: Vec::with_capacity(u16::MAX as usize),
+            central_extra_data: Vec::with_capacity(u16::MAX as usize),
+            alignment: u8::arbitrary(&mut u)? as u16 + 1,
         };
         #[derive(arbitrary::Arbitrary)]
         struct ExtraDataField {
