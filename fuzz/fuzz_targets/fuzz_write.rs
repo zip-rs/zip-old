@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use libfuzzer_sys::fuzz_target;
 use arbitrary::Arbitrary;
 use std::io::{Cursor, Read, Seek, Write};
+use std::path::{PathBuf};
 
 #[derive(Arbitrary,Debug)]
 pub struct File {
@@ -13,8 +14,19 @@ pub struct File {
 
 #[derive(Arbitrary,Debug)]
 pub enum FileOperation {
-    Write {
+    WriteNormalFile {
         file: File,
+        options: zip_next::write::FileOptions,
+        reopen: bool,
+    },
+    WriteDirectory {
+        name: String,
+        options: zip_next::write::FileOptions,
+        reopen: bool,
+    },
+    WriteSymlink {
+        name: String,
+        target: Box<PathBuf>,
         options: zip_next::write::FileOptions,
         reopen: bool,
     },
@@ -33,7 +45,9 @@ pub enum FileOperation {
 impl FileOperation {
     pub fn get_name(&self) -> String {
         match self {
-            FileOperation::Write {file, ..} => &file.name,
+            FileOperation::WriteNormalFile {file, ..} => &file.name,
+            FileOperation::WriteDirectory {name, ..} => name,
+            FileOperation::WriteSymlink {name, ..} => name,
             FileOperation::ShallowCopy {new_name, ..} => new_name,
             FileOperation::DeepCopy {new_name, ..} => new_name
         }.to_owned()
@@ -41,9 +55,11 @@ impl FileOperation {
 
     pub fn should_reopen(&self) -> bool {
         match self {
-            FileOperation::Write {reopen, ..} => *reopen,
+            FileOperation::WriteNormalFile {reopen, ..} => *reopen,
             FileOperation::ShallowCopy {reopen, ..} => *reopen,
-            FileOperation::DeepCopy {reopen, ..} => *reopen
+            FileOperation::DeepCopy {reopen, ..} => *reopen,
+            FileOperation::WriteDirectory {reopen, ..} => *reopen,
+            FileOperation::WriteSymlink {reopen, ..} => *reopen,
         }
     }
 }
@@ -53,7 +69,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    where T: Read + Write + Seek {
     let should_reopen = operation.should_reopen();
     match operation {
-        FileOperation::Write {file, mut options, ..} => {
+        FileOperation::WriteNormalFile {file, mut options, ..} => {
             if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
                 options = options.large_file(true);
             }
@@ -61,6 +77,12 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
             for chunk in &file.contents {
                 writer.borrow_mut().write_all(chunk.as_slice())?;
             }
+        }
+        FileOperation::WriteDirectory {name, options, ..} => {
+            writer.borrow_mut().add_directory(name, options)?;
+        }
+        FileOperation::WriteSymlink {name, target, options, ..} => {
+            writer.borrow_mut().add_symlink(name, target.to_string_lossy(), options)?;
         }
         FileOperation::ShallowCopy {base, ref new_name, .. } => {
             let base_name = base.get_name();

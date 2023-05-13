@@ -646,14 +646,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
-        match mem::replace(&mut self.inner, Closed) {
-            Storer(MaybeEncrypted::Encrypted(writer)) => {
-                let crc32 = self.stats.hasher.clone().finalize();
-                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
-            }
-            Storer(w) => self.inner = Storer(w),
-            _ => unreachable!(),
-        }
+        self.switch_to_non_encrypting_writer()?;
         let writer = self.inner.get_plain();
 
         if !self.writing_raw {
@@ -676,18 +669,32 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
+    fn switch_to_non_encrypting_writer(&mut self) -> Result<(), ZipError> {
+        match mem::replace(&mut self.inner, Closed) {
+            Storer(MaybeEncrypted::Encrypted(writer)) => {
+                let crc32 = self.stats.hasher.clone().finalize();
+                self.inner = Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
+            }
+            Storer(MaybeEncrypted::Unencrypted(w)) => {
+                self.inner = Storer(MaybeEncrypted::Unencrypted(w))
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
     /// Removes the file currently being written from the archive if there is one, or else removes
     /// the file most recently written.
     pub fn abort_file(&mut self) -> ZipResult<()> {
         let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
         self.files_by_name.remove(&last_file.file_name);
-        self.inner
-            .get_plain()
-            .seek(SeekFrom::Start(last_file.header_start))?;
         let make_plain_writer = self
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
+        self.inner
+            .get_plain()
+            .seek(SeekFrom::Start(last_file.header_start))?;
         self.writing_to_file = false;
         Ok(())
     }
@@ -843,6 +850,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         self.start_entry(name_with_slash, options, None)?;
         self.writing_to_file = false;
+        self.switch_to_non_encrypting_writer()?;
         Ok(())
     }
 

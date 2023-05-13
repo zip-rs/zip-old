@@ -92,7 +92,6 @@ impl System {
 /// Modern zip files store more precise timestamps, which are ignored by [`crate::read::ZipArchive`],
 /// so keep in mind that these timestamps are unreliable. [We're working on this](https://github.com/zip-rs/zip/issues/156#issuecomment-652981904).
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 pub struct DateTime {
     year: u16,
     month: u8,
@@ -100,6 +99,20 @@ pub struct DateTime {
     hour: u8,
     minute: u8,
     second: u8,
+}
+
+#[cfg(fuzzing)]
+impl arbitrary::Arbitrary<'_> for DateTime {
+    fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
+        Ok(DateTime {
+            year: u.int_in_range(1980..=2107)?,
+            month: u.int_in_range(1..=12)?,
+            day: u.int_in_range(1..=31)?,
+            hour: u.int_in_range(0..=23)?,
+            minute: u.int_in_range(0..=59)?,
+            second: u.int_in_range(0..=60)?,
+        })
+    }
 }
 
 impl Default for DateTime {
