@@ -152,18 +152,16 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             central_extra_data: Vec::with_capacity(u16::MAX as usize),
             alignment: u8::arbitrary(u)? as u16 + 1,
         };
-        #[derive(arbitrary::Arbitrary)]
-        struct ExtraDataField {
-            header_id: u16,
-            data: Vec<u8>,
-            central_only: bool,
-        }
-        let extra_data = Vec::<ExtraDataField>::arbitrary(u)?;
-        for field in extra_data {
+        u.arbitrary_loop(None, Some(16383), || {
             options
-                .add_extra_data(field.header_id, field.data.as_slice(), field.central_only)
+                .add_extra_data(
+                    u16::arbitrary(u)?,
+                    Vec::<u8>::arbitrary(u)?,
+                    bool::arbitrary(u)?,
+                )
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-        }
+            Ok(core::ops::ControlFlow::Continue(()))
+        });
         Ok(options)
     }
 }
