@@ -18,46 +18,26 @@ pub enum BasicFileOperation {
         file: File,
         options: zip_next::write::FileOptions,
     },
-    WriteDirectory {
-        name: String,
-        options: zip_next::write::FileOptions,
-    },
-    WriteSymlink {
-        name: String,
+    WriteDirectory(zip_next::write::FileOptions),
+    WriteSymlinkWithTarget {
         target: Box<PathBuf>,
         options: zip_next::write::FileOptions,
     },
-    ShallowCopy {
-        base: Box<FileOperation>,
-        new_name: String,
-    },
-    DeepCopy {
-        base: Box<FileOperation>,
-        new_name: String,
-    }
+    ShallowCopy(Box<FileOperation>),
+    DeepCopy(Box<FileOperation>),
 }
 
 #[derive(Arbitrary,Debug)]
 pub struct FileOperation {
     basic: BasicFileOperation,
+    name: String,
     reopen: bool,
-}
-
-impl FileOperation {
-    pub fn get_name(&self) -> String {
-        match &self.basic {
-            BasicFileOperation::WriteNormalFile {file, ..} => &file.name,
-            BasicFileOperation::WriteDirectory {name, ..} => name,
-            BasicFileOperation::WriteSymlink {name, ..} => name,
-            BasicFileOperation::ShallowCopy {new_name, ..} => new_name,
-            BasicFileOperation::DeepCopy {new_name, ..} => new_name
-        }.to_owned()
-    }
 }
 
 fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    operation: FileOperation) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
+    let name = operation.name;
     match operation.basic {
         BasicFileOperation::WriteNormalFile {file, mut options, ..} => {
             if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
@@ -68,21 +48,21 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                 writer.borrow_mut().write_all(chunk.as_slice())?;
             }
         }
-        BasicFileOperation::WriteDirectory {name, options, ..} => {
+        BasicFileOperation::WriteDirectory(options) => {
             writer.borrow_mut().add_directory(name, options)?;
         }
-        BasicFileOperation::WriteSymlink {name, target, options, ..} => {
+        BasicFileOperation::WriteSymlinkWithTarget {target, options} => {
             writer.borrow_mut().add_symlink(name, target.to_string_lossy(), options)?;
         }
-        BasicFileOperation::ShallowCopy {base, ref new_name, .. } => {
-            let base_name = base.get_name();
+        BasicFileOperation::ShallowCopy(base) => {
+            let base_name = base.name.to_owned();
             do_operation(writer, *base)?;
-            writer.borrow_mut().shallow_copy_file(&base_name, new_name)?;
+            writer.borrow_mut().shallow_copy_file(&base_name, &name)?;
         }
-        BasicFileOperation::DeepCopy {base, ref new_name, .. } => {
-            let base_name = base.get_name();
+        BasicFileOperation::DeepCopy(base) => {
+            let base_name = base.name.to_owned();
             do_operation(writer, *base)?;
-            writer.borrow_mut().deep_copy_file(&base_name, new_name)?;
+            writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
     }
     if operation.reopen {
