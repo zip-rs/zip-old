@@ -124,3 +124,20 @@
 ### Fixed
 
  - Fixed a bug that occurs when ZIP64 magic bytes occur twice in a filename or across two filenames.
+
+## [0.8.0]
+
+### Deleted
+
+ - Methods `start_file_aligned`, `start_file_with_extra_data`, `end_local_start_central_extra_data` and
+   `end_extra_data` (see below).
+
+### Changed
+
+ - Alignment and extra-data fields are now attributes of [`zip_next::unstable::write::FileOptions`], allowing them to be
+   specified for `add_directory` and `add_symlink`.
+ - Extra-data fields no longer have to be formatted by the caller.
+ 
+### Fixed
+
+ - Fixes a rare bug where the size of the extra-data field could overflow when `large_file` was set.
