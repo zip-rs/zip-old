@@ -150,7 +150,7 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             encrypt_with: Option::<ZipCryptoKeys>::arbitrary(u)?,
             extra_data: Vec::with_capacity(u16::MAX as usize),
             central_extra_data: Vec::with_capacity(u16::MAX as usize),
-            alignment: u8::arbitrary(u)? as u16 + 1,
+            alignment: u16::arbitrary(u)?,
         };
         u.arbitrary_loop(None, Some(16383), |u| {
             options
