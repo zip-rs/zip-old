@@ -142,14 +142,14 @@ pub struct FileOptions {
 impl arbitrary::Arbitrary for FileOptions {
     fn arbitrary(u: &mut Unstructured) -> arbitrary::Result<Self> {
         let mut options = FileOptions {
-            compression_method: CompressionMethod::arbitrary(&mut u),
-            compression_level: Option::<CompressionLevel>::arbitrary(&mut u),
-            last_modified_time: DateTime::arbitrary(&mut u),
-            permissions: Option::<u32>::arbitrary(&mut u),
-            large_file: bool::arbitrary(&mut u),
-            encrypt_with: Option::<ZipCryptoKeys>::arbitrary(&mut u),
-            extra_data: Vec::with_capacity(u16::MAX as usize),
-            central_extra_data: Vec::with_capacity(u16::MAX as usize),
+            compression_method: CompressionMethod::arbitrary(&mut u)?,
+            compression_level: Option::<CompressionLevel>::arbitrary(&mut u)?,
+            last_modified_time: DateTime::arbitrary(&mut u)?,
+            permissions: Option::<u32>::arbitrary(&mut u)?,
+            large_file: bool::arbitrary(&mut u)?,
+            encrypt_with: Option::<ZipCryptoKeys>::arbitrary(&mut u)?,
+            extra_data: Vec::with_capacity(u16::MAX as usize)?,
+            central_extra_data: Vec::with_capacity(u16::MAX as usize)?,
         };
         #[derive(arbitrary::Arbitrary)]
         struct ExtraDataField {
@@ -157,12 +157,12 @@ impl arbitrary::Arbitrary for FileOptions {
             data: Vec<u8>,
             central_only: bool,
         }
-        let extra_data = Vec::<ExtraDataField>::arbitrary(&mut u);
+        let extra_data = Vec::<ExtraDataField>::arbitrary(&mut u)?;
         for field in extra_data {
             let _ =
                 options.add_extra_data(field.header_id, field.data.as_slice(), field.central_only);
         }
-        options
+        Ok(options)
     }
 }
 
