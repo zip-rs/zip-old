@@ -119,7 +119,8 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
 
     options.add_extra_data(0xbeef, EXTRA_DATA, false).unwrap();
 
-    zip.start_file("test_with_extra_data/🐢.txt", options).unwrap();
+    zip.start_file("test_with_extra_data/🐢.txt", options)
+        .unwrap();
     zip.write_all(b"Hello, World! Again.\n").unwrap();
 
     zip.finish().unwrap();

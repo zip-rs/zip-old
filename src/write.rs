@@ -108,8 +108,8 @@ pub(crate) mod zip_writer {
 }
 use crate::result::ZipError::InvalidArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
-pub use zip_writer::ZipWriter;
 use crate::zipcrypto::ZipCryptoKeys;
+pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
 struct ZipWriterStats {
@@ -135,7 +135,7 @@ pub struct FileOptions {
     encrypt_with: Option<ZipCryptoKeys>,
     extra_data: Vec<u8>,
     central_extra_data: Vec<u8>,
-    alignment: u16
+    alignment: u16,
 }
 
 #[cfg(fuzzing)]
@@ -155,11 +155,12 @@ impl arbitrary::Arbitrary for FileOptions {
         struct ExtraDataField {
             header_id: u16,
             data: Vec<u8>,
-            central_only: bool
+            central_only: bool,
         }
         let extra_data = Vec::<ExtraDataField>::arbitrary(&mut u);
         for field in extra_data {
-            let _ = options.add_extra_data(field.header_id, field.data.as_slice(), field.central_only);
+            let _ =
+                options.add_extra_data(field.header_id, field.data.as_slice(), field.central_only);
         }
         options
     }
@@ -232,11 +233,18 @@ impl FileOptions {
     }
 
     /// Adds an extra data field.
-    pub fn add_extra_data(&mut self, header_id: u16, data: &[u8], central_only: bool) -> ZipResult<()> {
+    pub fn add_extra_data(
+        &mut self,
+        header_id: u16,
+        data: &[u8],
+        central_only: bool,
+    ) -> ZipResult<()> {
         validate_extra_data(header_id, data)?;
         let len = data.len() + 4;
         if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
-            Err(InvalidArchive("Extra data field would be longer than allowed"))
+            Err(InvalidArchive(
+                "Extra data field would be longer than allowed",
+            ))
         } else {
             let field = if central_only {
                 &mut self.central_extra_data
@@ -285,7 +293,7 @@ impl Default for FileOptions {
             encrypt_with: None,
             extra_data: Vec::with_capacity(u16::MAX as usize),
             central_extra_data: Vec::with_capacity(u16::MAX as usize),
-            alignment: 1
+            alignment: 1,
         }
     }
 }
@@ -570,11 +578,14 @@ impl<W: Write + Seek> ZipWriter<W> {
                     let pad_length = (align - (header_end + 4) % align) % align;
                     if pad_length + extra_field_length as u64 > u16::MAX as u64 {
                         let _ = self.abort_file();
-                        return Err(InvalidArchive("Extra data field would be larger than allowed after aligning"));
+                        return Err(InvalidArchive(
+                            "Extra data field would be larger than allowed after aligning",
+                        ));
                     }
                     let pad = vec![0; pad_length as usize];
                     writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
-                    writer.write_u16::<LittleEndian>(pad.len() as u16)
+                    writer
+                        .write_u16::<LittleEndian>(pad.len() as u16)
                         .map_err(ZipError::from)?;
                     writer.write_all(&pad).map_err(ZipError::from)?;
                     header_end = writer.stream_position()?;
@@ -1213,8 +1224,11 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // file name length
     writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
     // extra field length
-    writer.write_u16::<LittleEndian>(zip64_extra_field_length + file.extra_field.len() as u16
-            + file.central_extra_field.len() as u16)?;
+    writer.write_u16::<LittleEndian>(
+        zip64_extra_field_length
+            + file.extra_field.len() as u16
+            + file.central_extra_field.len() as u16,
+    )?;
     // file comment length
     writer.write_u16::<LittleEndian>(0)?;
     // disk number start
@@ -1253,7 +1267,11 @@ fn validate_extra_data(header_id: u16, data: &[u8]) -> ZipResult<()> {
 
     #[cfg(not(feature = "unreserved"))]
     {
-        if header_id <= 31 || EXTRA_FIELD_MAPPING.iter().any(|&mapped| mapped == header_id) {
+        if header_id <= 31
+            || EXTRA_FIELD_MAPPING
+                .iter()
+                .any(|&mapped| mapped == header_id)
+        {
             return Err(ZipError::Io(io::Error::new(
                 io::ErrorKind::Other,
                 format!(
