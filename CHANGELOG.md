@@ -136,8 +136,10 @@
 
  - Alignment and extra-data fields are now attributes of [`zip_next::unstable::write::FileOptions`], allowing them to be
    specified for `add_directory` and `add_symlink`.
- - Extra-data fields no longer have to be formatted by the caller.
- 
+ - Extra-data fields are now formatted by the `FileOptions` method `add_extra_data`.
+ - Improved performance, especially for `shallow_copy_file` and `deep_copy_file` on files with extra data.
+
 ### Fixed
 
  - Fixes a rare bug where the size of the extra-data field could overflow when `large_file` was set.
+ - Fixes more cases of a bug when ZIP64 magic bytes occur in filenames.
