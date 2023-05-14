@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[cfg(any(
@@ -358,13 +359,13 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         if footer64.number_of_files_on_this_disk > footer64.number_of_files {
             return Err(ZipError::InvalidArchive(
-                "ZIP64 footer indicates more files on this disk than in the whole archive"
+                "ZIP64 footer indicates more files on this disk than in the whole archive",
             ));
         }
         if footer64.version_needed_to_extract > footer64.version_made_by {
             return Err(ZipError::InvalidArchive(
                 "ZIP64 footer indicates a new version is needed to extract this archive than the \
-                version that wrote it"
+                version that wrote it",
             ));
         }
 
@@ -737,8 +738,8 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
-        extra_field,
-        central_extra_field: vec![],
+        extra_field: Rc::new(extra_field),
+        central_extra_field: Rc::new(vec![]),
         file_comment,
         header_start: offset,
         central_header_start,
@@ -770,7 +771,7 @@ fn central_header_to_zip_file_inner<R: Read>(
 }
 
 fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(&file.extra_field);
+    let mut reader = io::Cursor::new(file.extra_field.as_ref());
 
     while (reader.position() as usize) < file.extra_field.len() {
         let kind = reader.read_u16::<LittleEndian>()?;
@@ -1098,8 +1099,8 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
-        extra_field,
-        central_extra_field: vec![],
+        extra_field: Rc::new(extra_field),
+        central_extra_field: Rc::new(vec![]),
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.

@@ -14,6 +14,7 @@ use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::mem;
+use std::rc::Rc;
 
 #[cfg(any(
     feature = "deflate",
@@ -133,8 +134,8 @@ pub struct FileOptions {
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
     encrypt_with: Option<ZipCryptoKeys>,
-    extra_data: Vec<u8>,
-    central_extra_data: Vec<u8>,
+    extra_data: Rc<Vec<u8>>,
+    central_extra_data: Rc<Vec<u8>>,
     alignment: u16,
 }
 
@@ -251,9 +252,17 @@ impl FileOptions {
             } else {
                 &mut self.extra_data
             };
-            field.write_u16::<LittleEndian>(header_id)?;
-            field.write_u16::<LittleEndian>(data.len() as u16)?;
-            field.write_all(data)?;
+            let vec = Rc::get_mut(field);
+            let vec = match vec {
+                Some(exclusive) => exclusive,
+                None => {
+                    *field = Rc::new(field.to_vec());
+                    Rc::get_mut(field).unwrap()
+                }
+            };
+            vec.write_u16::<LittleEndian>(header_id)?;
+            vec.write_u16::<LittleEndian>(data.len() as u16)?;
+            vec.write_all(data)?;
             Ok(())
         }
     }
@@ -261,8 +270,12 @@ impl FileOptions {
     /// Removes the extra data fields.
     #[must_use]
     pub fn clear_extra_data(mut self) -> FileOptions {
-        self.extra_data.clear();
-        self.central_extra_data.clear();
+        if self.extra_data.len() > 0 {
+            self.extra_data = Rc::new(vec![]);
+        }
+        if self.central_extra_data.len() > 0 {
+            self.central_extra_data = Rc::new(vec![]);
+        }
         self
     }
 }
@@ -291,8 +304,8 @@ impl Default for FileOptions {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extra_data: Vec::with_capacity(u16::MAX as usize),
-            central_extra_data: Vec::with_capacity(u16::MAX as usize),
+            extra_data: Rc::new(vec![]),
+            central_extra_data: Rc::new(vec![]),
             alignment: 1,
         }
     }
@@ -1384,6 +1397,7 @@ mod test {
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
+    use std::rc::Rc;
 
     #[test]
     fn write_empty_zip() {
@@ -1503,8 +1517,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: vec![],
-            central_extra_data: vec![],
+            extra_data: Rc::new(vec![]),
+            central_extra_data: Rc::new(vec![]),
             alignment: 1,
         };
         writer.start_file("mimetype", options).unwrap();
@@ -1543,8 +1557,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: vec![],
-            central_extra_data: vec![],
+            extra_data: Rc::new(vec![]),
+            central_extra_data: Rc::new(vec![]),
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -1593,8 +1607,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: vec![],
-            central_extra_data: vec![],
+            extra_data: Rc::new(vec![]),
+            central_extra_data: Rc::new(vec![]),
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -1705,12 +1719,21 @@ mod test {
     #[test]
     fn test_filename_looks_like_zip64_locator_4() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
-        writer.start_file("PK\u{6}\u{6}", FileOptions::default()).unwrap();
-        writer.start_file("\0\0\0\0\0\0", FileOptions::default()).unwrap();
+        writer
+            .start_file("PK\u{6}\u{6}", FileOptions::default())
+            .unwrap();
+        writer
+            .start_file("\0\0\0\0\0\0", FileOptions::default())
+            .unwrap();
         writer.start_file("\0", FileOptions::default()).unwrap();
         writer.start_file("", FileOptions::default()).unwrap();
         writer.start_file("\0\0", FileOptions::default()).unwrap();
-        writer.start_file("\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", FileOptions::default()).unwrap();
+        writer
+            .start_file(
+                "\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+                FileOptions::default(),
+            )
+            .unwrap();
         let zip = writer.finish().unwrap();
         println!("{:02x?}", zip.get_ref());
         let _ = ZipArchive::new(zip).unwrap();
