@@ -149,8 +149,8 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             permissions: Option::<u32>::arbitrary(u)?,
             large_file: bool::arbitrary(u)?,
             encrypt_with: Option::<ZipCryptoKeys>::arbitrary(u)?,
-            extra_data: Vec::with_capacity(u16::MAX as usize),
-            central_extra_data: Vec::with_capacity(u16::MAX as usize),
+            extra_data: Rc::new(vec![]),
+            central_extra_data: Rc::new(vec![]),
             alignment: u16::arbitrary(u)?,
         };
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
