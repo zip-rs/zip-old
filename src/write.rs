@@ -14,7 +14,7 @@ use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::mem;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[cfg(any(
     feature = "deflate",
@@ -134,8 +134,8 @@ pub struct FileOptions {
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
     encrypt_with: Option<ZipCryptoKeys>,
-    extra_data: Rc<Vec<u8>>,
-    central_extra_data: Rc<Vec<u8>>,
+    extra_data: Arc<Vec<u8>>,
+    central_extra_data: Arc<Vec<u8>>,
     alignment: u16,
 }
 
@@ -149,8 +149,8 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             permissions: Option::<u32>::arbitrary(u)?,
             large_file: bool::arbitrary(u)?,
             encrypt_with: Option::<ZipCryptoKeys>::arbitrary(u)?,
-            extra_data: Rc::new(vec![]),
-            central_extra_data: Rc::new(vec![]),
+            extra_data: Arc::new(vec![]),
+            central_extra_data: Arc::new(vec![]),
             alignment: u16::arbitrary(u)?,
         };
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
@@ -252,12 +252,12 @@ impl FileOptions {
             } else {
                 &mut self.extra_data
             };
-            let vec = Rc::get_mut(field);
+            let vec = Arc::get_mut(field);
             let vec = match vec {
                 Some(exclusive) => exclusive,
                 None => {
-                    *field = Rc::new(field.to_vec());
-                    Rc::get_mut(field).unwrap()
+                    *field = Arc::new(field.to_vec());
+                    Arc::get_mut(field).unwrap()
                 }
             };
             vec.reserve_exact(data.len() + 4);
@@ -272,10 +272,10 @@ impl FileOptions {
     #[must_use]
     pub fn clear_extra_data(mut self) -> FileOptions {
         if self.extra_data.len() > 0 {
-            self.extra_data = Rc::new(vec![]);
+            self.extra_data = Arc::new(vec![]);
         }
         if self.central_extra_data.len() > 0 {
-            self.central_extra_data = Rc::new(vec![]);
+            self.central_extra_data = Arc::new(vec![]);
         }
         self
     }
@@ -305,8 +305,8 @@ impl Default for FileOptions {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extra_data: Rc::new(vec![]),
-            central_extra_data: Rc::new(vec![]),
+            extra_data: Arc::new(vec![]),
+            central_extra_data: Arc::new(vec![]),
             alignment: 1,
         }
     }
@@ -1398,7 +1398,7 @@ mod test {
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[test]
     fn write_empty_zip() {
@@ -1518,8 +1518,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: Rc::new(vec![]),
-            central_extra_data: Rc::new(vec![]),
+            extra_data: Arc::new(vec![]),
+            central_extra_data: Arc::new(vec![]),
             alignment: 1,
         };
         writer.start_file("mimetype", options).unwrap();
@@ -1558,8 +1558,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: Rc::new(vec![]),
-            central_extra_data: Rc::new(vec![]),
+            extra_data: Arc::new(vec![]),
+            central_extra_data: Arc::new(vec![]),
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -1608,8 +1608,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: Rc::new(vec![]),
-            central_extra_data: Rc::new(vec![]),
+            extra_data: Arc::new(vec![]),
+            central_extra_data: Arc::new(vec![]),
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();

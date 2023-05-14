@@ -14,7 +14,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::Arc;
 
 #[cfg(any(
@@ -551,7 +550,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 
     /// Search for a file entry by name
-    pub fn by_name<'a>(&'a mut self, name: &str) -> ZipResult<ZipFile<'a>> {
+    pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile> {
         Ok(self.by_name_with_optional_password(name, None)?.unwrap())
     }
 
@@ -582,11 +581,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// There are many passwords out there that will also pass the validity checks
     /// we are able to perform. This is a weakness of the ZipCrypto algorithm,
     /// due to its fairly primitive approach to cryptography.
-    pub fn by_index_decrypt<'a>(
-        &'a mut self,
+    pub fn by_index_decrypt(
+        &mut self,
         file_number: usize,
         password: &[u8],
-    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
+    ) -> ZipResult<Result<ZipFile, InvalidPassword>> {
         self.by_index_with_optional_password(file_number, Some(password))
     }
 
@@ -613,11 +612,11 @@ impl<R: Read + Seek> ZipArchive<R> {
             })
     }
 
-    fn by_index_with_optional_password<'a>(
-        &'a mut self,
+    fn by_index_with_optional_password(
+        &mut self,
         file_number: usize,
         mut password: Option<&[u8]>,
-    ) -> ZipResult<Result<ZipFile<'a>, InvalidPassword>> {
+    ) -> ZipResult<Result<ZipFile, InvalidPassword>> {
         let data = self
             .shared
             .files
@@ -738,8 +737,8 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
-        extra_field: Rc::new(extra_field),
-        central_extra_field: Rc::new(vec![]),
+        extra_field: Arc::new(extra_field),
+        central_extra_field: Arc::new(vec![]),
         file_comment,
         header_start: offset,
         central_header_start,
@@ -1099,8 +1098,8 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
-        extra_field: Rc::new(extra_field),
-        central_extra_field: Rc::new(vec![]),
+        extra_field: Arc::new(extra_field),
+        central_extra_field: Arc::new(vec![]),
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.

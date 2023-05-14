@@ -1,7 +1,7 @@
 //! Types that specify what is contained in a ZIP.
 use path::{Component, Path, PathBuf};
 use std::path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
@@ -362,9 +362,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Vec<u8>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Rc<Vec<u8>>,
+    pub extra_field: Arc<Vec<u8>>,
     /// Extra field only written to central directory
-    pub central_extra_field: Rc<Vec<u8>>,
+    pub central_extra_field: Arc<Vec<u8>>,
     /// File comment
     pub file_comment: String,
     /// Specifies where the local header of the file starts
@@ -531,8 +531,8 @@ mod test {
             uncompressed_size: 0,
             file_name: file_name.clone(),
             file_name_raw: file_name.into_bytes(),
-            extra_field: Rc::new(vec![]),
-            central_extra_field: Rc::new(vec![]),
+            extra_field: Arc::new(vec![]),
+            central_extra_field: Arc::new(vec![]),
             file_comment: String::new(),
             header_start: 0,
             data_start: AtomicU64::new(0),
@@ -581,6 +581,7 @@ mod test {
         assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
     }
 
+    use std::sync::Arc;
     #[cfg(feature = "time")]
     use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 

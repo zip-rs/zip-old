@@ -143,3 +143,7 @@
 
  - Fixes a rare bug where the size of the extra-data field could overflow when `large_file` was set.
  - Fixes more cases of a bug when ZIP64 magic bytes occur in filenames.
+
+## [0.8.1]
+
+ - `ZipWriter` now implements `Send` if the underlying writer does.
