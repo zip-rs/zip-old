@@ -260,6 +260,7 @@ impl FileOptions {
                     Rc::get_mut(field).unwrap()
                 }
             };
+            vec.reserve_exact(data.len() + 4);
             vec.write_u16::<LittleEndian>(header_id)?;
             vec.write_u16::<LittleEndian>(data.len() as u16)?;
             vec.write_all(data)?;
