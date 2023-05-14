@@ -7,15 +7,9 @@ use std::io::{Cursor, Read, Seek, Write};
 use std::path::{PathBuf};
 
 #[derive(Arbitrary,Debug)]
-pub struct File {
-    pub name: String,
-    pub contents: Vec<Vec<u8>>
-}
-
-#[derive(Arbitrary,Debug)]
 pub enum BasicFileOperation {
     WriteNormalFile {
-        file: File,
+        contents: Vec<Vec<u8>>,
         options: zip_next::write::FileOptions,
     },
     WriteDirectory(zip_next::write::FileOptions),
@@ -39,12 +33,12 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    where T: Read + Write + Seek {
     let name = operation.name;
     match operation.basic {
-        BasicFileOperation::WriteNormalFile {file, mut options, ..} => {
-            if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
+        BasicFileOperation::WriteNormalFile {contents, mut options, ..} => {
+            if contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
                 options = options.large_file(true);
             }
-            writer.borrow_mut().start_file(file.name.to_owned(), options)?;
-            for chunk in &file.contents {
+            writer.borrow_mut().start_file(name, options)?;
+            for chunk in contents {
                 writer.borrow_mut().write_all(chunk.as_slice())?;
             }
         }
