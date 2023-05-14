@@ -146,4 +146,6 @@
 
 ## [0.8.1]
 
- - `ZipWriter` now implements `Send` if the underlying writer does.
+### Fixed
+
+ - `ZipWriter` now once again implements `Send` if the underlying writer does.
