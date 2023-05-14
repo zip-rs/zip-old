@@ -1701,6 +1701,20 @@ mod test {
         println!("{:02x?}", zip.get_ref());
         let _ = ZipArchive::new(zip).unwrap();
     }
+
+    #[test]
+    fn test_filename_looks_like_zip64_locator_4() {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.start_file("PK\u{6}\u{6}", FileOptions::default()).unwrap();
+        writer.start_file("\0\0\0\0\0\0", FileOptions::default()).unwrap();
+        writer.start_file("\0", FileOptions::default()).unwrap();
+        writer.start_file("", FileOptions::default()).unwrap();
+        writer.start_file("\0\0", FileOptions::default()).unwrap();
+        writer.start_file("\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", FileOptions::default()).unwrap();
+        let zip = writer.finish().unwrap();
+        println!("{:02x?}", zip.get_ref());
+        let _ = ZipArchive::new(zip).unwrap();
+    }
 }
 
 #[cfg(not(feature = "unreserved"))]

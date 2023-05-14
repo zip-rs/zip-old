@@ -356,6 +356,17 @@ impl<R: Read + Seek> ZipArchive<R> {
                 "Invalid central directory size or offset",
             ));
         }
+        if footer64.number_of_files_on_this_disk > footer64.number_of_files {
+            return Err(ZipError::InvalidArchive(
+                "ZIP64 footer indicates more files on this disk than in the whole archive"
+            ));
+        }
+        if footer64.version_needed_to_extract > footer64.version_made_by {
+            return Err(ZipError::InvalidArchive(
+                "ZIP64 footer indicates a new version is needed to extract this archive than the \
+                version that wrote it"
+            ));
+        }
 
         let supported = if (footer64.disk_number != footer64.disk_with_central_directory)
             || (!footer.record_too_small()
@@ -1266,6 +1277,7 @@ mod test {
             include_bytes!("../tests/data/zip64_magic_in_filename_2.zip").to_vec(),
             include_bytes!("../tests/data/zip64_magic_in_filename_3.zip").to_vec(),
             include_bytes!("../tests/data/zip64_magic_in_filename_4.zip").to_vec(),
+            include_bytes!("../tests/data/zip64_magic_in_filename_5.zip").to_vec(),
         ];
         // Although we don't allow adding files whose names contain the ZIP64 CDB-end or
         // CDB-end-locator signatures, we still read them when they aren't genuinely ambiguous.
