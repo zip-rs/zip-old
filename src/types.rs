@@ -581,7 +581,6 @@ mod test {
         assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
     }
 
-    use std::sync::Arc;
     #[cfg(feature = "time")]
     use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
