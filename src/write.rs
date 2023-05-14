@@ -1,5 +1,6 @@
 //! Types for creating ZIP archives
 
+use std::borrow::Cow;
 use crate::compression::CompressionMethod;
 use crate::read::{central_header_to_zip_file, find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
@@ -126,15 +127,15 @@ struct ZipRawValues {
 
 /// Metadata for a file to be written
 #[derive(Clone, Debug)]
-pub struct FileOptions {
+pub struct FileOptions<'a> {
     pub(crate) compression_method: CompressionMethod,
     pub(crate) compression_level: Option<i32>,
     pub(crate) last_modified_time: DateTime,
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
     encrypt_with: Option<ZipCryptoKeys>,
-    extra_data: Vec<u8>,
-    central_extra_data: Vec<u8>,
+    extra_data: Cow<'a, Vec<u8>>,
+    central_extra_data: Cow<'a, Vec<u8>>,
     alignment: u16,
 }
 
@@ -166,13 +167,13 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
     }
 }
 
-impl FileOptions {
+impl <'a> FileOptions<'a> {
     /// Set the compression method for the new file
     ///
     /// The default is `CompressionMethod::Deflated`. If the deflate compression feature is
     /// disabled, `CompressionMethod::Stored` becomes the default.
     #[must_use]
-    pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
+    pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions<'a> {
         self.compression_method = method;
         self
     }
@@ -187,7 +188,7 @@ impl FileOptions {
     /// * `Zstd`: -7 - 22, with zero being mapped to default level. Default is 3
     /// * others: only `None` is allowed
     #[must_use]
-    pub fn compression_level(mut self, level: Option<i32>) -> FileOptions {
+    pub fn compression_level(mut self, level: Option<i32>) -> FileOptions<'a> {
         self.compression_level = level;
         self
     }
@@ -197,7 +198,7 @@ impl FileOptions {
     /// The default is the current timestamp if the 'time' feature is enabled, and 1980-01-01
     /// otherwise
     #[must_use]
-    pub fn last_modified_time(mut self, mod_time: DateTime) -> FileOptions {
+    pub fn last_modified_time(mut self, mod_time: DateTime) -> FileOptions<'a> {
         self.last_modified_time = mod_time;
         self
     }
@@ -212,7 +213,7 @@ impl FileOptions {
     /// higher file mode bits. So it cannot be used to denote an entry as a directory,
     /// symlink, or other special file type.
     #[must_use]
-    pub fn unix_permissions(mut self, mode: u32) -> FileOptions {
+    pub fn unix_permissions(mut self, mode: u32) -> FileOptions<'a> {
         self.permissions = Some(mode & 0o777);
         self
     }
@@ -223,11 +224,11 @@ impl FileOptions {
     /// aborted. If set to `true`, readers will require ZIP64 support and if the file does not
     /// exceed the limit, 20 B are wasted. The default is `false`.
     #[must_use]
-    pub fn large_file(mut self, large: bool) -> FileOptions {
+    pub fn large_file(mut self, large: bool) -> FileOptions<'a> {
         self.large_file = large;
         self
     }
-    pub(crate) fn with_deprecated_encryption(mut self, password: &[u8]) -> FileOptions {
+    pub(crate) fn with_deprecated_encryption(mut self, password: &[u8]) -> FileOptions<'a> {
         self.encrypt_with = Some(ZipCryptoKeys::derive(password));
         self
     }
@@ -260,14 +261,14 @@ impl FileOptions {
 
     /// Removes the extra data fields.
     #[must_use]
-    pub fn clear_extra_data(mut self) -> FileOptions {
+    pub fn clear_extra_data(mut self) -> FileOptions<'a> {
         self.extra_data.clear();
         self.central_extra_data.clear();
         self
     }
 }
 
-impl Default for FileOptions {
+impl <'a> Default for FileOptions<'a> {
     /// Construct a new FileOptions object
     fn default() -> Self {
         Self {
@@ -291,8 +292,8 @@ impl Default for FileOptions {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extra_data: Vec::with_capacity(u16::MAX as usize),
-            central_extra_data: Vec::with_capacity(u16::MAX as usize),
+            extra_data: Cow::Owned(Vec::with_capacity(u16::MAX as usize)),
+            central_extra_data: Cow::Owned(Vec::with_capacity(u16::MAX as usize)),
             alignment: 1,
         }
     }
@@ -410,8 +411,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             permissions: src_data.unix_mode(),
             large_file: src_data.large_file,
             encrypt_with: None,
-            extra_data: src_data.extra_field.clone(),
-            central_extra_data: src_data.central_extra_field.clone(),
+            extra_data: Cow::Borrowed(&src_data.extra_field),
+            central_extra_data: Cow::Borrowed(&src_data.central_extra_field),
             alignment: 1,
         };
         if let Some(perms) = src_data.unix_mode() {
@@ -519,8 +520,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 uncompressed_size: raw_values.uncompressed_size,
                 file_name: name,
                 file_name_raw: Vec::new(), // Never used for saving
-                extra_field: options.extra_data,
-                central_extra_field: options.central_extra_data,
+                extra_field: options.extra_data.to_vec(),
+                central_extra_field: options.central_extra_data.to_vec(),
                 file_comment: String::new(),
                 header_start,
                 data_start: AtomicU64::new(0),
@@ -1378,6 +1379,7 @@ fn path_to_string(path: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod test {
+    use std::borrow::Cow;
     use super::{FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
     use crate::types::DateTime;
@@ -1503,8 +1505,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: vec![],
-            central_extra_data: vec![],
+            extra_data: Cow::Owned(vec![]),
+            central_extra_data: Cow::Owned(vec![]),
             alignment: 1,
         };
         writer.start_file("mimetype", options).unwrap();
@@ -1543,8 +1545,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: vec![],
-            central_extra_data: vec![],
+            extra_data: Cow::Owned(vec![]),
+            central_extra_data: Cow::Owned(vec![]),
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -1593,8 +1595,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: vec![],
-            central_extra_data: vec![],
+            extra_data: Cow::Owned(vec![]),
+            central_extra_data: Cow::Owned(vec![]),
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
