@@ -1401,12 +1401,12 @@ fn path_to_string(path: &std::path::Path) -> String {
 mod test {
     use super::{FileOptions, ZipWriter};
     use crate::compression::CompressionMethod;
+    use crate::result::ZipResult;
     use crate::types::DateTime;
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
     use std::sync::Arc;
-    use crate::result::ZipResult;
 
     #[test]
     fn write_empty_zip() {
@@ -1764,7 +1764,10 @@ mod test {
             .unwrap();
         let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
         writer
-            .start_file("#PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", FileOptions::default())
+            .start_file(
+                "#PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+                FileOptions::default(),
+            )
             .unwrap();
         let zip = writer.finish().unwrap();
         println!("{:02x?}", zip.get_ref());
