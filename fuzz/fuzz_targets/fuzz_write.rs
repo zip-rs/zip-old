@@ -29,12 +29,11 @@ pub struct FileOperation {
 }
 
 impl FileOperation {
-    fn referenceable_name(&self) -> &str {
-        if let WriteDirectory(_) = self.basic && !self.name.ends_with('\\')
-            && !self.name.ends_with('/') {
-            self.name + "/"
-        } else {
-            self.name
+    fn referenceable_name(&self) -> String {
+        if let BasicFileOperation::WriteDirectory(_) = self.basic {
+            if !self.name.ends_with('\\') && !self.name.ends_with('/') {
+                return self.name.to_owned() + "/";
+            }
         }
     }
 }
@@ -45,7 +44,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
     let name = operation.name;
     match operation.basic {
         BasicFileOperation::WriteNormalFile {contents, mut options, ..} => {
-            if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
+            if contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
                 options = options.large_file(true);
             }
             writer.borrow_mut().start_file(name, options)?;
@@ -60,12 +59,12 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
             writer.borrow_mut().add_symlink(name, target.to_string_lossy(), options)?;
         }
         BasicFileOperation::ShallowCopy(base) => {
-            let base_name = base.referenceable_name().to_owned();
+            let base_name = base.referenceable_name();
             do_operation(writer, *base)?;
             writer.borrow_mut().shallow_copy_file(&base_name, &name)?;
         }
         BasicFileOperation::DeepCopy(base) => {
-            let base_name = base.referenceable_name().to_owned();
+            let base_name = base.referenceable_name();
             do_operation(writer, *base)?;
             writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
