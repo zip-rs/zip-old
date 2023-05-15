@@ -34,6 +34,8 @@ impl FileOperation {
             if !self.name.ends_with('\\') && !self.name.ends_with('/') {
                 return self.name.to_owned() + "/";
             }
+        } else {
+            self.name.to_owned()
         }
     }
 }
