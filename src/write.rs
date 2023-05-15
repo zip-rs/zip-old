@@ -279,6 +279,13 @@ impl FileOptions {
         }
         self
     }
+
+    /// Sets the alignment to the given number of bytes.
+    #[must_use]
+    pub fn with_alignment(mut self, alignment: u16) -> FileOptions {
+        self.alignment = alignment;
+        self
+    }
 }
 
 impl Default for FileOptions {
@@ -1399,6 +1406,7 @@ mod test {
     use std::io;
     use std::io::{Read, Write};
     use std::sync::Arc;
+    use crate::result::ZipResult;
 
     #[test]
     fn write_empty_zip() {
@@ -1738,6 +1746,30 @@ mod test {
         let zip = writer.finish().unwrap();
         println!("{:02x?}", zip.get_ref());
         let _ = ZipArchive::new(zip).unwrap();
+    }
+
+    #[test]
+    fn test_filename_looks_like_zip64_locator_5() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .add_directory("", FileOptions::default().with_alignment(21))
+            .unwrap();
+        let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
+        writer.shallow_copy_file("/", "").unwrap();
+        writer.shallow_copy_file("", "\0").unwrap();
+        writer.shallow_copy_file("\0", "PK\u{6}\u{6}").unwrap();
+        let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
+        writer
+            .start_file("\0\0\0\0\0\0", FileOptions::default())
+            .unwrap();
+        let mut writer = ZipWriter::new_append(writer.finish().unwrap()).unwrap();
+        writer
+            .start_file("#PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", FileOptions::default())
+            .unwrap();
+        let zip = writer.finish().unwrap();
+        println!("{:02x?}", zip.get_ref());
+        let _ = ZipArchive::new(zip).unwrap();
+        Ok(())
     }
 }
 
