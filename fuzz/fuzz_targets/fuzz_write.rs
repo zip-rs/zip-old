@@ -28,13 +28,23 @@ pub struct FileOperation {
     reopen: bool,
 }
 
+impl FileOperation {
+    fn referenceable_name(&self) -> &str {
+        if let WriteDirectory(_) = self.basic {
+            self.name + "/"
+        } else {
+            self.name
+        }
+    }
+}
+
 fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    operation: FileOperation) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
     let name = operation.name;
     match operation.basic {
         BasicFileOperation::WriteNormalFile {contents, mut options, ..} => {
-            if contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
+            if file.contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
                 options = options.large_file(true);
             }
             writer.borrow_mut().start_file(name, options)?;
@@ -49,12 +59,12 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
             writer.borrow_mut().add_symlink(name, target.to_string_lossy(), options)?;
         }
         BasicFileOperation::ShallowCopy(base) => {
-            let base_name = base.name.to_owned();
+            let base_name = base.referenceable_name().to_owned();
             do_operation(writer, *base)?;
             writer.borrow_mut().shallow_copy_file(&base_name, &name)?;
         }
         BasicFileOperation::DeepCopy(base) => {
-            let base_name = base.name.to_owned();
+            let base_name = base.referenceable_name().to_owned();
             do_operation(writer, *base)?;
             writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
