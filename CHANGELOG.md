@@ -149,3 +149,13 @@
 ### Fixed
 
  - `ZipWriter` now once again implements `Send` if the underlying writer does.
+
+## [0.8.2]
+
+### Fixed
+
+ - Fixed an issue where code might spuriously fail during write fuzzing.
+
+### Added
+
+ - New method `with_alignment` on `FileOptions`.
