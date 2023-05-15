@@ -13,9 +13,6 @@ pub enum BasicFileOperation {
         options: zip_next::write::FileOptions,
     },
     WriteDirectory(zip_next::write::FileOptions),
-    WriteSubdirectory {
-        parent_dir: BasicFileOperation::WriteSubdirectory
-    },
     WriteSymlinkWithTarget {
         target: Box<PathBuf>,
         options: zip_next::write::FileOptions,
@@ -59,10 +56,6 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
         }
         BasicFileOperation::WriteDirectory(options) => {
             writer.borrow_mut().add_directory(name, options)?;
-        }
-        BasicFileOperation::WriteSubdirectory(parent_dir) => {
-            do_operation(writer, parent_dir)?;
-            writer.borrow_mut().add_directory(parent_dir.referenceable_name() + name, options)?;
         }
         BasicFileOperation::WriteSymlinkWithTarget {target, options} => {
             writer.borrow_mut().add_symlink(name, target.to_string_lossy(), options)?;
