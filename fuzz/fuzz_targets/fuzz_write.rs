@@ -33,9 +33,10 @@ pub struct FileOperation {
 
 impl FileOperation {
     fn referenceable_name(&self) -> String {
-        if let BasicFileOperation::WriteDirectory(_) = self.basic
-                && !self.name.ends_with('\\') && !self.name.ends_with('/') {
-            return self.name.to_owned() + "/";
+        if let BasicFileOperation::WriteDirectory(_) = self.basic {
+            if !self.name.ends_with('\\') && !self.name.ends_with('/') {
+                return self.name.to_owned() + "/";
+            }
         } else {
             self.name.to_owned()
         }
