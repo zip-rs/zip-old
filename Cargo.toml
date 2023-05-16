@@ -28,7 +28,7 @@ zstd = { version = "0.12.3", optional = true }
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
 crossbeam-utils = "0.8.15"
 
-[target.'cfg(fuzzing)'.dev-dependencies]
+[target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1.3.0", features = ["derive"] }
 
 [dev-dependencies]
