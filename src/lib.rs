@@ -50,6 +50,6 @@ mod zipcrypto;
 ///
 /// ```toml
 /// [dependencies]
-/// zip = "=0.6.5"
+/// zip = "=0.6.6"
 /// ```
 pub mod unstable;
