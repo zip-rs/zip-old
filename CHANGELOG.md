@@ -159,3 +159,9 @@
 ### Added
 
  - New method `with_alignment` on `FileOptions`.
+
+## [0.8.3]
+
+### Merged from upstream
+
+ - Uses the `aes::cipher::KeyInit` trait from `aes` 0.8.2 where appropriate.
