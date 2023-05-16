@@ -362,9 +362,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Vec<u8>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Option<Arc<Vec<u8>>>,
+    pub extra_field: Arc<Vec<u8>>,
     /// Extra field only written to central directory
-    pub central_extra_field: Option<Arc<Vec<u8>>>,
+    pub central_extra_field: Arc<Vec<u8>>,
     /// File comment
     pub file_comment: String,
     /// Specifies where the local header of the file starts
@@ -531,8 +531,8 @@ mod test {
             uncompressed_size: 0,
             file_name: file_name.clone(),
             file_name_raw: file_name.into_bytes(),
-            extra_field: None,
-            central_extra_field: None,
+            extra_field: Arc::new(vec![]),
+            central_extra_field: Arc::new(vec![]),
             file_comment: String::new(),
             header_start: 0,
             data_start: AtomicU64::new(0),
