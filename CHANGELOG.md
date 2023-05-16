@@ -159,3 +159,9 @@
 ### Added
 
  - New method `with_alignment` on `FileOptions`.
+
+## [0.8.3]
+
+### Changed
+
+ - Reclassify `arbitrary` as a dev dependency.
