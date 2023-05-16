@@ -134,8 +134,8 @@ pub struct FileOptions {
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
     encrypt_with: Option<ZipCryptoKeys>,
-    extra_data: Arc<Vec<u8>>,
-    central_extra_data: Arc<Vec<u8>>,
+    extra_data: Option<Arc<Vec<u8>>>,
+    central_extra_data: Option<Arc<Vec<u8>>>,
     alignment: u16,
 }
 
@@ -149,8 +149,8 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             permissions: Option::<u32>::arbitrary(u)?,
             large_file: bool::arbitrary(u)?,
             encrypt_with: Option::<ZipCryptoKeys>::arbitrary(u)?,
-            extra_data: Arc::new(vec![]),
-            central_extra_data: Arc::new(vec![]),
+            extra_data: None,
+            central_extra_data: None,
             alignment: u16::arbitrary(u)?,
         };
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
@@ -242,7 +242,14 @@ impl FileOptions {
     ) -> ZipResult<()> {
         validate_extra_data(header_id, data)?;
         let len = data.len() + 4;
-        if self.extra_data.len() + self.central_extra_data.len() + len > u16::MAX as usize {
+        if self.extra_data.as_ref().map_or(0, |data| data.len())
+            + self
+                .central_extra_data
+                .as_ref()
+                .map_or(0, |data| data.len())
+            + len
+            > u16::MAX as usize
+        {
             Err(InvalidArchive(
                 "Extra data field would be longer than allowed",
             ))
@@ -252,12 +259,17 @@ impl FileOptions {
             } else {
                 &mut self.extra_data
             };
-            let vec = Arc::get_mut(field);
-            let vec = match vec {
-                Some(exclusive) => exclusive,
+            let vec = match field {
+                Some(arc) => match Arc::get_mut(arc) {
+                    Some(exclusive) => exclusive,
+                    None => {
+                        *field = Some(Arc::new(arc.to_vec()));
+                        Arc::get_mut(field.as_mut().unwrap()).unwrap()
+                    }
+                },
                 None => {
-                    *field = Arc::new(field.to_vec());
-                    Arc::get_mut(field).unwrap()
+                    *field = Some(Arc::new(Vec::new()));
+                    Arc::get_mut(field.as_mut().unwrap()).unwrap()
                 }
             };
             vec.reserve_exact(data.len() + 4);
@@ -271,11 +283,11 @@ impl FileOptions {
     /// Removes the extra data fields.
     #[must_use]
     pub fn clear_extra_data(mut self) -> FileOptions {
-        if self.extra_data.len() > 0 {
-            self.extra_data = Arc::new(vec![]);
+        if self.extra_data.is_some() {
+            self.extra_data = None;
         }
-        if self.central_extra_data.len() > 0 {
-            self.central_extra_data = Arc::new(vec![]);
+        if self.central_extra_data.is_some() {
+            self.central_extra_data = None;
         }
         self
     }
@@ -312,8 +324,8 @@ impl Default for FileOptions {
             permissions: None,
             large_file: false,
             encrypt_with: None,
-            extra_data: Arc::new(vec![]),
-            central_extra_data: Arc::new(vec![]),
+            extra_data: None,
+            central_extra_data: None,
             alignment: 1,
         }
     }
@@ -582,11 +594,17 @@ impl<W: Write + Seek> ZipWriter<W> {
             // file name length
             writer.write_u16::<LittleEndian>(file.file_name.as_bytes().len() as u16)?;
             // extra field length
-            let mut extra_field_length = file.extra_field.len();
+            let mut extra_field_length = file.extra_field.as_ref().map_or(0, |data| data.len());
             if file.large_file {
                 extra_field_length += 20;
             }
-            if extra_field_length + file.central_extra_field.len() > u16::MAX as usize {
+            if extra_field_length
+                + file
+                    .central_extra_field
+                    .as_ref()
+                    .map_or(0, |data| data.len())
+                > u16::MAX as usize
+            {
                 let _ = self.abort_file();
                 return Err(InvalidArchive("Extra data field is too large"));
             }
@@ -598,7 +616,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             if file.large_file {
                 write_local_zip64_extra_field(writer, file)?;
             }
-            writer.write_all(&file.extra_field)?;
+            if let Some(extra_data) = &file.extra_field {
+                writer.write_all(extra_data)?;
+            }
             let mut header_end = writer.stream_position()?;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
@@ -1262,8 +1282,11 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // extra field length
     writer.write_u16::<LittleEndian>(
         zip64_extra_field_length
-            + file.extra_field.len() as u16
-            + file.central_extra_field.len() as u16,
+            + file.extra_field.as_ref().map_or(0, |data| data.len()) as u16
+            + file
+                .central_extra_field
+                .as_ref()
+                .map_or(0, |data| data.len()) as u16,
     )?;
     // file comment length
     writer.write_u16::<LittleEndian>(0)?;
@@ -1280,8 +1303,12 @@ fn write_central_directory_header<T: Write>(writer: &mut T, file: &ZipFileData) 
     // zip64 extra field
     writer.write_all(&zip64_extra_field[..zip64_extra_field_length as usize])?;
     // extra field
-    writer.write_all(&file.extra_field)?;
-    writer.write_all(&file.central_extra_field)?;
+    if let Some(extra_data) = &file.extra_field {
+        writer.write_all(extra_data)?;
+    }
+    if let Some(extra_data) = &file.central_extra_field {
+        writer.write_all(extra_data)?;
+    }
     // file comment
     // <none>
 
@@ -1406,7 +1433,6 @@ mod test {
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
-    use std::sync::Arc;
 
     #[test]
     fn write_empty_zip() {
@@ -1526,8 +1552,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: Arc::new(vec![]),
-            central_extra_data: Arc::new(vec![]),
+            extra_data: None,
+            central_extra_data: None,
             alignment: 1,
         };
         writer.start_file("mimetype", options).unwrap();
@@ -1566,8 +1592,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: Arc::new(vec![]),
-            central_extra_data: Arc::new(vec![]),
+            extra_data: None,
+            central_extra_data: None,
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
@@ -1616,8 +1642,8 @@ mod test {
             permissions: Some(33188),
             large_file: false,
             encrypt_with: None,
-            extra_data: Arc::new(vec![]),
-            central_extra_data: Arc::new(vec![]),
+            extra_data: None,
+            central_extra_data: None,
             alignment: 0,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();

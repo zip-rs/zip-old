@@ -737,8 +737,8 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
-        extra_field: Arc::new(extra_field),
-        central_extra_field: Arc::new(vec![]),
+        extra_field: Some(Arc::new(extra_field)),
+        central_extra_field: None,
         file_comment,
         header_start: offset,
         central_header_start,
@@ -770,69 +770,73 @@ fn central_header_to_zip_file_inner<R: Read>(
 }
 
 fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(file.extra_field.as_ref());
+    if let Some(extra_data) = &file.extra_field {
+        let mut reader = io::Cursor::new(extra_data.as_ref());
 
-    while (reader.position() as usize) < file.extra_field.len() {
-        let kind = reader.read_u16::<LittleEndian>()?;
-        let len = reader.read_u16::<LittleEndian>()?;
-        let mut len_left = len as i64;
-        match kind {
-            // Zip64 extended information extra field
-            0x0001 => {
-                if file.uncompressed_size == spec::ZIP64_BYTES_THR {
-                    file.large_file = true;
-                    file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
-                    len_left -= 8;
+        while (reader.position() as usize) < extra_data.len() {
+            let kind = reader.read_u16::<LittleEndian>()?;
+            let len = reader.read_u16::<LittleEndian>()?;
+            let mut len_left = len as i64;
+            match kind {
+                // Zip64 extended information extra field
+                0x0001 => {
+                    if file.uncompressed_size == spec::ZIP64_BYTES_THR {
+                        file.large_file = true;
+                        file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
+                        len_left -= 8;
+                    }
+                    if file.compressed_size == spec::ZIP64_BYTES_THR {
+                        file.large_file = true;
+                        file.compressed_size = reader.read_u64::<LittleEndian>()?;
+                        len_left -= 8;
+                    }
+                    if file.header_start == spec::ZIP64_BYTES_THR {
+                        file.header_start = reader.read_u64::<LittleEndian>()?;
+                        len_left -= 8;
+                    }
                 }
-                if file.compressed_size == spec::ZIP64_BYTES_THR {
-                    file.large_file = true;
-                    file.compressed_size = reader.read_u64::<LittleEndian>()?;
-                    len_left -= 8;
+                0x9901 => {
+                    // AES
+                    if len != 7 {
+                        return Err(ZipError::UnsupportedArchive(
+                            "AES extra data field has an unsupported length",
+                        ));
+                    }
+                    let vendor_version = reader.read_u16::<LittleEndian>()?;
+                    let vendor_id = reader.read_u16::<LittleEndian>()?;
+                    let aes_mode = reader.read_u8()?;
+                    let compression_method = reader.read_u16::<LittleEndian>()?;
+
+                    if vendor_id != 0x4541 {
+                        return Err(ZipError::InvalidArchive("Invalid AES vendor"));
+                    }
+                    let vendor_version = match vendor_version {
+                        0x0001 => AesVendorVersion::Ae1,
+                        0x0002 => AesVendorVersion::Ae2,
+                        _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
+                    };
+                    match aes_mode {
+                        0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version)),
+                        0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version)),
+                        0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version)),
+                        _ => {
+                            return Err(ZipError::InvalidArchive("Invalid AES encryption strength"))
+                        }
+                    };
+                    file.compression_method = {
+                        #[allow(deprecated)]
+                        CompressionMethod::from_u16(compression_method)
+                    };
                 }
-                if file.header_start == spec::ZIP64_BYTES_THR {
-                    file.header_start = reader.read_u64::<LittleEndian>()?;
-                    len_left -= 8;
+                _ => {
+                    // Other fields are ignored
                 }
             }
-            0x9901 => {
-                // AES
-                if len != 7 {
-                    return Err(ZipError::UnsupportedArchive(
-                        "AES extra data field has an unsupported length",
-                    ));
-                }
-                let vendor_version = reader.read_u16::<LittleEndian>()?;
-                let vendor_id = reader.read_u16::<LittleEndian>()?;
-                let aes_mode = reader.read_u8()?;
-                let compression_method = reader.read_u16::<LittleEndian>()?;
 
-                if vendor_id != 0x4541 {
-                    return Err(ZipError::InvalidArchive("Invalid AES vendor"));
-                }
-                let vendor_version = match vendor_version {
-                    0x0001 => AesVendorVersion::Ae1,
-                    0x0002 => AesVendorVersion::Ae2,
-                    _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
-                };
-                match aes_mode {
-                    0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version)),
-                    0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version)),
-                    0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version)),
-                    _ => return Err(ZipError::InvalidArchive("Invalid AES encryption strength")),
-                };
-                file.compression_method = {
-                    #[allow(deprecated)]
-                    CompressionMethod::from_u16(compression_method)
-                };
+            // We could also check for < 0 to check for errors
+            if len_left > 0 {
+                reader.seek(io::SeekFrom::Current(len_left))?;
             }
-            _ => {
-                // Other fields are ignored
-            }
-        }
-
-        // We could also check for < 0 to check for errors
-        if len_left > 0 {
-            reader.seek(io::SeekFrom::Current(len_left))?;
         }
     }
     Ok(())
@@ -979,7 +983,11 @@ impl<'a> ZipFile<'a> {
 
     /// Get the extra data of the zip header for this file
     pub fn extra_data(&self) -> &[u8] {
-        &self.data.extra_field
+        if let Some(extra_data) = &self.data.extra_field {
+            extra_data
+        } else {
+            &[]
+        }
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -1098,8 +1106,8 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw,
-        extra_field: Arc::new(extra_field),
-        central_extra_field: Arc::new(vec![]),
+        extra_field: Some(Arc::new(extra_field)),
+        central_extra_field: None,
         file_comment: String::new(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.

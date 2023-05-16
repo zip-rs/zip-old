@@ -159,3 +159,9 @@
 ### Added
 
  - New method `with_alignment` on `FileOptions`.
+
+## [0.8.3]
+
+### Changed
+
+ - Improved performance for files with no extra data (should mainly affect multithreaded Mutex-guarded access).
