@@ -4,7 +4,6 @@
 //! different byte order (little endian) than NIST (big endian).
 //! See [AesCtrZipKeyStream] for more information.
 
-use aes::cipher;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use byteorder::WriteBytesExt;
