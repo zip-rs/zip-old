@@ -72,7 +72,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
         }
     }
     if operation.abort {
-        writer.abort_file().unwrap();
+        writer.borrow_mut().abort_file().unwrap();
     }
     if operation.reopen {
         let new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
