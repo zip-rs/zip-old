@@ -25,8 +25,8 @@ pub enum BasicFileOperation {
 pub struct FileOperation {
     basic: BasicFileOperation,
     name: String,
-    abort: bool,
     reopen: bool,
+    // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
 
 impl FileOperation {
@@ -41,7 +41,8 @@ impl FileOperation {
 }
 
 fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
-                   operation: FileOperation) -> Result<(), Box<dyn std::error::Error>>
+                   operation: FileOperation,
+                   abort: bool) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
     let name = operation.name;
     match operation.basic {
@@ -62,12 +63,12 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
         }
         BasicFileOperation::ShallowCopy(base) => {
             let base_name = base.referenceable_name();
-            do_operation(writer, *base)?;
+            do_operation(writer, *base, false)?;
             writer.borrow_mut().shallow_copy_file(&base_name, &name)?;
         }
         BasicFileOperation::DeepCopy(base) => {
             let base_name = base.referenceable_name();
-            do_operation(writer, *base)?;
+            do_operation(writer, *base, false)?;
             writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
     }
@@ -81,10 +82,10 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
     Ok(())
 }
 
-fuzz_target!(|data: Vec<FileOperation>| {
+fuzz_target!(|data: Vec<(FileOperation, bool)>| {
     let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new())));
-    for operation in data {
-        let _ = do_operation(&mut writer, operation);
+    for (operation, abort) in data {
+        let _ = do_operation(&mut writer, operation, abort);
     }
     let _ = zip_next::ZipArchive::new(writer.borrow_mut().finish().unwrap());
 });
