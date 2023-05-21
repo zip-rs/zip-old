@@ -76,7 +76,8 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
         writer.borrow_mut().abort_file().unwrap();
     }
     if operation.reopen {
-        let new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
+        let mut new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
+        assert_eq!(Ok(""), new_writer.get_comment());
         *writer = new_writer.into();
     }
     Ok(())

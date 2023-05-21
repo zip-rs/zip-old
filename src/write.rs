@@ -14,6 +14,7 @@ use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::mem;
+use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
 #[cfg(any(
@@ -504,6 +505,19 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.comment = comment;
     }
 
+    /// Get ZIP archive comment.
+    pub fn get_comment(&mut self) -> Result<&str, Utf8Error> {
+        from_utf8(self.get_raw_comment())
+    }
+
+    /// Get ZIP archive comment.
+    ///
+    /// This returns the raw bytes of the comment. The comment
+    /// is typically expected to be encoded in UTF-8
+    pub fn get_raw_comment(&self) -> &Vec<u8> {
+        &self.comment
+    }
+
     /// Start a new file for with the requested options.
     fn start_entry<S>(
         &mut self,
@@ -714,14 +728,12 @@ impl<W: Write + Seek> ZipWriter<W> {
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
-
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
         // overwrite a valid file and corrupt the archive
-        if !self.writing_to_file
-            && self
-                .files
-                .iter()
-                .all(|file| file.data_start.load() < last_file.data_start.load())
+        if self
+            .files
+            .iter()
+            .all(|file| file.data_start.load() < last_file.data_start.load())
         {
             self.inner
                 .get_plain()
@@ -957,54 +969,69 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         {
+            let central_start = self.write_central_and_footer()?;
             let writer = self.inner.get_plain();
-
-            let central_start = writer.stream_position()?;
-            for file in self.files.iter() {
-                write_central_directory_header(writer, file)?;
+            let footer_end = writer.stream_position()?;
+            let file_end = writer.seek(SeekFrom::End(0))?;
+            if footer_end < file_end {
+                // Data from an aborted file is past the end of the footer, so rewrite the footer at
+                // the actual end.
+                let central_and_footer_size = footer_end - central_start;
+                writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
+                self.write_central_and_footer()?;
             }
-            let central_size = writer.stream_position()? - central_start;
-
-            if self.files.len() > spec::ZIP64_ENTRY_THR
-                || central_size.max(central_start) > spec::ZIP64_BYTES_THR
-            {
-                let zip64_footer = spec::Zip64CentralDirectoryEnd {
-                    version_made_by: DEFAULT_VERSION as u16,
-                    version_needed_to_extract: DEFAULT_VERSION as u16,
-                    disk_number: 0,
-                    disk_with_central_directory: 0,
-                    number_of_files_on_this_disk: self.files.len() as u64,
-                    number_of_files: self.files.len() as u64,
-                    central_directory_size: central_size,
-                    central_directory_offset: central_start,
-                };
-
-                zip64_footer.write(writer)?;
-
-                let zip64_footer = spec::Zip64CentralDirectoryEndLocator {
-                    disk_with_central_directory: 0,
-                    end_of_central_directory_offset: central_start + central_size,
-                    number_of_disks: 1,
-                };
-
-                zip64_footer.write(writer)?;
-            }
-
-            let number_of_files = self.files.len().min(spec::ZIP64_ENTRY_THR) as u16;
-            let footer = spec::CentralDirectoryEnd {
-                disk_number: 0,
-                disk_with_central_directory: 0,
-                zip_file_comment: self.comment.clone(),
-                number_of_files_on_this_disk: number_of_files,
-                number_of_files,
-                central_directory_size: central_size.min(spec::ZIP64_BYTES_THR) as u32,
-                central_directory_offset: central_start.min(spec::ZIP64_BYTES_THR) as u32,
-            };
-
-            footer.write(writer)?;
         }
 
         Ok(())
+    }
+
+    fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
+        let writer = self.inner.get_plain();
+
+        let central_start = writer.stream_position()?;
+        for file in self.files.iter() {
+            write_central_directory_header(writer, file)?;
+        }
+        let central_size = writer.stream_position()? - central_start;
+
+        if self.files.len() > spec::ZIP64_ENTRY_THR
+            || central_size.max(central_start) > spec::ZIP64_BYTES_THR
+        {
+            let zip64_footer = spec::Zip64CentralDirectoryEnd {
+                version_made_by: DEFAULT_VERSION as u16,
+                version_needed_to_extract: DEFAULT_VERSION as u16,
+                disk_number: 0,
+                disk_with_central_directory: 0,
+                number_of_files_on_this_disk: self.files.len() as u64,
+                number_of_files: self.files.len() as u64,
+                central_directory_size: central_size,
+                central_directory_offset: central_start,
+            };
+
+            zip64_footer.write(writer)?;
+
+            let zip64_footer = spec::Zip64CentralDirectoryEndLocator {
+                disk_with_central_directory: 0,
+                end_of_central_directory_offset: central_start + central_size,
+                number_of_disks: 1,
+            };
+
+            zip64_footer.write(writer)?;
+        }
+
+        let number_of_files = self.files.len().min(spec::ZIP64_ENTRY_THR) as u16;
+        let footer = spec::CentralDirectoryEnd {
+            disk_number: 0,
+            disk_with_central_directory: 0,
+            zip_file_comment: self.comment.clone(),
+            number_of_files_on_this_disk: number_of_files,
+            number_of_files,
+            central_directory_size: central_size.min(spec::ZIP64_BYTES_THR) as u32,
+            central_directory_offset: central_start.min(spec::ZIP64_BYTES_THR) as u32,
+        };
+
+        footer.write(writer)?;
+        Ok(central_start)
     }
 
     fn index_by_name(&self, name: &str) -> ZipResult<usize> {
@@ -1815,6 +1842,21 @@ mod test {
         writer.abort_file().unwrap();
         let zip = writer.finish().unwrap();
         let mut writer = ZipWriter::new(zip);
+        writer.start_file("", FileOptions::default()).unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn remove_encrypted_aligned_symlink() -> ZipResult<()> {
+        let mut options = FileOptions::default();
+        options = options.with_deprecated_encryption(b"Password");
+        options.alignment = 65535;
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer.add_symlink("", "s\t\0\0ggggg\0\0", options).unwrap();
+        writer.abort_file().unwrap();
+        let zip = writer.finish().unwrap();
+        println!("{:0>2x?}", zip.get_ref());
+        let mut writer = ZipWriter::new_append(zip).unwrap();
         writer.start_file("", FileOptions::default()).unwrap();
         Ok(())
     }

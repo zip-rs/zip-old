@@ -173,3 +173,9 @@
    of sequence. However, it may leave an unused entry in the archive.
  - Calling `abort_file()` while writing a ZipCrypto-encrypted file no longer
    causes a crash.
+ - Calling `abort_file()` on the last file before `finish()` no longer produces 
+   an invalid ZIP file or garbage in the comment.
+
+ ### Added
+
+  - `ZipWriter` methods `get_comment()` and `get_raw_comment()`.
