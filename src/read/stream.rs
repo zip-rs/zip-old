@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
@@ -162,7 +162,7 @@ impl ZipStreamFileMetadata {
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> ::std::path::PathBuf {
+    pub fn mangled_name(&self) -> PathBuf {
         self.0.file_name_sanitized()
     }
 
@@ -184,8 +184,7 @@ impl ZipStreamFileMetadata {
     pub fn is_dir(&self) -> bool {
         self.name()
             .chars()
-            .rev()
-            .next()
+            .next_back()
             .map_or(false, |c| c == '/' || c == '\\')
     }
 
