@@ -165,3 +165,9 @@
 ### Merged from upstream
 
  - Uses the `aes::cipher::KeyInit` trait from `aes` 0.8.2 where appropriate.
+
+### Fixed
+
+ - Calling `abort_file()` no longer corrupts the archive if called on a
+   shallow copy of a remaining file, or on an archive whose CDR entries are out
+   of sequence. However, it may leave an unused entry in the archive.

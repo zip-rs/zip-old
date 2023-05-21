@@ -713,9 +713,19 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
-        self.inner
-            .get_plain()
-            .seek(SeekFrom::Start(last_file.header_start))?;
+
+        // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
+        // overwrite a valid file and corrupt the archive
+        if !self.writing_to_file
+            && self
+                .files
+                .iter()
+                .all(|file| file.data_start.load() < last_file.data_start.load())
+        {
+            self.inner
+                .get_plain()
+                .seek(SeekFrom::Start(last_file.header_start))?;
+        }
         self.writing_to_file = false;
         Ok(())
     }
@@ -1772,6 +1782,25 @@ mod test {
         let zip = writer.finish().unwrap();
         println!("{:02x?}", zip.get_ref());
         let _ = ZipArchive::new(zip).unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn remove_shallow_copy_keeps_original() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file("original", FileOptions::default())
+            .unwrap();
+        writer.write_all(RT_TEST_TEXT.as_bytes()).unwrap();
+        writer
+            .shallow_copy_file("original", "shallow_copy")
+            .unwrap();
+        writer.abort_file().unwrap();
+        let mut zip = ZipArchive::new(writer.finish().unwrap()).unwrap();
+        let mut file = zip.by_name("original").unwrap();
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents).unwrap();
+        assert_eq!(RT_TEST_TEXT.as_bytes(), contents);
         Ok(())
     }
 }

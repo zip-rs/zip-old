@@ -25,6 +25,7 @@ pub enum BasicFileOperation {
 pub struct FileOperation {
     basic: BasicFileOperation,
     name: String,
+    abort: bool,
     reopen: bool,
 }
 
@@ -69,6 +70,9 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
             do_operation(writer, *base)?;
             writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
+    }
+    if operation.abort {
+        writer.abort_file().unwrap();
     }
     if operation.reopen {
         let new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
