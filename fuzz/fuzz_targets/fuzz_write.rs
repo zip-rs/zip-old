@@ -72,7 +72,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
             writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
     }
-    if operation.abort {
+    if abort {
         writer.borrow_mut().abort_file().unwrap();
     }
     if operation.reopen {
