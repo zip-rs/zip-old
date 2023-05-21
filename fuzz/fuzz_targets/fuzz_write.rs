@@ -76,16 +76,19 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
         writer.borrow_mut().abort_file().unwrap();
     }
     if operation.reopen {
-        let mut new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
-        assert_eq!(Ok(""), new_writer.get_comment());
+        let old_comment = writer.borrow().get_raw_comment().to_owned();
+        let new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
+        assert_eq!(&old_comment, new_writer.get_raw_comment());
         *writer = new_writer.into();
     }
     Ok(())
 }
 
-fuzz_target!(|data: Vec<(FileOperation, bool)>| {
+fuzz_target!(|data: (Vec<u8>, Vec<(FileOperation, bool)>)| {
+    let (comment, operations) = data;
     let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new())));
-    for (operation, abort) in data {
+    writer.borrow_mut().set_raw_comment(comment);
+    for (operation, abort) in operations {
         let _ = do_operation(&mut writer, operation, abort);
     }
     let _ = zip_next::ZipArchive::new(writer.borrow_mut().finish().unwrap());
