@@ -171,3 +171,5 @@
  - Calling `abort_file()` no longer corrupts the archive if called on a
    shallow copy of a remaining file, or on an archive whose CDR entries are out
    of sequence. However, it may leave an unused entry in the archive.
+ - Calling `abort_file()` while writing a ZipCrypto-encrypted file no longer
+   causes a crash.
