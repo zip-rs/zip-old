@@ -713,6 +713,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             .inner
             .prepare_next_writer(CompressionMethod::Stored, None)?;
         self.inner.switch_to(make_plain_writer)?;
+        self.switch_to_non_encrypting_writer()?;
 
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
         // overwrite a valid file and corrupt the archive
@@ -1803,7 +1804,22 @@ mod test {
         assert_eq!(RT_TEST_TEXT.as_bytes(), contents);
         Ok(())
     }
+
+    #[test]
+    fn remove_encrypted_file() -> ZipResult<()> {
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let first_file_options = FileOptions::default()
+            .with_alignment(65535)
+            .with_deprecated_encryption(b"Password");
+        writer.start_file("", first_file_options).unwrap();
+        writer.abort_file().unwrap();
+        let zip = writer.finish().unwrap();
+        let mut writer = ZipWriter::new(zip);
+        writer.start_file("", FileOptions::default()).unwrap();
+        Ok(())
+    }
 }
+
 
 #[cfg(not(feature = "unreserved"))]
 const EXTRA_FIELD_MAPPING: [u16; 49] = [
