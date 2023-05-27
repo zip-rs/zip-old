@@ -335,7 +335,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 "No file has been started",
             ));
         }
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
         match self.inner.ref_mut() {
@@ -1558,11 +1558,11 @@ mod test {
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
+    use crate::CompressionMethod::Deflated;
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
     use std::sync::Arc;
-    use crate::CompressionMethod::Deflated;
 
     #[test]
     fn write_empty_zip() {
@@ -1983,7 +1983,9 @@ mod test {
     #[test]
     fn zopfli_empty_write() -> ZipResult<()> {
         let mut options = FileOptions::default();
-        options = options.compression_method(Deflated).compression_level(Some(264));
+        options = options
+            .compression_method(Deflated)
+            .compression_level(Some(264));
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()), false);
         writer.start_file("", options).unwrap();
         writer.write_all(&[]).unwrap();
