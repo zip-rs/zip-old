@@ -174,7 +174,7 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             }
         } else if options.compression_method != Stored {
             options.compression_level = Some(u.int_in_range(0..=10)?);
-        } else if bool::arbitrary(u) {
+        } else if bool::arbitrary(u)? {
             options.compression_level = Some(1);
         }
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
