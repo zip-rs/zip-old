@@ -185,3 +185,9 @@
 ### Added
 
  - `flush_on_finish_file` parameter for `ZipWriter`.
+
+## [0.9.1]
+
+### Added
+
+ - Zopfli for aggressive Deflate compression.
