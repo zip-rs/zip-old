@@ -4,7 +4,7 @@ zip_next
 [![Build Status](https://github.com/Pr0methean/zip-next/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip_next.svg)](https://crates.io/crates/zip_next)
 
-[Documentation](https://docs.rs/zip_next/0.8.3/zip_next/)
+[Documentation](https://docs.rs/zip_next/0.9.0/zip_next/)
 
 Info
 ----
@@ -32,14 +32,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip_next = "0.8.3"
+zip_next = "0.9.0"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip_next = { version = "0.8.3", default-features = false }
+zip_next = { version = "0.9.0", default-features = false }
 ```
 
 The features available are:

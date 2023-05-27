@@ -35,7 +35,7 @@ fn copy() {
 
         {
             let mut src_archive = zip_next::ZipArchive::new(src_file).unwrap();
-            let mut zip = ZipWriter::new(&mut tgt_file);
+            let mut zip = ZipWriter::new(&mut tgt_file, false);
 
             {
                 let file = src_archive
@@ -73,7 +73,7 @@ fn append() {
             write_test_archive(file, method, *shallow_copy);
 
             {
-                let mut zip = ZipWriter::new_append(&mut file).unwrap();
+                let mut zip = ZipWriter::new_append(&mut file, false).unwrap();
                 zip.start_file(
                     COPY_ENTRY_NAME,
                     FileOptions::default()
@@ -95,7 +95,7 @@ fn append() {
 
 // Write a test zip archive to buffer.
 fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, shallow_copy: bool) {
-    let mut zip = ZipWriter::new(file);
+    let mut zip = ZipWriter::new(file, false);
 
     zip.add_directory("test/", Default::default()).unwrap();
 

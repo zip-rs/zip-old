@@ -25,7 +25,7 @@ fn encrypting_file() {
     use std::io::{Read, Write};
     use zip_next::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
-    let mut archive = zip_next::write::ZipWriter::new(Cursor::new(&mut buf));
+    let mut archive = zip_next::write::ZipWriter::new(Cursor::new(&mut buf), false);
     archive
         .start_file(
             "name",

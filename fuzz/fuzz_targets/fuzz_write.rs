@@ -6,7 +6,7 @@ use arbitrary::Arbitrary;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::{PathBuf};
 
-#[derive(Arbitrary,Debug)]
+#[derive(Arbitrary,Clone,Debug)]
 pub enum BasicFileOperation {
     WriteNormalFile {
         contents: Vec<Vec<u8>>,
@@ -21,12 +21,19 @@ pub enum BasicFileOperation {
     DeepCopy(Box<FileOperation>),
 }
 
-#[derive(Arbitrary,Debug)]
+#[derive(Arbitrary,Clone,Debug)]
 pub struct FileOperation {
     basic: BasicFileOperation,
     name: String,
     reopen: bool,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
+}
+
+#[derive(Arbitrary,Clone,Debug)]
+pub struct FuzzTestCase {
+    comment: Vec<u8>,
+    operations: Vec<(FileOperation, bool)>,
+    flush_on_finish_file: bool,
 }
 
 impl FileOperation {
@@ -42,7 +49,7 @@ impl FileOperation {
 
 fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    operation: FileOperation,
-                   abort: bool) -> Result<(), Box<dyn std::error::Error>>
+                   abort: bool, flush_on_finish_file: bool) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
     let name = operation.name;
     match operation.basic {
@@ -63,12 +70,12 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
         }
         BasicFileOperation::ShallowCopy(base) => {
             let base_name = base.referenceable_name();
-            do_operation(writer, *base, false)?;
+            do_operation(writer, *base, false, flush_on_finish_file)?;
             writer.borrow_mut().shallow_copy_file(&base_name, &name)?;
         }
         BasicFileOperation::DeepCopy(base) => {
             let base_name = base.referenceable_name();
-            do_operation(writer, *base, false)?;
+            do_operation(writer, *base, false, flush_on_finish_file)?;
             writer.borrow_mut().deep_copy_file(&base_name, &name)?;
         }
     }
@@ -77,19 +84,20 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
     }
     if operation.reopen {
         let old_comment = writer.borrow().get_raw_comment().to_owned();
-        let new_writer = zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
+        let new_writer = zip_next::ZipWriter::new_append(
+            writer.borrow_mut().finish().unwrap(), flush_on_finish_file).unwrap();
         assert_eq!(&old_comment, new_writer.get_raw_comment());
         *writer = new_writer.into();
     }
     Ok(())
 }
 
-fuzz_target!(|data: (Vec<u8>, Vec<(FileOperation, bool)>)| {
-    let (comment, operations) = data;
-    let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new())));
-    writer.borrow_mut().set_raw_comment(comment);
-    for (operation, abort) in operations {
-        let _ = do_operation(&mut writer, operation, abort);
+fuzz_target!(|test_case: FuzzTestCase| {
+    let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new()),
+        test_case.flush_on_finish_file));
+    writer.borrow_mut().set_raw_comment(test_case.comment);
+    for (operation, abort) in test_case.operations {
+        let _ = do_operation(&mut writer, operation, abort, test_case.flush_on_finish_file);
     }
     let _ = zip_next::ZipArchive::new(writer.borrow_mut().finish().unwrap());
 });

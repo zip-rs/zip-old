@@ -73,7 +73,7 @@ fn zip_dir<T>(
 where
     T: Write + Seek,
 {
-    let mut zip = zip_next::ZipWriter::new(writer);
+    let mut zip = zip_next::ZipWriter::new(writer, false);
     let options = FileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);

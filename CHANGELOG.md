@@ -179,3 +179,9 @@
  ### Added
 
   - `ZipWriter` methods `get_comment()` and `get_raw_comment()`.
+
+## [0.9.0]
+
+### Added
+
+ - `flush_on_finish_file` parameter for `ZipWriter`.

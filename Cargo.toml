@@ -1,6 +1,6 @@
 [package]
 name = "zip_next"
-version = "0.8.3"
+version = "0.9.0"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>",
 "Chris Hennick <hennickc@amazon.com>"]
 license = "MIT"
