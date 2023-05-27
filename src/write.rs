@@ -1716,7 +1716,7 @@ mod test {
     fn test_shallow_copy() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()), false);
         let options = FileOptions {
-            compression_method: CompressionMethod::Deflated,
+            compression_method: Deflated,
             compression_level: Some(9),
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
@@ -1766,7 +1766,7 @@ mod test {
     fn test_deep_copy() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()), false);
         let options = FileOptions {
-            compression_method: CompressionMethod::Deflated,
+            compression_method: Deflated,
             compression_level: Some(9),
             last_modified_time: DateTime::default(),
             permissions: Some(33188),
