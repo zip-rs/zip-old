@@ -119,8 +119,8 @@ pub(crate) mod zip_writer {
 use crate::result::ZipError::InvalidArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
-pub use zip_writer::ZipWriter;
 use crate::CompressionMethod::Deflated;
+pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
 struct ZipWriterStats {
