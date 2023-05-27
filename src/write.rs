@@ -1122,8 +1122,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         &self,
         compression: CompressionMethod,
         compression_level: Option<i32>,
-        #[cfg(feature = "deflate-zopfli")]
-        zopfli_buffer_size: Option<usize>,
+        #[cfg(feature = "deflate-zopfli")] zopfli_buffer_size: Option<usize>,
     ) -> ZipResult<SwitchWriterFunction<W>> {
         if let Closed = self {
             return Err(
