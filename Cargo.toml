@@ -24,6 +24,7 @@ pbkdf2 = {version = "0.12.1", optional = true }
 sha1 = {version = "0.10.5", optional = true }
 time = { version = "0.3.21", optional = true, default-features = false, features = ["std"] }
 zstd = { version = "0.12.3", optional = true }
+zopfli = { version = "0.7.4", optional = true }
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
 crossbeam-utils = "0.8.15"
@@ -42,8 +43,9 @@ aes-crypto = [ "aes", "constant_time_eq", "hmac", "pbkdf2", "sha1" ]
 deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
+deflate-zopfli = ["zopfli"]
 unreserved = []
-default = ["aes-crypto", "bzip2", "deflate", "time", "zstd"]
+default = ["aes-crypto", "bzip2", "deflate", "deflate-zopfli", "time", "zstd"]
 
 [[bench]]
 name = "read_entry"

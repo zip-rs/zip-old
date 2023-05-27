@@ -20,7 +20,8 @@ pub enum CompressionMethod {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zopfli"
     ))]
     Deflated,
     /// Compress the file using BZIP2
@@ -55,13 +56,15 @@ impl CompressionMethod {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zopfli"
     ))]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zopfli"
     )))]
     pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
     pub const DEFLATE64: Self = CompressionMethod::Unsupported(9);
@@ -101,7 +104,8 @@ impl CompressionMethod {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zopfli"
             ))]
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "bzip2")]
@@ -127,7 +131,8 @@ impl CompressionMethod {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zopfli"
             ))]
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "bzip2")]
@@ -155,7 +160,8 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zopfli"
     ))]
     CompressionMethod::Deflated,
     #[cfg(feature = "bzip2")]
