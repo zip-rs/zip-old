@@ -3,6 +3,7 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
+use std::io::IntoInnerError;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
@@ -38,6 +39,12 @@ pub enum ZipError {
 impl From<io::Error> for ZipError {
     fn from(err: io::Error) -> ZipError {
         ZipError::Io(err)
+    }
+}
+
+impl<W> From<IntoInnerError<W>> for ZipError {
+    fn from(value: IntoInnerError<W>) -> Self {
+        ZipError::Io(value.into_error())
     }
 }
 

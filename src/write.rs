@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
-use std::io::{BufReader, SeekFrom};
+use std::io::{BufReader, BufWriter, SeekFrom};
 use std::mem;
 use std::num::NonZeroU8;
 use std::str::{from_utf8, Utf8Error};
@@ -65,6 +65,8 @@ enum GenericZipWriter<W: Write + Seek> {
     Deflater(DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
     ZopfliDeflater(zopfli::DeflateEncoder<MaybeEncrypted<W>>),
+    #[cfg(feature = "deflate-zopfli")]
+    BufferedZopfliDeflater(BufWriter<zopfli::DeflateEncoder<MaybeEncrypted<W>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(BzEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "zstd")]
@@ -144,6 +146,8 @@ pub struct FileOptions {
     extra_data: Arc<Vec<u8>>,
     central_extra_data: Arc<Vec<u8>>,
     alignment: u16,
+    #[cfg(feature = "deflate-zopfli")]
+    pub(super) zopfli_buffer_size: Option<usize>,
 }
 
 #[cfg(fuzzing)]
@@ -159,6 +163,8 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             extra_data: Arc::new(vec![]),
             central_extra_data: Arc::new(vec![]),
             alignment: u16::arbitrary(u)?,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: Some(1 << u.int_in_range(10..=30)?),
         };
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
             options
@@ -294,6 +300,17 @@ impl FileOptions {
         self.alignment = alignment;
         self
     }
+
+    /// Sets the size of the buffer used to hold the next block that Zopfli will compress. The
+    /// larger the buffer, the more effective the compression, but the more memory is required.
+    /// A value of `None` indicates no buffer, which is recommended only when all non-empty writes
+    /// are larger than about 32 KiB.
+    #[must_use]
+    #[cfg(feature = "deflate-zopfli")]
+    pub fn with_zopfli_buffer(mut self, size: Option<usize>) -> FileOptions {
+        self.zopfli_buffer_size = size;
+        self
+    }
 }
 
 impl Default for FileOptions {
@@ -323,6 +340,8 @@ impl Default for FileOptions {
             extra_data: Arc::new(vec![]),
             central_extra_data: Arc::new(vec![]),
             alignment: 1,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: Some(1 << 15),
         }
     }
 }
@@ -448,6 +467,8 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             extra_data: src_data.extra_field.clone(),
             central_extra_data: src_data.central_extra_field.clone(),
             alignment: 1,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: None,
         };
         if let Some(perms) = src_data.unix_mode() {
             options = options.unix_permissions(perms);
@@ -491,7 +512,8 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// either [`ZipWriter::abort_file`] is called while [`ZipWriter::is_writing_file`] returns
     /// false, or [`ZipWriter::deep_copy_file`] is called. In the latter case, it will only need to
     /// read flushed bytes and not overwrite them. Do not enable this with a [BufWriter], because
-    /// that implicitly calls [`Writer::flush`] whenever [`Seek::seek`] is called.
+    /// that implicitly calls [`Writer::flush`] whenever [`Seek::seek`] is called. Likewise, when
+    /// using Deflate compression, set []
     pub fn new(inner: W, flush_on_finish_file: bool) -> ZipWriter<W> {
         ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(inner)),
@@ -698,9 +720,9 @@ impl<W: Write + Seek> ZipWriter<W> {
             return Ok(());
         }
 
-        let make_plain_writer = self
-            .inner
-            .prepare_next_writer(CompressionMethod::Stored, None)?;
+        let make_plain_writer =
+            self.inner
+                .prepare_next_writer(CompressionMethod::Stored, None, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         let writer = self.inner.get_plain();
@@ -750,9 +772,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn abort_file(&mut self) -> ZipResult<()> {
         let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
         self.files_by_name.remove(&last_file.file_name);
-        let make_plain_writer = self
-            .inner
-            .prepare_next_writer(CompressionMethod::Stored, None)?;
+        let make_plain_writer =
+            self.inner
+                .prepare_next_writer(CompressionMethod::Stored, None, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
@@ -779,9 +801,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         S: Into<String>,
     {
         Self::normalize_options(&mut options);
-        let make_new_self = self
-            .inner
-            .prepare_next_writer(options.compression_method, options.compression_level)?;
+        let make_new_self = self.inner.prepare_next_writer(
+            options.compression_method,
+            options.compression_level,
+            #[cfg(feature = "deflate-zopfli")]
+            options.zopfli_buffer_size,
+        )?;
         self.start_entry(name, options, None)?;
         if let Err(e) = self.inner.switch_to(make_new_self) {
             self.abort_file().unwrap();
@@ -1097,6 +1122,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         &self,
         compression: CompressionMethod,
         compression_level: Option<i32>,
+        #[cfg(feature = "deflate-zopfli")]
+        zopfli_buffer_size: Option<usize>,
     ) -> ZipResult<SwitchWriterFunction<W>> {
         if let Closed = self {
             return Err(
@@ -1164,11 +1191,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         let mut options = Options::default();
                         options.iteration_count =
                             NonZeroU8::try_from((level - best_non_zopfli) as u8).unwrap();
-                        GenericZipWriter::ZopfliDeflater(zopfli::DeflateEncoder::new(
-                            options,
-                            Default::default(),
-                            bare,
-                        ))
+                        match deflate_buffer_size {
+                            Some(size) => {
+                                GenericZipWriter::BufferedZopfliDeflater(BufWriter::with_capacity(
+                                    size,
+                                    zopfli::DeflateEncoder::new(options, Default::default(), bare),
+                                ))
+                            }
+                            None => GenericZipWriter::ZopfliDeflater(zopfli::DeflateEncoder::new(
+                                options,
+                                Default::default(),
+                                bare,
+                            )),
+                        }
                     }));
 
                     #[cfg(all(
@@ -1189,11 +1224,21 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                 .unwrap(),
                                 ..Default::default()
                             };
-                            GenericZipWriter::ZopfliDeflater(zopfli::DeflateEncoder::new(
-                                options,
-                                Default::default(),
-                                bare,
-                            ))
+                            match zopfli_buffer_size {
+                                Some(size) => GenericZipWriter::BufferedZopfliDeflater(
+                                    BufWriter::with_capacity(
+                                        size,
+                                        zopfli::DeflateEncoder::new(
+                                            options,
+                                            Default::default(),
+                                            bare,
+                                        ),
+                                    ),
+                                ),
+                                None => GenericZipWriter::ZopfliDeflater(
+                                    zopfli::DeflateEncoder::new(options, Default::default(), bare),
+                                ),
+                            }
                         } else {
                             GenericZipWriter::Deflater(DeflateEncoder::new(
                                 bare,
@@ -1252,6 +1297,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
+            #[cfg(feature = "deflate-zopfli")]
+            GenericZipWriter::BufferedZopfliDeflater(w) => w.into_inner()?.finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
@@ -1279,6 +1326,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => Some(w as &mut dyn Write),
+            #[cfg(feature = "deflate-zopfli")]
+            GenericZipWriter::BufferedZopfliDeflater(w) => Some(w as &mut dyn Write),
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "zstd")]
@@ -1685,6 +1734,8 @@ mod test {
             extra_data: Arc::new(vec![]),
             central_extra_data: Arc::new(vec![]),
             alignment: 1,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: None,
         };
         writer.start_file("mimetype", options).unwrap();
         writer
@@ -1725,6 +1776,8 @@ mod test {
             extra_data: Arc::new(vec![]),
             central_extra_data: Arc::new(vec![]),
             alignment: 0,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
@@ -1775,6 +1828,8 @@ mod test {
             extra_data: Arc::new(vec![]),
             central_extra_data: Arc::new(vec![]),
             alignment: 0,
+            #[cfg(feature = "deflate-zopfli")]
+            zopfli_buffer_size: None,
         };
         writer.start_file(RT_TEST_FILENAME, options).unwrap();
         writer.write_all(RT_TEST_TEXT.as_ref()).unwrap();
