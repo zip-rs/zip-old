@@ -120,6 +120,7 @@ use crate::result::ZipError::InvalidArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
 pub use zip_writer::ZipWriter;
+use crate::CompressionMethod::Deflated;
 
 #[derive(Default)]
 struct ZipWriterStats {
@@ -164,8 +165,13 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             central_extra_data: Arc::new(vec![]),
             alignment: u16::arbitrary(u)?,
             #[cfg(feature = "deflate-zopfli")]
-            zopfli_buffer_size: Some(1 << u.int_in_range(10..=30)?),
+            zopfli_buffer_size: None,
         };
+        #[cfg(feature = "deflate-zopfli")]
+        if options.compression_method == Deflated
+            && options.compression_level > Compression::best().level() {
+            options.zopfli_buffer_size = Some(1 << u.int_in_range(10..=30)?);
+        }
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
             options
                 .add_extra_data(
@@ -322,11 +328,12 @@ impl Default for FileOptions {
                 feature = "deflate-miniz",
                 feature = "deflate-zlib"
             ))]
-            compression_method: CompressionMethod::Deflated,
+            compression_method: Deflated,
             #[cfg(not(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zopfli"
             )))]
             compression_method: CompressionMethod::Stored,
             compression_level: None,
@@ -1148,7 +1155,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     feature = "deflate-zlib",
                     feature = "deflate-zopfli"
                 ))]
-                CompressionMethod::Deflated => {
+                Deflated => {
                     #[cfg(all(
                         not(feature = "deflate"),
                         not(feature = "deflate-miniz"),
