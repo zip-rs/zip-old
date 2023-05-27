@@ -335,6 +335,9 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 "No file has been started",
             ));
         }
+        if buf.len() == 0 {
+            return Ok(0);
+        }
         match self.inner.ref_mut() {
             Some(ref mut w) => {
                 let write_result = w.write(buf);
@@ -1559,6 +1562,7 @@ mod test {
     use std::io;
     use std::io::{Read, Write};
     use std::sync::Arc;
+    use crate::CompressionMethod::Deflated;
 
     #[test]
     fn write_empty_zip() {
@@ -1972,6 +1976,18 @@ mod test {
         println!("{:0>2x?}", zip.get_ref());
         let mut writer = ZipWriter::new_append(zip, false).unwrap();
         writer.start_file("", FileOptions::default()).unwrap();
+        Ok(())
+    }
+
+    #[cfg(feature = "deflate-zopfli")]
+    #[test]
+    fn zopfli_empty_write() -> ZipResult<()> {
+        let mut options = FileOptions::default();
+        options = options.compression_method(Deflated).compression_level(Some(264));
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()), false);
+        writer.start_file("", options).unwrap();
+        writer.write_all(&[]).unwrap();
+        writer.write_all(&[]).unwrap();
         Ok(())
     }
 }
