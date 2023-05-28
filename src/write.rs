@@ -172,6 +172,7 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
                 if bool::arbitrary(u)? {
                     let level = u.int_in_range(0..=265)?;
                     options.compression_level = Some(level);
+                    #[cfg(feature = "deflate-zopfli")]
                     if level > Compression::best().level() {
                         options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
                     }
