@@ -170,7 +170,7 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
         match options.compression_method {
             Deflated => {
                 if bool::arbitrary(u)? {
-                    let level = u.int_in_range(0..=265)?;
+                    let level = u.int_in_range(0..=24)?;
                     options.compression_level = Some(level);
                     #[cfg(feature = "deflate-zopfli")]
                     if level > Compression::best().level().try_into().unwrap() {
@@ -333,6 +333,11 @@ impl FileOptions {
     pub fn with_zopfli_buffer(mut self, size: Option<usize>) -> FileOptions {
         self.zopfli_buffer_size = size;
         self
+    }
+
+    /// Returns the compression level currently set.
+    pub fn get_compression_level(&self) -> Option<i32> {
+        self.compression_level
     }
 }
 

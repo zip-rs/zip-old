@@ -54,7 +54,8 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
     let name = operation.name;
     match operation.basic {
         BasicFileOperation::WriteNormalFile {contents, mut options, ..} => {
-            if contents.iter().map(Vec::len).sum::<usize>() >= u32::MAX as usize {
+            let uncompressed_size = contents.iter().map(Vec::len).sum::<usize>();
+            if uncompressed_size >= u32::MAX as usize {
                 options = options.large_file(true);
             }
             writer.borrow_mut().start_file(name, options)?;
