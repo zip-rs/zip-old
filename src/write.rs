@@ -744,9 +744,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             return Ok(());
         }
 
-        let make_plain_writer =
-            self.inner
-                .prepare_next_writer(Stored, None, None)?;
+        let make_plain_writer = self.inner.prepare_next_writer(Stored, None, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         let writer = self.inner.get_plain();
@@ -796,9 +794,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn abort_file(&mut self) -> ZipResult<()> {
         let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
         self.files_by_name.remove(&last_file.file_name);
-        let make_plain_writer =
-            self.inner
-                .prepare_next_writer(Stored, None, None)?;
+        let make_plain_writer = self.inner.prepare_next_writer(Stored, None, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
