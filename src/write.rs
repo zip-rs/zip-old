@@ -167,15 +167,26 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
             #[cfg(feature = "deflate-zopfli")]
             zopfli_buffer_size: None,
         };
-        if options.compression_method == Deflated {
-            options.compression_level = Some(u.int_in_range(0..=265)?);
-            if options.compression_level > Compression::best().level() {
-                options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
+        match options.compression_method {
+            Deflated => {
+                if bool::arbitrary(u)? {
+                    let level = u.int_in_range(0..=265)?;
+                    options.compression_level = Some(level);
+                    if level > Compression::best().level() {
+                        options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
+                    }
+                }
+            },
+            Stored => {
+                if bool::arbitrary(u)? {
+                    options.compression_level = Some(1);
+                }
+            },
+            _ => {
+                if bool::arbitrary(u)? {
+                    options.compression_level = Some(u.int_in_range(0..=10)?);
+                }
             }
-        } else if options.compression_method != Stored {
-            options.compression_level = Some(u.int_in_range(0..=10)?);
-        } else if bool::arbitrary(u)? {
-            options.compression_level = Some(1);
         }
         u.arbitrary_loop(Some(0), Some((u16::MAX / 4) as u32), |u| {
             options
