@@ -176,12 +176,12 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
                         options.zopfli_buffer_size = Some(1 << u.int_in_range(9..=30)?);
                     }
                 }
-            },
+            }
             Stored => {
                 if bool::arbitrary(u)? {
                     options.compression_level = Some(1);
                 }
-            },
+            }
             _ => {
                 if bool::arbitrary(u)? {
                     options.compression_level = Some(u.int_in_range(0..=10)?);
