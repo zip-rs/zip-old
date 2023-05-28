@@ -119,7 +119,7 @@ pub(crate) mod zip_writer {
 use crate::result::ZipError::InvalidArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
-use crate::CompressionMethod::Deflated;
+use crate::CompressionMethod::{Deflated, Stored};
 pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
@@ -352,7 +352,7 @@ impl Default for FileOptions {
                 feature = "deflate-zlib",
                 feature = "deflate-zopfli"
             )))]
-            compression_method: CompressionMethod::Stored,
+            compression_method: Stored,
             compression_level: None,
             #[cfg(feature = "time")]
             last_modified_time: OffsetDateTime::now_utc().try_into().unwrap_or_default(),
@@ -746,7 +746,7 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         let make_plain_writer =
             self.inner
-                .prepare_next_writer(CompressionMethod::Stored, None, None)?;
+                .prepare_next_writer(Stored, None, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         let writer = self.inner.get_plain();
@@ -798,7 +798,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.files_by_name.remove(&last_file.file_name);
         let make_plain_writer =
             self.inner
-                .prepare_next_writer(CompressionMethod::Stored, None, None)?;
+                .prepare_next_writer(Stored, None, None)?;
         self.inner.switch_to(make_plain_writer)?;
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
@@ -959,7 +959,7 @@ impl<W: Write + Seek> ZipWriter<W> {
             options.permissions = Some(0o755);
         }
         *options.permissions.as_mut().unwrap() |= 0o40000;
-        options.compression_method = CompressionMethod::Stored;
+        options.compression_method = Stored;
 
         let name_as_string = name.into();
         // Append a slash to the filename if it does not end with it.
@@ -1028,7 +1028,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         *options.permissions.as_mut().unwrap() |= 0o120000;
         // The symlink target is stored as file content. And compressing the target path
         // likely wastes space. So always store.
-        options.compression_method = CompressionMethod::Stored;
+        options.compression_method = Stored;
 
         self.start_entry(name, options, None)?;
         self.writing_to_file = true;
@@ -1157,7 +1157,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         {
             #[allow(deprecated)]
             match compression {
-                CompressionMethod::Stored => {
+                Stored => {
                     if compression_level.is_some() {
                         Err(ZipError::UnsupportedArchive(
                             "Unsupported compression level",
