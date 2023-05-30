@@ -21,7 +21,8 @@ use std::sync::Arc;
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
-    feature = "deflate-zlib"
+    feature = "deflate-zlib",
+    feature = "deflate-zlib-ng"
 ))]
 use flate2::write::DeflateEncoder;
 
@@ -60,7 +61,8 @@ enum GenericZipWriter<W: Write + Seek> {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng"
     ))]
     Deflater(DeflateEncoder<MaybeEncrypted<W>>),
     #[cfg(feature = "deflate-zopfli")]
@@ -348,13 +350,16 @@ impl Default for FileOptions {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli"
             ))]
             compression_method: Deflated,
             #[cfg(not(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
                 feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
                 feature = "deflate-zopfli"
             )))]
             compression_method: Stored,
@@ -1157,6 +1162,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
         {
             #[allow(deprecated)]
+            #[allow(unreachable_code)]
             match compression {
                 Stored => {
                     if compression_level.is_some() {
@@ -1171,23 +1177,19 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     feature = "deflate",
                     feature = "deflate-miniz",
                     feature = "deflate-zlib",
+                    feature = "deflate-zlib-ng",
                     feature = "deflate-zopfli"
                 ))]
                 Deflated => {
-                    #[cfg(all(
-                        not(feature = "deflate"),
-                        not(feature = "deflate-miniz"),
-                        not(feature = "deflate-zlib"),
-                        feature = "deflate-zopfli"
-                    ))]
-                    let default = 24;
-
-                    #[cfg(any(
-                        feature = "deflate",
-                        feature = "deflate-miniz",
-                        feature = "deflate-zlib"
-                    ))]
-                    let default = Compression::default().level() as i32;
+                    let default = if cfg!(feature = "deflate")
+                        || cfg!(feature = "deflate-miniz")
+                        || cfg!(feature = "deflate-zlib")
+                        || cfg!(feature = "deflate-zlib-ng")
+                    {
+                        Compression::default().level() as i32
+                    } else {
+                        24
+                    };
 
                     let level = clamp_opt(
                         compression_level.unwrap_or(default),
@@ -1197,48 +1199,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         "Unsupported compression level",
                     ))? as u32;
 
-                    #[cfg(not(feature = "deflate-zopfli"))]
-                    return Ok(Box::new(move |bare| {
-                        GenericZipWriter::Deflater(DeflateEncoder::new(
-                            bare,
-                            flate2::Compression::new(level),
-                        ))
-                    }));
-
-                    #[cfg(all(
-                        not(feature = "deflate"),
-                        not(feature = "deflate-miniz"),
-                        not(feature = "deflate-zlib"),
-                        feature = "deflate-zopfli"
-                    ))]
-                    return Ok(Box::new(move |bare| {
-                        let mut options = Options::default();
-                        options.iteration_count =
-                            NonZeroU8::try_from((level - best_non_zopfli) as u8).unwrap();
-                        match deflate_buffer_size {
-                            Some(size) => {
-                                GenericZipWriter::BufferedZopfliDeflater(BufWriter::with_capacity(
-                                    size,
-                                    zopfli::DeflateEncoder::new(options, Default::default(), bare),
-                                ))
-                            }
-                            None => GenericZipWriter::ZopfliDeflater(zopfli::DeflateEncoder::new(
-                                options,
-                                Default::default(),
-                                bare,
-                            )),
-                        }
-                    }));
-
-                    #[cfg(all(
-                        any(
-                            feature = "deflate",
-                            feature = "deflate-miniz",
-                            feature = "deflate-zlib"
-                        ),
-                        feature = "deflate-zopfli"
-                    ))]
-                    Ok(Box::new(move |bare| {
+                    #[cfg(feature = "deflate-zopfli")]
+                    {
                         let best_non_zopfli = Compression::best().level();
                         if level > best_non_zopfli {
                             let options = Options {
@@ -1248,7 +1210,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                 .unwrap(),
                                 ..Default::default()
                             };
-                            match zopfli_buffer_size {
+                            return Ok(Box::new(move |bare| match zopfli_buffer_size {
                                 Some(size) => GenericZipWriter::BufferedZopfliDeflater(
                                     BufWriter::with_capacity(
                                         size,
@@ -1262,14 +1224,25 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                                 None => GenericZipWriter::ZopfliDeflater(
                                     zopfli::DeflateEncoder::new(options, Default::default(), bare),
                                 ),
-                            }
-                        } else {
+                            }));
+                        }
+                    }
+
+                    #[cfg(any(
+                        feature = "deflate",
+                        feature = "deflate-miniz",
+                        feature = "deflate-zlib",
+                        feature = "deflate-zlib-ng",
+                    ))]
+                    {
+                        return Ok(Box::new(move |bare| {
                             GenericZipWriter::Deflater(DeflateEncoder::new(
                                 bare,
                                 Compression::new(level),
                             ))
-                        }
-                    }))
+                        }));
+                    }
+                    unreachable!()
                 }
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
@@ -1316,7 +1289,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng"
             ))]
             GenericZipWriter::Deflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
@@ -1345,7 +1319,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng"
             ))]
             GenericZipWriter::Deflater(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(feature = "deflate-zopfli")]
@@ -1383,28 +1358,26 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     feature = "deflate",
     feature = "deflate-miniz",
     feature = "deflate-zlib",
+    feature = "deflate-zlib-ng",
     feature = "deflate-zopfli"
 ))]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i32> {
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-miniz",
-        feature = "deflate-zlib",
-    ))]
-    let min = Compression::none().level() as i32;
+    let min = if cfg!(feature = "deflate")
+        || cfg!(feature = "deflate-miniz")
+        || cfg!(feature = "deflate-zlib")
+        || cfg!(feature = "deflate-zlib-ng")
+    {
+        Compression::none().level() as i32
+    } else {
+        Compression::best().level() as i32 + 1
+    };
 
-    #[cfg(not(any(
-        feature = "deflate",
-        feature = "deflate-miniz",
-        feature = "deflate-zlib",
-    )))]
-    let min = flate2::Compression::best().level() + 1 as i32;
-
-    #[cfg(not(feature = "deflate-zopfli"))]
-    let max = flate2::Compression::best().level() as i32;
-
-    #[cfg(feature = "deflate-zopfli")]
-    let max = Compression::best().level() as i32 + u8::MAX as i32;
+    let max = Compression::best().level() as i32
+        + if cfg!(feature = "deflate-zopfli") {
+            u8::MAX as i32
+        } else {
+            0
+        };
 
     min..=max
 }
@@ -1420,6 +1393,7 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i32> {
     feature = "deflate",
     feature = "deflate-miniz",
     feature = "deflate-zlib",
+    feature = "deflate-zlib-ng",
     feature = "deflate-zopfli",
     feature = "bzip2",
     feature = "zstd"

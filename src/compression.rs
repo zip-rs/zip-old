@@ -21,6 +21,7 @@ pub enum CompressionMethod {
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
     ))]
     Deflated,
@@ -57,6 +58,7 @@ impl CompressionMethod {
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
     ))]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
@@ -64,6 +66,7 @@ impl CompressionMethod {
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
     )))]
     pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
@@ -105,6 +108,7 @@ impl CompressionMethod {
                 feature = "deflate",
                 feature = "deflate-miniz",
                 feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
                 feature = "deflate-zopfli"
             ))]
             8 => CompressionMethod::Deflated,
@@ -132,6 +136,7 @@ impl CompressionMethod {
                 feature = "deflate",
                 feature = "deflate-miniz",
                 feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
                 feature = "deflate-zopfli"
             ))]
             CompressionMethod::Deflated => 8,
@@ -161,6 +166,7 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
         feature = "deflate",
         feature = "deflate-miniz",
         feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
     ))]
     CompressionMethod::Deflated,

@@ -191,3 +191,9 @@
 ### Added
 
  - Zopfli for aggressive Deflate compression.
+
+## [0.9.2]
+
+### Added
+
+ - `zlib-ng` for fast Deflate compression. This is now the default for compression levels 0-9.

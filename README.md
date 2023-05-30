@@ -4,7 +4,7 @@ zip_next
 [![Build Status](https://github.com/Pr0methean/zip-next/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip_next.svg)](https://crates.io/crates/zip_next)
 
-[Documentation](https://docs.rs/zip_next/0.9.1/zip_next/)
+[Documentation](https://docs.rs/zip_next/0.9.2/zip_next/)
 
 Info
 ----
@@ -32,25 +32,31 @@ With all default features:
 
 ```toml
 [dependencies]
-zip_next = "0.9.1"
+zip_next = "0.9.2"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip_next = { version = "0.9.1", default-features = false }
+zip_next = { version = "0.9.2", default-features = false }
 ```
 
 The features available are:
 
 * `aes-crypto`: Enables decryption of files which were encrypted with AES. Supports AE-1 and AE-2 methods.
-* `deflate`: Enables the deflate compression algorithm, which is the default for zip files.
+* `deflate`: Enables decompressing the deflate compression algorithm, which is the default for zip files.
+* `deflate-miniz`: Enables deflating files with the `miniz_oxide` library (used when compression quality is 0..=9).
+* `deflate-zlib`: Enables deflating files with the `zlib` library (used when compression quality is 0..=9).
+* `deflate-zlib-ng`: Enables deflating files with the `zlib-ng` library (used when compression quality is 0..=9).
+  This is the fastest `deflate` implementation available.
+* `deflate-zopfli`: Enables deflating files with the `zopfli` library (used when compression quality is 10..=264). This
+  is the most effective `deflate` implementation available.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 * `zstd`: Enables the Zstandard compression algorithm.
 
-All of these are enabled by default.
+By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.
 
 MSRV
 ----

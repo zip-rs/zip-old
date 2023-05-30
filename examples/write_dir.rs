@@ -18,14 +18,17 @@ const METHOD_STORED: Option<zip_next::CompressionMethod> =
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
-    feature = "deflate-zlib"
+    feature = "deflate-zlib",
+    feature = "deflate-zlib-ng"
 ))]
 const METHOD_DEFLATED: Option<zip_next::CompressionMethod> =
     Some(zip_next::CompressionMethod::Deflated);
 #[cfg(not(any(
     feature = "deflate",
     feature = "deflate-miniz",
-    feature = "deflate-zlib"
+    feature = "deflate-zlib",
+    feature = "deflate-zlib-ng",
+    feature = "deflate-zopfli"
 )))]
 const METHOD_DEFLATED: Option<zip_next::CompressionMethod> = None;
 

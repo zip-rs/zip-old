@@ -1,6 +1,6 @@
 [package]
 name = "zip_next"
-version = "0.9.1"
+version = "0.9.2"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>",
 "Chris Hennick <hennickc@amazon.com>"]
 license = "MIT"
@@ -43,9 +43,10 @@ aes-crypto = [ "aes", "constant_time_eq", "hmac", "pbkdf2", "sha1" ]
 deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
+deflate-zlib-ng = ["flate2/zlib-ng"]
 deflate-zopfli = ["zopfli"]
 unreserved = []
-default = ["aes-crypto", "bzip2", "deflate", "deflate-zopfli", "time", "zstd"]
+default = ["aes-crypto", "bzip2", "deflate", "deflate-zlib-ng", "deflate-zopfli", "time", "zstd"]
 
 [[bench]]
 name = "read_entry"
