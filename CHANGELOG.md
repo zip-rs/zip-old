@@ -197,3 +197,4 @@
 ### Added
 
  - `zlib-ng` for fast Deflate compression. This is now the default for compression levels 0-9.
+ - `chrono` to convert zip_next::DateTime to and from chrono::NaiveDateTime

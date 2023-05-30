@@ -3,6 +3,8 @@ use path::{Component, Path, PathBuf};
 use std::path;
 use std::sync::Arc;
 
+#[cfg(feature = "chrono")]
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
@@ -113,6 +115,39 @@ impl arbitrary::Arbitrary<'_> for DateTime {
             minute: u.int_in_range(0..=59)?,
             second: u.int_in_range(0..=60)?,
         })
+    }
+}
+
+#[cfg(feature = "chrono")]
+#[allow(clippy::result_unit_err)]
+impl<T> TryFrom<T> for DateTime
+where
+    T: Datelike + Timelike,
+{
+    type Error = ();
+
+    fn try_from(value: T) -> Result<Self, Self::Error> {
+        Ok(DateTime::from_date_and_time(
+            value.year().try_into()?,
+            value.month().try_into()?,
+            value.day().try_into()?,
+            value.hour().try_into()?,
+            value.minute().try_into()?,
+            value.second().try_into()?,
+        )?)
+    }
+}
+
+#[cfg(feature = "chrono")]
+#[allow(clippy::result_unit_err)]
+impl TryInto<NaiveDateTime> for DateTime {
+    type Error = ();
+
+    fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
+        Ok(NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())?,
+            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())?,
+        ))
     }
 }
 
