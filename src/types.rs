@@ -141,10 +141,11 @@ impl TryInto<NaiveDateTime> for DateTime {
     type Error = ();
 
     fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
-        Ok(NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())?,
-            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())?,
-        ))
+        let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+            .ok_or(())?;
+        let time = NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+            .ok_or(())?;
+        Ok(NaiveDateTime::new(date, time))
     }
 }
 
