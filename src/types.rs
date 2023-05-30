@@ -120,13 +120,10 @@ impl arbitrary::Arbitrary<'_> for DateTime {
 
 #[cfg(feature = "chrono")]
 #[allow(clippy::result_unit_err)]
-impl<T> TryFrom<T> for DateTime
-where
-    T: Datelike + Timelike,
-{
-    type Error = ();
+impl TryFrom<NaiveDateTime> for DateTime {
+    type Error = DateTimeRangeError;
 
-    fn try_from(value: T) -> Result<Self, Self::Error> {
+    fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
         Ok(DateTime::from_date_and_time(
             value.year().try_into()?,
             value.month().try_into()?,
@@ -202,7 +199,7 @@ impl DateTime {
         hour: u8,
         minute: u8,
         second: u8,
-    ) -> Result<DateTime, ()> {
+    ) -> Result<DateTime, DateTimeRangeError> {
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -219,7 +216,7 @@ impl DateTime {
                 second,
             })
         } else {
-            Err(())
+            Err(DateTimeRangeError)
         }
     }
 

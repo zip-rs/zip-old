@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::io::IntoInnerError;
+use std::num::TryFromIntError;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
@@ -92,6 +93,13 @@ impl From<ZipError> for io::Error {
 /// Error type for time parsing
 #[derive(Debug)]
 pub struct DateTimeRangeError;
+
+// TryFromIntError is also an out-of-range error.
+impl From<TryFromIntError> for DateTimeRangeError {
+    fn from(_value: TryFromIntError) -> Self {
+        DateTimeRangeError
+    }
+}
 
 impl fmt::Display for DateTimeRangeError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {

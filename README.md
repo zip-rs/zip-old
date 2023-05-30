@@ -54,8 +54,7 @@ The features available are:
   is the most effective `deflate` implementation available.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
-* `chrono`: Enables converting last-modified `zip_next::DateTime` to and from `chrono::NaiveDateTime` and from 
-  `chrono::DateTime`.
+* `chrono`: Enables converting last-modified `zip_next::DateTime` to and from `chrono::NaiveDateTime`.
 * `zstd`: Enables the Zstandard compression algorithm.
 
 By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.
