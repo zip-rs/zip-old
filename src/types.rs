@@ -124,14 +124,14 @@ impl TryFrom<NaiveDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
     fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
-        Ok(DateTime::from_date_and_time(
+        DateTime::from_date_and_time(
             value.year().try_into()?,
             value.month().try_into()?,
             value.day().try_into()?,
             value.hour().try_into()?,
             value.minute().try_into()?,
             value.second().try_into()?,
-        )?)
+        )
     }
 }
 
@@ -143,8 +143,9 @@ impl TryInto<NaiveDateTime> for DateTime {
     fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
         let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
             .ok_or(())?;
-        let time = NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
-            .ok_or(())?;
+        let time =
+            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+                .ok_or(())?;
         Ok(NaiveDateTime::new(date, time))
     }
 }
