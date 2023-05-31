@@ -152,6 +152,55 @@ impl CompressionMethod {
     }
 }
 
+impl Default for CompressionMethod {
+    fn default() -> Self {
+        #[cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib",
+            feature = "deflate-zlib-ng",
+            feature = "deflate-zopfli"
+        ))]
+        return CompressionMethod::Deflated;
+
+        #[cfg(all(
+            not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli"
+            )),
+            feature = "bzip2"
+        ))]
+        return CompressionMethod::Bzip2;
+
+        #[cfg(all(
+            not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli",
+                feature = "bzip2"
+            )),
+            feature = "zstd"
+        ))]
+        return CompressionMethod::Zstd;
+
+        #[cfg(not(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib",
+            feature = "deflate-zlib-ng",
+            feature = "deflate-zopfli",
+            feature = "bzip2",
+            feature = "zstd"
+        )))]
+        return CompressionMethod::Stored;
+    }
+}
+
 impl fmt::Display for CompressionMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Just duplicate what the Debug format looks like, i.e, the enum key:

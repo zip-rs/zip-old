@@ -51,6 +51,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
                    operation: FileOperation,
                    abort: bool, flush_on_finish_file: bool) -> Result<(), Box<dyn std::error::Error>>
                    where T: Read + Write + Seek {
+    writer.borrow_mut().set_flush_on_finish_file(flush_on_finish_file);
     let name = operation.name;
     match operation.basic {
         BasicFileOperation::WriteNormalFile {contents, mut options, ..} => {
@@ -86,7 +87,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
     if operation.reopen {
         let old_comment = writer.borrow().get_raw_comment().to_owned();
         let new_writer = zip_next::ZipWriter::new_append(
-            writer.borrow_mut().finish().unwrap(), flush_on_finish_file).unwrap();
+            writer.borrow_mut().finish().unwrap()).unwrap();
         assert_eq!(&old_comment, new_writer.get_raw_comment());
         *writer = new_writer.into();
     }
@@ -94,8 +95,7 @@ fn do_operation<T>(writer: &mut RefCell<zip_next::ZipWriter<T>>,
 }
 
 fuzz_target!(|test_case: FuzzTestCase| {
-    let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new()),
-        test_case.flush_on_finish_file));
+    let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new())));
     writer.borrow_mut().set_raw_comment(test_case.comment);
     for (operation, abort) in test_case.operations {
         let _ = do_operation(&mut writer, operation, abort, test_case.flush_on_finish_file);

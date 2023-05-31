@@ -198,3 +198,15 @@
 
  - `zlib-ng` for fast Deflate compression. This is now the default for compression levels 0-9.
  - `chrono` to convert zip_next::DateTime to and from chrono::NaiveDateTime
+
+## [0.10.0]
+
+### Changed
+
+ - Replaces the `flush_on_finish_file` parameter of `ZipWriter::new` and `ZipWriter::Append` with
+   a `set_flush_on_finish_file` method.
+
+### Fixed
+
+ - Fixes build errors that occur when all default features are disabled.
+ - Fixes more cases of a bug when ZIP64 magic bytes occur in filenames.

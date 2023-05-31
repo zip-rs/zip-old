@@ -25,7 +25,7 @@ fn doit(filename: &str) -> zip_next::result::ZipResult<()> {
     let path = std::path::Path::new(filename);
     let file = std::fs::File::create(path).unwrap();
 
-    let mut zip = zip_next::ZipWriter::new(file, false);
+    let mut zip = zip_next::ZipWriter::new(file);
 
     zip.add_directory("test/", Default::default())?;
 

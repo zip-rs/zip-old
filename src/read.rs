@@ -72,6 +72,7 @@ pub(crate) mod zip_archive {
 }
 
 pub use zip_archive::ZipArchive;
+
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
     Plaintext(io::Take<&'a mut dyn Read>),
@@ -296,11 +297,19 @@ pub(crate) fn make_reader(
     }
 }
 
+pub(crate) struct DirectoryCounts {
+    pub(crate) archive_offset: u64,
+    pub(crate) directory_start: u64,
+    pub(crate) number_of_files: usize,
+    pub(crate) disk_number: u32,
+    pub(crate) disk_with_central_directory: u32,
+}
+
 impl<R: Read + Seek> ZipArchive<R> {
     fn get_directory_counts_zip32(
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
-    ) -> ZipResult<(u64, u64, usize)> {
+    ) -> ZipResult<DirectoryCounts> {
         // Some zip files have data prepended to them, resulting in the
         // offsets all being too small. Get the amount of error by comparing
         // the actual file position we found the CDE at with the offset
@@ -314,14 +323,20 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let directory_start = footer.central_directory_offset as u64 + archive_offset;
         let number_of_files = footer.number_of_files_on_this_disk as usize;
-        Ok((archive_offset, directory_start, number_of_files))
+        Ok(DirectoryCounts {
+            archive_offset,
+            directory_start,
+            number_of_files,
+            disk_number: footer.disk_number as u32,
+            disk_with_central_directory: footer.disk_with_central_directory as u32,
+        })
     }
 
     fn get_directory_counts_zip64(
         reader: &mut R,
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
-    ) -> ZipResult<(u64, u64, usize, ZipResult<()>)> {
+    ) -> ZipResult<DirectoryCounts> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
@@ -373,21 +388,13 @@ impl<R: Read + Seek> ZipArchive<R> {
             ));
         }
 
-        let supported = if (footer64.disk_number != footer64.disk_with_central_directory)
-            || (!footer.record_too_small()
-                && footer.disk_number as u32 != locator64.disk_with_central_directory)
-        {
-            unsupported_zip_error("Support for multi-disk files is not implemented")
-        } else {
-            Ok(())
-        };
-
-        Ok((
+        Ok(DirectoryCounts {
             archive_offset,
             directory_start,
-            footer64.number_of_files as usize,
-            supported,
-        ))
+            number_of_files: footer64.number_of_files as usize,
+            disk_number: footer64.disk_number,
+            disk_with_central_directory: footer64.disk_with_central_directory,
+        })
     }
 
     /// Get the directory start offset and number of files. This is done in a
@@ -396,29 +403,48 @@ impl<R: Read + Seek> ZipArchive<R> {
         reader: &mut R,
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
-    ) -> ZipResult<(u64, u64, usize)> {
+    ) -> ZipResult<DirectoryCounts> {
         // Check if file has a zip64 footer
-        let (archive_offset_64, directory_start_64, number_of_files_64, supported_64) =
-            match Self::get_directory_counts_zip64(reader, footer, cde_start_pos) {
-                Ok(result) => result,
-                Err(_) => return Self::get_directory_counts_zip32(footer, cde_start_pos),
-            };
-        // Check if it also has a zip32 footer
-        let (archive_offset_32, directory_start_32, number_of_files_32) =
-            match Self::get_directory_counts_zip32(footer, cde_start_pos) {
-                Ok(result) => result,
-                Err(_) => {
-                    supported_64?;
-                    return Ok((archive_offset_64, directory_start_64, number_of_files_64));
+        let counts_64 = Self::get_directory_counts_zip64(reader, footer, cde_start_pos);
+        let counts_32 = Self::get_directory_counts_zip32(footer, cde_start_pos);
+        match counts_64 {
+            Err(_) => match counts_32 {
+                Err(e) => Err(e),
+                Ok(counts) => {
+                    if counts.disk_number != counts.disk_with_central_directory {
+                        return unsupported_zip_error(
+                            "Support for multi-disk files is not implemented",
+                        );
+                    }
+                    Ok(counts)
                 }
-            };
-        // It has both, so check if the zip64 footer is valid; if not, assume zip32
-        if number_of_files_64 != number_of_files_32 && number_of_files_32 != u16::MAX as usize {
-            return Ok((archive_offset_32, directory_start_32, number_of_files_32));
+            },
+            Ok(counts_64) => {
+                match counts_32 {
+                    Err(_) => Ok(counts_64),
+                    Ok(counts_32) => {
+                        // Both zip32 and zip64 footers exist, so check if the zip64 footer is valid; if not, try zip32
+                        if counts_64.number_of_files != counts_32.number_of_files
+                            && counts_32.number_of_files != u16::MAX as usize
+                        {
+                            return Ok(counts_32);
+                        }
+                        if counts_64.disk_number != counts_32.disk_number
+                            && counts_32.disk_number != u16::MAX as u32
+                        {
+                            return Ok(counts_32);
+                        }
+                        if counts_64.disk_with_central_directory
+                            != counts_32.disk_with_central_directory
+                            && counts_32.disk_with_central_directory != u16::MAX as u32
+                        {
+                            return Ok(counts_32);
+                        }
+                        Ok(counts_64)
+                    }
+                }
+            }
         }
-        // It is, so we assume a zip64
-        supported_64?;
-        Ok((archive_offset_64, directory_start_64, number_of_files_64))
     }
 
     /// Read a ZIP archive, collecting the files it contains
@@ -427,32 +453,34 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
 
-        if !footer.record_too_small() && footer.disk_number != footer.disk_with_central_directory {
+        let counts = Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
+
+        if counts.disk_number != counts.disk_with_central_directory {
             return unsupported_zip_error("Support for multi-disk files is not implemented");
         }
 
-        let (archive_offset, directory_start, number_of_files) =
-            Self::get_directory_counts(&mut reader, &footer, cde_start_pos)?;
-
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
-        let file_capacity = if number_of_files > cde_start_pos as usize {
+        let file_capacity = if counts.number_of_files > cde_start_pos as usize {
             0
         } else {
-            number_of_files
+            counts.number_of_files
         };
 
         let mut files = Vec::with_capacity(file_capacity);
         let mut names_map = HashMap::with_capacity(file_capacity);
 
-        if reader.seek(io::SeekFrom::Start(directory_start)).is_err() {
+        if reader
+            .seek(io::SeekFrom::Start(counts.directory_start))
+            .is_err()
+        {
             return Err(ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
             ));
         }
 
-        for _ in 0..number_of_files {
-            let file = central_header_to_zip_file(&mut reader, archive_offset)?;
+        for _ in 0..counts.number_of_files {
+            let file = central_header_to_zip_file(&mut reader, counts.archive_offset)?;
             names_map.insert(file.file_name.clone(), files.len());
             files.push(file);
         }
@@ -460,7 +488,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         let shared = Arc::new(zip_archive::Shared {
             files,
             names_map,
-            offset: archive_offset,
+            offset: counts.archive_offset,
             comment: footer.zip_file_comment,
         });
 

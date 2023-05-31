@@ -25,17 +25,23 @@ jobs:
         toolchain: ${{ matrix.rust }}
         override: true
 
-    - name: check
+    - name: Check
       uses: actions-rs/cargo@v1
       with:
         command: check
         args: --all --bins --examples
 
-    - name: tests
+    - name: Tests
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --all
+
+    - name: Tests (no features)
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --all --no-default-features
 
   clippy:
     runs-on: ubuntu-latest
@@ -117,6 +123,32 @@ jobs:
       - name: run fuzz
         run: |
           cargo fuzz run fuzz_write -- -timeout=5s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000
+      - name: Upload any failure inputs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz_write_bad_inputs
+          path: fuzz/artifacts/fuzz_write/crash-*
+          if-no-files-found: ignore
+
+  fuzz_write_with_no_features:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - run: cargo install cargo-fuzz
+      - name: compile fuzz
+        run: |
+          cargo fuzz build --no-default-features fuzz_write
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_write -- -timeout=5s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3

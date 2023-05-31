@@ -11,8 +11,6 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
     target_arch = "powerpc"
 )))]
 use std::sync::atomic;
-#[cfg(not(feature = "time"))]
-use std::time::SystemTime;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
@@ -53,8 +51,6 @@ mod atomic {
     }
 }
 
-#[cfg(feature = "time")]
-use crate::result::DateTimeRangeError;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
@@ -121,16 +117,16 @@ impl arbitrary::Arbitrary<'_> for DateTime {
 #[cfg(feature = "chrono")]
 #[allow(clippy::result_unit_err)]
 impl TryFrom<NaiveDateTime> for DateTime {
-    type Error = DateTimeRangeError;
+    type Error = ();
 
     fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
         DateTime::from_date_and_time(
-            value.year().try_into()?,
-            value.month().try_into()?,
-            value.day().try_into()?,
-            value.hour().try_into()?,
-            value.minute().try_into()?,
-            value.second().try_into()?,
+            value.year().try_into().map_err(|_| ())?,
+            value.month().try_into().map_err(|_| ())?,
+            value.day().try_into().map_err(|_| ())?,
+            value.hour().try_into().map_err(|_| ())?,
+            value.minute().try_into().map_err(|_| ())?,
+            value.second().try_into().map_err(|_| ())?,
         )
     }
 }
@@ -201,7 +197,7 @@ impl DateTime {
         hour: u8,
         minute: u8,
         second: u8,
-    ) -> Result<DateTime, DateTimeRangeError> {
+    ) -> Result<DateTime, ()> {
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -218,7 +214,7 @@ impl DateTime {
                 second,
             })
         } else {
-            Err(DateTimeRangeError)
+            Err(())
         }
     }
 
@@ -316,8 +312,9 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
+#[allow(clippy::result_unit_err)]
 impl TryFrom<OffsetDateTime> for DateTime {
-    type Error = DateTimeRangeError;
+    type Error = ();
 
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
@@ -330,7 +327,7 @@ impl TryFrom<OffsetDateTime> for DateTime {
                 second: dt.second(),
             })
         } else {
-            Err(DateTimeRangeError)
+            Err(())
         }
     }
 }
