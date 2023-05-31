@@ -1632,14 +1632,6 @@ mod test {
     use crate::compression::CompressionMethod;
     use crate::result::ZipResult;
     use crate::types::DateTime;
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng",
-        feature = "deflate-miniz",
-        feature = "deflate-zopfli"
-    ))]
-    use crate::CompressionMethod::Deflated;
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
