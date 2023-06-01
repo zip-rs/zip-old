@@ -122,7 +122,7 @@ impl TryFrom<NaiveDateTime> for DateTime {
     fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
         DateTime::from_date_and_time(
             value.year().try_into()?,
-            value.month().try_into()?,
+            u8::from(value.month()).into(),
             value.day().try_into()?,
             value.hour().try_into()?,
             value.minute().try_into()?,
@@ -316,7 +316,7 @@ impl TryFrom<OffsetDateTime> for DateTime {
         if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
                 year: (dt.year()).try_into()?,
-                month: (dt.month()).try_into()?,
+                month: dt.month().into(),
                 day: dt.day(),
                 hour: dt.hour(),
                 minute: dt.minute(),
