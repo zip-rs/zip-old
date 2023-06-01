@@ -231,8 +231,10 @@ impl arbitrary::Arbitrary<'_> for FileOptions {
 impl FileOptions {
     /// Set the compression method for the new file
     ///
-    /// The default is `CompressionMethod::Deflated`. If the deflate compression feature is
-    /// disabled, `CompressionMethod::Stored` becomes the default.
+    /// The default is `CompressionMethod::Deflated` if it is enabled. If not,
+    /// `CompressionMethod::Bzip2` is the default if it is enabled. If neither `bzip2` nor `deflate`
+    /// is enabled, `CompressionMethod::Zlib` is the default. If all else fails,
+    /// `CompressionMethod::Stored` becomes the default and files are written uncompressed.
     #[must_use]
     pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
         self.compression_method = method;
