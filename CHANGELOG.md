@@ -210,3 +210,7 @@
 
  - Fixes build errors that occur when all default features are disabled.
  - Fixes more cases of a bug when ZIP64 magic bytes occur in filenames.
+
+## [0.10.1]
+
+ - Date and time conversion methods now return `DateTimeRangeError` rather than `()` on error.

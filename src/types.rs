@@ -53,6 +53,7 @@ mod atomic {
 
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+use crate::result::DateTimeRangeError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum System {
@@ -115,33 +116,31 @@ impl arbitrary::Arbitrary<'_> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-#[allow(clippy::result_unit_err)]
 impl TryFrom<NaiveDateTime> for DateTime {
-    type Error = ();
+    type Error = DateTimeRangeError;
 
     fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
         DateTime::from_date_and_time(
-            value.year().try_into().map_err(|_| ())?,
-            value.month().try_into().map_err(|_| ())?,
-            value.day().try_into().map_err(|_| ())?,
-            value.hour().try_into().map_err(|_| ())?,
-            value.minute().try_into().map_err(|_| ())?,
-            value.second().try_into().map_err(|_| ())?,
+            value.year().try_into()?,
+            value.month().try_into()?,
+            value.day().try_into()?,
+            value.hour().try_into()?,
+            value.minute().try_into()?,
+            value.second().try_into()?,
         )
     }
 }
 
 #[cfg(feature = "chrono")]
-#[allow(clippy::result_unit_err)]
 impl TryInto<NaiveDateTime> for DateTime {
-    type Error = ();
+    type Error = DateTimeRangeError;
 
     fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
         let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
-            .ok_or(())?;
+            .ok_or(DateTimeRangeError)?;
         let time =
             NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
-                .ok_or(())?;
+                .ok_or(DateTimeRangeError)?;
         Ok(NaiveDateTime::new(date, time))
     }
 }
@@ -189,7 +188,6 @@ impl DateTime {
     /// * hour: [0, 23]
     /// * minute: [0, 59]
     /// * second: [0, 60]
-    #[allow(clippy::result_unit_err)]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -197,7 +195,7 @@ impl DateTime {
         hour: u8,
         minute: u8,
         second: u8,
-    ) -> Result<DateTime, ()> {
+    ) -> Result<DateTime, DateTimeRangeError> {
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -214,7 +212,7 @@ impl DateTime {
                 second,
             })
         } else {
-            Err(())
+            Err(DateTimeRangeError)
         }
     }
 
@@ -235,10 +233,9 @@ impl DateTime {
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    #[allow(clippy::result_unit_err)]
     #[deprecated(note = "use `DateTime::try_from()`")]
-    pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
-        dt.try_into().map_err(|_err| ())
+    pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
+        dt.try_into().map_err(|_err| DateTimeRangeError)
     }
 
     /// Gets the time portion of this datetime in the msdos representation
@@ -312,22 +309,21 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
-#[allow(clippy::result_unit_err)]
 impl TryFrom<OffsetDateTime> for DateTime {
-    type Error = ();
+    type Error = DateTimeRangeError;
 
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
-                year: (dt.year()) as u16,
-                month: (dt.month()) as u8,
+                year: (dt.year()).try_into()?,
+                month: (dt.month()).try_into()?,
                 day: dt.day(),
                 hour: dt.hour(),
                 minute: dt.minute(),
                 second: dt.second(),
             })
         } else {
-            Err(())
+            Err(DateTimeRangeError)
         }
     }
 }
