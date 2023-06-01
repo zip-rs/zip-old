@@ -1,5 +1,6 @@
 //! Error types that can be emitted from this library
 
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -97,6 +98,12 @@ pub struct DateTimeRangeError;
 // TryFromIntError is also an out-of-range error.
 impl From<TryFromIntError> for DateTimeRangeError {
     fn from(_value: TryFromIntError) -> Self {
+        DateTimeRangeError
+    }
+}
+
+impl From<Infallible> for DateTimeRangeError {
+    fn from(_value: Infallible) -> Self {
         DateTimeRangeError
     }
 }

@@ -51,9 +51,9 @@ mod atomic {
     }
 }
 
+use crate::result::DateTimeRangeError;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
-use crate::result::DateTimeRangeError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum System {
