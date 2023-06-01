@@ -122,7 +122,7 @@ impl TryFrom<NaiveDateTime> for DateTime {
     fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
         DateTime::from_date_and_time(
             value.year().try_into()?,
-            u8::from(value.month()).into(),
+            value.month().try_into()?,
             value.day().try_into()?,
             value.hour().try_into()?,
             value.minute().try_into()?,
