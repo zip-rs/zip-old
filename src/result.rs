@@ -104,7 +104,7 @@ impl From<TryFromIntError> for DateTimeRangeError {
 
 impl From<Infallible> for DateTimeRangeError {
     fn from(_value: Infallible) -> Self {
-        DateTimeRangeError
+        unreachable!()
     }
 }
 
