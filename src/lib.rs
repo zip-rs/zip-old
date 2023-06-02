@@ -49,6 +49,6 @@ mod zipcrypto;
 ///
 /// ```toml
 /// [dependencies]
-/// zip_next = "=0.10.0"
+/// zip_next = "=0.10.1"
 /// ```
 pub mod unstable;
