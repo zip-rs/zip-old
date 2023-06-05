@@ -9,6 +9,7 @@ use crate::types::{
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
+#[cfg(feature = "time")]
 use std::convert::TryInto;
 use std::default::Default;
 use std::io;
@@ -129,7 +130,10 @@ struct ZipRawValues {
 #[derive(Copy, Clone)]
 enum EncryptWith<'k> {
     ZipCrypto(crate::zipcrypto::ZipCryptoKeys),
-    #[cfg(feature = "aes-crypto")]
+    // This shouldn't be available if the "aes-crypto" feature isn't enabled, but if we make it
+    // conditionally compiled we would end up with an unused lifetime which throws a compilation
+    // error.
+    #[allow(unused)]
     Aes {
         mode: AesMode,
         password: &'k str,
@@ -1114,6 +1118,7 @@ impl<W: Write + io::Seek> GenericZipWriter<W> {
     fn get_plain(&mut self) -> &mut W {
         match *self {
             GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(ref mut w)) => w,
+            #[cfg(feature = "aes-crypto")]
             GenericZipWriter::Storer(MaybeEncrypted::Aes(ref mut w)) => &mut w.writer,
             GenericZipWriter::Storer(MaybeEncrypted::ZipCrypto(ref mut w)) => &mut w.writer,
             _ => panic!("Should have switched to stored and unencrypted beforehand"),
