@@ -45,7 +45,7 @@ pub struct AesReader<R> {
 }
 
 impl<R: Read> AesReader<R> {
-    pub fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
+    pub const fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
         let data_length = compressed_size
             - (PWD_VERIFY_LENGTH + AUTH_CODE_LENGTH + aes_mode.salt_length()) as u64;
 

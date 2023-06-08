@@ -107,7 +107,7 @@ impl<'a> CryptoReader<'a> {
     }
 
     /// Returns `true` if the data is encrypted using AE2.
-    pub fn is_ae2_encrypted(&self) -> bool {
+    pub const fn is_ae2_encrypted(&self) -> bool {
         #[cfg(feature = "aes-crypto")]
         return matches!(
             self,
@@ -692,7 +692,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     }
 }
 
-fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
+const fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
 

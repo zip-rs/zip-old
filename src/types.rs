@@ -63,7 +63,7 @@ pub enum System {
 }
 
 impl System {
-    pub fn from_u8(system: u8) -> System {
+    pub const fn from_u8(system: u8) -> System {
         use self::System::*;
 
         match system {
@@ -161,7 +161,7 @@ impl Default for DateTime {
 
 impl DateTime {
     /// Converts an msdos (u16, u16) pair to a DateTime object
-    pub fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
+    pub const fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
@@ -239,12 +239,12 @@ impl DateTime {
     }
 
     /// Gets the time portion of this datetime in the msdos representation
-    pub fn timepart(&self) -> u16 {
+    pub const fn timepart(&self) -> u16 {
         ((self.second as u16) >> 1) | ((self.minute as u16) << 5) | ((self.hour as u16) << 11)
     }
 
     /// Gets the date portion of this datetime in the msdos representation
-    pub fn datepart(&self) -> u16 {
+    pub const fn datepart(&self) -> u16 {
         (self.day as u16) | ((self.month as u16) << 5) | ((self.year - 1980) << 9)
     }
 
@@ -258,7 +258,7 @@ impl DateTime {
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
-    pub fn year(&self) -> u16 {
+    pub const fn year(&self) -> u16 {
         self.year
     }
 
@@ -267,7 +267,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn month(&self) -> u8 {
+    pub const fn month(&self) -> u8 {
         self.month
     }
 
@@ -276,7 +276,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn day(&self) -> u8 {
+    pub const fn day(&self) -> u8 {
         self.day
     }
 
@@ -285,7 +285,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn hour(&self) -> u8 {
+    pub const fn hour(&self) -> u8 {
         self.hour
     }
 
@@ -294,7 +294,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn minute(&self) -> u8 {
+    pub const fn minute(&self) -> u8 {
         self.minute
     }
 
@@ -303,7 +303,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn second(&self) -> u8 {
+    pub const fn second(&self) -> u8 {
         self.second
     }
 }
@@ -338,7 +338,7 @@ pub const DEFAULT_VERSION: u8 = 46;
 pub struct AtomicU64(atomic::AtomicU64);
 
 impl AtomicU64 {
-    pub fn new(v: u64) -> Self {
+    pub const fn new(v: u64) -> Self {
         Self(atomic::AtomicU64::new(v))
     }
 
@@ -456,7 +456,7 @@ impl ZipFileData {
     }
 
     /// Get unix mode for the file
-    pub(crate) fn unix_mode(&self) -> Option<u32> {
+    pub(crate) const fn unix_mode(&self) -> Option<u32> {
         if self.external_attributes == 0 {
             return None;
         }
@@ -480,13 +480,13 @@ impl ZipFileData {
         }
     }
 
-    pub fn zip64_extension(&self) -> bool {
+    pub const fn zip64_extension(&self) -> bool {
         self.uncompressed_size > 0xFFFFFFFF
             || self.compressed_size > 0xFFFFFFFF
             || self.header_start > 0xFFFFFFFF
     }
 
-    pub fn version_needed(&self) -> u16 {
+    pub const fn version_needed(&self) -> u16 {
         // higher versions matched first
         match (self.zip64_extension(), self.compression_method) {
             #[cfg(feature = "bzip2")]
@@ -517,11 +517,11 @@ pub enum AesMode {
 
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
-    pub fn salt_length(&self) -> usize {
+    pub const fn salt_length(&self) -> usize {
         self.key_length() / 2
     }
 
-    pub fn key_length(&self) -> usize {
+    pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128 => 16,
             Self::Aes192 => 24,

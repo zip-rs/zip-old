@@ -236,7 +236,7 @@ impl FileOptions {
     /// is enabled, `CompressionMethod::Zlib` is the default. If all else fails,
     /// `CompressionMethod::Stored` becomes the default and files are written uncompressed.
     #[must_use]
-    pub fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
+    pub const fn compression_method(mut self, method: CompressionMethod) -> FileOptions {
         self.compression_method = method;
         self
     }
@@ -252,7 +252,7 @@ impl FileOptions {
     /// * `Zstd`: -7 - 22, with zero being mapped to default level. Default is 3
     /// * others: only `None` is allowed
     #[must_use]
-    pub fn compression_level(mut self, level: Option<i32>) -> FileOptions {
+    pub const fn compression_level(mut self, level: Option<i32>) -> FileOptions {
         self.compression_level = level;
         self
     }
@@ -262,7 +262,7 @@ impl FileOptions {
     /// The default is the current timestamp if the 'time' feature is enabled, and 1980-01-01
     /// otherwise
     #[must_use]
-    pub fn last_modified_time(mut self, mod_time: DateTime) -> FileOptions {
+    pub const fn last_modified_time(mut self, mod_time: DateTime) -> FileOptions {
         self.last_modified_time = mod_time;
         self
     }
@@ -277,7 +277,7 @@ impl FileOptions {
     /// higher file mode bits. So it cannot be used to denote an entry as a directory,
     /// symlink, or other special file type.
     #[must_use]
-    pub fn unix_permissions(mut self, mode: u32) -> FileOptions {
+    pub const fn unix_permissions(mut self, mode: u32) -> FileOptions {
         self.permissions = Some(mode & 0o777);
         self
     }
@@ -288,7 +288,7 @@ impl FileOptions {
     /// aborted. If set to `true`, readers will require ZIP64 support and if the file does not
     /// exceed the limit, 20 B are wasted. The default is `false`.
     #[must_use]
-    pub fn large_file(mut self, large: bool) -> FileOptions {
+    pub const fn large_file(mut self, large: bool) -> FileOptions {
         self.large_file = large;
         self
     }
@@ -346,7 +346,7 @@ impl FileOptions {
 
     /// Sets the alignment to the given number of bytes.
     #[must_use]
-    pub fn with_alignment(mut self, alignment: u16) -> FileOptions {
+    pub const fn with_alignment(mut self, alignment: u16) -> FileOptions {
         self.alignment = alignment;
         self
     }
@@ -357,13 +357,13 @@ impl FileOptions {
     /// are larger than about 32 KiB.
     #[must_use]
     #[cfg(feature = "deflate-zopfli")]
-    pub fn with_zopfli_buffer(mut self, size: Option<usize>) -> FileOptions {
+    pub const fn with_zopfli_buffer(mut self, size: Option<usize>) -> FileOptions {
         self.zopfli_buffer_size = size;
         self
     }
 
     /// Returns the compression level currently set.
-    pub fn get_compression_level(&self) -> Option<i32> {
+    pub const fn get_compression_level(&self) -> Option<i32> {
         self.compression_level
     }
 }
@@ -581,7 +581,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     /// Returns true if a file is currently open for writing.
-    pub fn is_writing_file(&self) -> bool {
+    pub const fn is_writing_file(&self) -> bool {
         self.writing_to_file && !self.inner.is_closed()
     }
 
@@ -610,7 +610,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This returns the raw bytes of the comment. The comment
     /// is typically expected to be encoded in UTF-8
-    pub fn get_raw_comment(&self) -> &Vec<u8> {
+    pub const fn get_raw_comment(&self) -> &Vec<u8> {
         &self.comment
     }
 
@@ -1364,7 +1364,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
         }
     }
 
-    fn is_closed(&self) -> bool {
+    const fn is_closed(&self) -> bool {
         matches!(*self, GenericZipWriter::Closed)
     }
 

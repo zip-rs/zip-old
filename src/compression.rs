@@ -100,7 +100,7 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "use a constant to construct a compression method"
     )]
-    pub fn from_u16(val: u16) -> CompressionMethod {
+    pub const fn from_u16(val: u16) -> CompressionMethod {
         #[allow(deprecated)]
         match val {
             0 => CompressionMethod::Stored,
@@ -128,7 +128,7 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "to match on other compression methods, use a constant"
     )]
-    pub fn to_u16(self) -> u16 {
+    pub const fn to_u16(self) -> u16 {
         #[allow(deprecated)]
         match self {
             CompressionMethod::Stored => 0,

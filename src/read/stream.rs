@@ -15,7 +15,7 @@ pub struct ZipStreamReader<R>(R);
 
 impl<R> ZipStreamReader<R> {
     /// Create a new ZipStreamReader
-    pub fn new(reader: R) -> Self {
+    pub const fn new(reader: R) -> Self {
         Self(reader)
     }
 }
@@ -204,7 +204,7 @@ impl ZipStreamFileMetadata {
     }
 
     /// Get unix mode for the file
-    pub fn unix_mode(&self) -> Option<u32> {
+    pub const fn unix_mode(&self) -> Option<u32> {
         self.0.unix_mode()
     }
 }

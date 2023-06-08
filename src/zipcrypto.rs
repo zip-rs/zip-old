@@ -36,7 +36,7 @@ impl Debug for ZipCryptoKeys {
 }
 
 impl ZipCryptoKeys {
-    fn new() -> ZipCryptoKeys {
+    const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
             key_0: Wrapping(0x12345678),
             key_1: Wrapping(0x23456789),
