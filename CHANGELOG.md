@@ -213,4 +213,12 @@
 
 ## [0.10.1]
 
+### Changed
+
  - Date and time conversion methods now return `DateTimeRangeError` rather than `()` on error.
+
+## [0.10.2]
+
+### Changed
+
+ - Where possible, methods are now `const`. This improves performance, especially when reading.
