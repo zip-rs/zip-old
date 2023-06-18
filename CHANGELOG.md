@@ -222,3 +222,9 @@
 ### Changed
 
  - Where possible, methods are now `const`. This improves performance, especially when reading.
+
+## [0.10.3]
+
+### Changed
+
+ - Updated dependencies.
