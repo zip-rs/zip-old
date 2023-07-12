@@ -1,14 +1,7 @@
 //! Types that specify what is contained in a ZIP.
+use cfg_if::cfg_if;
 use std::path;
 
-#[cfg(not(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-)))]
-use std::sync::atomic;
-#[cfg(not(feature = "time"))]
-use std::time::SystemTime;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
@@ -17,42 +10,52 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-#[cfg(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-))]
-mod atomic {
-    use crossbeam_utils::sync::ShardedLock;
-    pub use std::sync::atomic::Ordering;
+cfg_if! {
+    if #[cfg(any(
+        all(target_arch = "arm", target_pointer_width = "32"),
+        target_arch = "mips",
+        target_arch = "powerpc"
+    ))] {
+        mod atomic {
+            use crossbeam_utils::sync::ShardedLock;
+            pub use std::sync::atomic::Ordering;
 
-    #[derive(Debug, Default)]
-    pub struct AtomicU64 {
-        value: ShardedLock<u64>,
-    }
+            #[derive(Debug, Default)]
+            pub struct AtomicU64 {
+                value: ShardedLock<u64>,
+            }
 
-    impl AtomicU64 {
-        pub fn new(v: u64) -> Self {
-            Self {
-                value: ShardedLock::new(v),
+            impl AtomicU64 {
+                pub fn new(v: u64) -> Self {
+                    Self {
+                        value: ShardedLock::new(v),
+                    }
+                }
+                pub fn get_mut(&mut self) -> &mut u64 {
+                    self.value.get_mut().unwrap()
+                }
+                pub fn load(&self, _: Ordering) -> u64 {
+                    *self.value.read().unwrap()
+                }
+                pub fn store(&self, value: u64, _: Ordering) {
+                    *self.value.write().unwrap() = value;
+                }
             }
         }
-        pub fn get_mut(&mut self) -> &mut u64 {
-            self.value.get_mut().unwrap()
-        }
-        pub fn load(&self, _: Ordering) -> u64 {
-            *self.value.read().unwrap()
-        }
-        pub fn store(&self, value: u64, _: Ordering) {
-            *self.value.write().unwrap() = value;
-        }
+    } else {
+        use std::sync::atomic;
     }
+
 }
 
-#[cfg(feature = "time")]
-use crate::result::DateTimeRangeError;
-#[cfg(feature = "time")]
-use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+cfg_if! {
+    if #[cfg(feature = "time")] {
+        use crate::result::DateTimeRangeError;
+        use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+    } else {
+        use std::time::SystemTime;
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum System {
