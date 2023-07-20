@@ -22,18 +22,29 @@ pub enum CompressionMethod {
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     ))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib"
+        )))
+    )]
     Deflated,
     /// Compress the file using BZIP2
     #[cfg(feature = "bzip2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "bzip2")))]
     Bzip2,
     /// Encrypted using AES.
     ///
     /// The actual compression method has to be taken from the AES extra data field
     /// or from `ZipFileData`.
     #[cfg(feature = "aes-crypto")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "aes-crypto")))]
     Aes,
     /// Compress the file using ZStandard
     #[cfg(feature = "zstd")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zstd")))]
     Zstd,
     /// Unsupported compression method
     #[deprecated(since = "0.5.7", note = "use the constants instead")]
@@ -55,6 +66,11 @@ impl CompressionMethod {
             feature = "deflate-miniz",
             feature = "deflate-zlib"
         ))] {
+            #[cfg_attr(docsrs, doc(cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))))]
             pub const DEFLATE: Self = CompressionMethod::Deflated;
         } else {
             pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
@@ -64,6 +80,7 @@ impl CompressionMethod {
     pub const PKWARE_IMPLODE: Self = CompressionMethod::Unsupported(10);
     cfg_if! {
         if #[cfg(feature = "bzip2")] {
+            #[cfg_attr(docsrs, doc(cfg(feature = "bzip2")))]
             pub const BZIP2: Self = CompressionMethod::Bzip2;
         } else {
             pub const BZIP2: Self = CompressionMethod::Unsupported(12);
@@ -75,6 +92,7 @@ impl CompressionMethod {
     pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
     cfg_if! {
         if #[cfg(feature = "zstd")] {
+            #[cfg_attr(docsrs, doc(cfg(feature = "zstd")))]
             pub const ZSTD: Self = CompressionMethod::Zstd;
         } else {
             pub const ZSTD: Self = CompressionMethod::Unsupported(93);
@@ -87,6 +105,7 @@ impl CompressionMethod {
     pub const PPMD: Self = CompressionMethod::Unsupported(98);
     cfg_if! {
         if #[cfg(feature = "aes-crypto")] {
+            #[cfg_attr(docsrs, doc(cfg(feature = "aes-crypto")))]
             pub const AES: Self = CompressionMethod::Aes;
         } else {
             pub const AES: Self = CompressionMethod::Unsupported(99);
@@ -162,10 +181,18 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
         feature = "deflate-miniz",
         feature = "deflate-zlib"
     ))]
+    /* NB: these don't appear to show up in the docs. */
+    #[cfg_attr(docsrs, doc(cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))))]
     CompressionMethod::Deflated,
     #[cfg(feature = "bzip2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "bzip2")))]
     CompressionMethod::Bzip2,
     #[cfg(feature = "zstd")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zstd")))]
     CompressionMethod::Zstd,
 ];
 

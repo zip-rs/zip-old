@@ -175,10 +175,11 @@ impl DateTime {
         }
     }
 
-    #[cfg(feature = "time")]
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
+    #[cfg(feature = "time")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     #[allow(clippy::result_unit_err)]
     #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
@@ -195,8 +196,9 @@ impl DateTime {
         (self.day as u16) | ((self.month as u16) << 5) | ((self.year - 1980) << 9)
     }
 
-    #[cfg(feature = "time")]
     /// Converts the DateTime to a OffsetDateTime structure
+    #[cfg(feature = "time")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
         let date =
             Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
@@ -256,6 +258,7 @@ impl DateTime {
 }
 
 #[cfg(feature = "time")]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
@@ -461,6 +464,7 @@ pub enum AesMode {
 }
 
 #[cfg(feature = "aes-crypto")]
+#[cfg_attr(docsrs, doc(cfg(feature = "aes-crypto")))]
 impl AesMode {
     pub fn salt_length(&self) -> usize {
         self.key_length() / 2

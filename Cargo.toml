@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "read_metadata"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
