@@ -101,6 +101,13 @@ fn write_test_archive(
     zip.start_file("test/☃.txt", options)?;
     zip.write_all(b"Hello, World!\n")?;
 
+    zip.start_file_aligned("test_aligned.txt", options, TEST_ALIGNMENT)?;
+    zip.write_all(b"i am aligned")?;
+
+    zip.start_file("test_empty", options)?;
+    zip.start_file_aligned("test_fake_aligned_empty", options, 1)?;
+    zip.start_file_aligned("test_aligned_empty", options, TEST_ALIGNMENT)?;
+
     zip.start_file_with_extra_data("test_with_extra_data/🐢.txt", options)?;
     zip.write_u16::<LittleEndian>(0xbeef)?;
     zip.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
@@ -124,6 +131,10 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip
         let expected_file_names = [
             "test/",
             "test/☃.txt",
+            "test_aligned.txt",
+            "test_empty",
+            "test_fake_aligned_empty",
+            "test_aligned_empty",
             "test_with_extra_data/🐢.txt",
             ENTRY_NAME,
         ];
@@ -140,6 +151,35 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> zip::result::ZipResult<zip
         extra_data.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
         extra_data.write_all(EXTRA_DATA)?;
         assert_eq!(file_with_extra_data.extra_data(), extra_data.as_slice());
+    }
+
+    // Check alignment.
+    for name in ["test_aligned.txt", "test_aligned_empty"] {
+        let file_aligned = archive.by_name(name)?;
+        let data_start = file_aligned.data_start();
+        assert_eq!(
+            data_start % TEST_ALIGNMENT as u64,
+            0,
+            "should be aligned to {TEST_ALIGNMENT}: {data_start}"
+        );
+
+        // central directory extra data should be empty
+        // alignment is performed using local extra data, which is not exposed by ZipArchive
+        assert!(file_aligned.extra_data().is_empty());
+        // check that alignment was actually performed;
+        // this can fail if the file is somehow naturally aligned;
+        // in that case, modify `write_test_archive` to avoid it
+        assert!(file_aligned.data_start() - file_aligned.header_start() > 100);
+    }
+
+    for name in [
+        "test_empty",
+        "test_aligned_empty",
+        "test_fake_aligned_empty",
+    ] {
+        let mut file = archive.by_name(name)?;
+        let mut content = Vec::new();
+        assert_eq!(file.read_to_end(&mut content)?, 0);
     }
 
     Ok(archive)
@@ -203,3 +243,5 @@ const EXTRA_DATA: &[u8] = b"Extra Data";
 const ENTRY_NAME: &str = "test/lorem_ipsum.txt";
 
 const COPY_ENTRY_NAME: &str = "test/lorem_ipsum_renamed.txt";
+
+const TEST_ALIGNMENT: u16 = 512;
