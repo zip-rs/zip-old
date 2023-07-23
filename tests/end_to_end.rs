@@ -6,18 +6,37 @@ use std::iter::FromIterator;
 use zip::write::FileOptions;
 use zip::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 
+#[derive(Debug, Clone, Copy)]
+struct TestWriterConfig {
+    streaming: bool,
+    method: CompressionMethod,
+    large_file: bool,
+}
+
+fn test_configs() -> Vec<TestWriterConfig> {
+    let mut configs = Vec::new();
+    for large_file in [false, true] {
+        for streaming in [false, true] {
+            for &method in SUPPORTED_COMPRESSION_METHODS {
+                configs.push(TestWriterConfig {
+                    streaming,
+                    method,
+                    large_file,
+                });
+            }
+        }
+    }
+    configs
+}
+
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn end_to_end() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
-        let file = &mut Cursor::new(Vec::new());
-
-        println!("Writing file with {method} compression");
-        write_test_archive(file, method).expect("Couldn't write test zip archive");
-
-        println!("Checking file contents");
-        check_archive_file(file, ENTRY_NAME, Some(method), LOREM_IPSUM);
+    for cfg in test_configs() {
+        let mut file = Cursor::new(Vec::new());
+        write_test_archive(&mut file, cfg).expect("Couldn't write test zip archive");
+        check_archive_file(file, ENTRY_NAME, Some(cfg.method), LOREM_IPSUM);
     }
 }
 
@@ -25,9 +44,9 @@ fn end_to_end() {
 // contents back out, the extracted data will *always* be exactly the same as the original data.
 #[test]
 fn copy() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
+    for cfg in test_configs() {
         let src_file = &mut Cursor::new(Vec::new());
-        write_test_archive(src_file, method).expect("Couldn't write to test file");
+        write_test_archive(src_file, cfg).expect("Couldn't write test zip archive");
 
         let mut tgt_file = &mut Cursor::new(Vec::new());
 
@@ -54,7 +73,6 @@ fn copy() {
         }
 
         let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
-
         check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
     }
@@ -64,15 +82,15 @@ fn copy() {
 // both the prior data and the appended data will be exactly the same as their originals.
 #[test]
 fn append() {
-    for &method in SUPPORTED_COMPRESSION_METHODS {
+    for cfg in test_configs() {
         let mut file = &mut Cursor::new(Vec::new());
-        write_test_archive(file, method).expect("Couldn't write to test file");
+        write_test_archive(file, cfg).expect("Couldn't write test zip archive");
 
         {
             let mut zip = zip::ZipWriter::new_append(&mut file).unwrap();
             zip.start_file(
                 COPY_ENTRY_NAME,
-                FileOptions::default().compression_method(method),
+                FileOptions::default().compression_method(cfg.method),
             )
             .unwrap();
             zip.write_all(LOREM_IPSUM).unwrap();
@@ -88,14 +106,20 @@ fn append() {
 // Write a test zip archive to buffer.
 fn write_test_archive(
     file: &mut Cursor<Vec<u8>>,
-    method: CompressionMethod,
+    cfg: TestWriterConfig,
 ) -> zip::result::ZipResult<()> {
-    let mut zip = zip::ZipWriter::new(file);
+    println!("Writing file with {cfg:?}");
+    let mut zip = if cfg.streaming {
+        zip::ZipWriter::new_streaming(file)
+    } else {
+        zip::ZipWriter::new(file)
+    };
 
     zip.add_directory("test/", Default::default())?;
 
     let options = FileOptions::default()
-        .compression_method(method)
+        .large_file(cfg.large_file)
+        .compression_method(cfg.method)
         .unix_permissions(0o755);
 
     zip.start_file("test/☃.txt", options)?;
@@ -200,12 +224,13 @@ fn read_archive_file<R: Read + Seek>(
 
 // Check a file in the archive contains expected data and properties.
 fn check_archive_file(
-    zip_file: &mut Cursor<Vec<u8>>,
+    mut zip_file: Cursor<Vec<u8>>,
     name: &str,
     expected_method: Option<CompressionMethod>,
     expected_data: &[u8],
 ) {
-    let mut archive = check_test_archive(zip_file).unwrap();
+    println!("Checking file contents");
+    let mut archive = check_test_archive(&mut zip_file).unwrap();
 
     if let Some(expected_method) = expected_method {
         // Check the file's compression method.
