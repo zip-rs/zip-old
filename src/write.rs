@@ -1667,6 +1667,55 @@ mod test {
     }
 
     #[test]
+    fn write_data_descriptors_zip() {
+        let mut writer = ZipWriter::new_streaming(io::Cursor::new(Vec::new()));
+        let options = FileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .last_modified_time(DateTime::default());
+
+        writer.start_file("test", options).unwrap();
+        writer.write_all(b"_test").unwrap();
+
+        writer.start_file("z64", options.large_file(true)).unwrap();
+        writer.write_all(b"_z64").unwrap();
+
+        writer
+            .start_file(
+                "deflate",
+                options.compression_method(CompressionMethod::Deflated),
+            )
+            .unwrap();
+        writer.write_all(b"_deflate").unwrap();
+
+        writer.start_file_with_extra_data("extra", options).unwrap();
+        writer.write_all(&[0xbe, 0xef, 0x06, 0x00]).unwrap();
+        writer.write_all(b"_extra").unwrap();
+        writer.end_local_start_central_extra_data().unwrap();
+        writer.write_all(&[0xca, 0xfe, 0x09, 0x00]).unwrap();
+        writer.write_all(b"_extra_cd").unwrap();
+        writer.end_extra_data().unwrap();
+
+        writer
+            .start_file_with_extra_data(
+                "z64_extra_deflate",
+                options
+                    .compression_method(CompressionMethod::Deflated)
+                    .large_file(true),
+            )
+            .unwrap();
+        writer.write_all(&[0xf0, 0x0d, 0x04, 0x00]).unwrap();
+        writer.write_all(b"_zed").unwrap();
+        writer.end_extra_data().unwrap();
+        writer.write_all(b"_z64_extra_deflate").unwrap();
+        let result = writer.finish().unwrap();
+
+        assert_eq!(result.get_ref().len(), 688);
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/zip_data_descriptors.zip"));
+        assert_eq!(result.get_ref(), &v);
+    }
+
+    #[test]
     fn path_to_string() {
         let mut path = std::path::PathBuf::new();
         #[cfg(windows)]
