@@ -24,7 +24,7 @@ use std::sync::Arc;
 use flate2::read::DeflateDecoder;
 
 #[cfg(feature = "deflate64")]
-use crate::deflate64::BufferedDeflate64Decoder;
+use deflate64::Deflate64Decoder;
 
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
@@ -133,7 +133,7 @@ enum ZipFileReader<'a> {
     ))]
     Deflated(Crc32Reader<flate2::read::DeflateDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "deflate64")]
-    Deflate64(Crc32Reader<BufferedDeflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
+    Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "zstd")]
@@ -288,7 +288,7 @@ fn make_reader(
         }
         #[cfg(feature = "deflate64")]
         CompressionMethod::Deflate64 => {
-            let deflate64_reader = BufferedDeflate64Decoder::new(reader);
+            let deflate64_reader = Deflate64Decoder::new(reader);
             ZipFileReader::Deflate64(Crc32Reader::new(deflate64_reader, crc32, ae2_encrypted))
         }
         #[cfg(feature = "bzip2")]
