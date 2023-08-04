@@ -36,6 +36,8 @@ mod aes_ctr;
 mod compression;
 mod cp437;
 mod crc32;
+#[cfg(feature = "deflate64")]
+mod deflate64;
 pub mod read;
 pub mod result;
 mod spec;
