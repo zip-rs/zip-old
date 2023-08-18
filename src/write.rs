@@ -414,9 +414,8 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 buffer: vec![],
                 keys,
             };
-            let mut crypto_header = [0u8; 12];
 
-            zipwriter.write_all(&crypto_header)?;
+            zipwriter.write_all(&[0u8; 12])?;
             self.inner = GenericZipWriter::Storer(MaybeEncrypted::Encrypted(zipwriter));
         }
         Ok(())
