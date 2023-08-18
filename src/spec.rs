@@ -1,5 +1,4 @@
 use crate::result::{ZipError, ZipResult};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
 use std::io::prelude::*;
 
@@ -119,14 +118,14 @@ impl CentralDirectoryEnd {
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32::<LittleEndian>(CENTRAL_DIRECTORY_END_SIGNATURE)?;
-        writer.write_u16::<LittleEndian>(self.disk_number)?;
-        writer.write_u16::<LittleEndian>(self.disk_with_central_directory)?;
-        writer.write_u16::<LittleEndian>(self.number_of_files_on_this_disk)?;
-        writer.write_u16::<LittleEndian>(self.number_of_files)?;
-        writer.write_u32::<LittleEndian>(self.central_directory_size)?;
-        writer.write_u32::<LittleEndian>(self.central_directory_offset)?;
-        writer.write_u16::<LittleEndian>(self.zip_file_comment.len() as u16)?;
+        writer.write_all(&CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes())?;
+        writer.write_all(&self.disk_number.to_le_bytes())?;
+        writer.write_all(&self.disk_with_central_directory.to_le_bytes())?;
+        writer.write_all(&self.number_of_files_on_this_disk.to_le_bytes())?;
+        writer.write_all(&self.number_of_files.to_le_bytes())?;
+        writer.write_all(&self.central_directory_size.to_le_bytes())?;
+        writer.write_all(&self.central_directory_offset.to_le_bytes())?;
+        writer.write_all(&(self.zip_file_comment.len() as u16).to_le_bytes())?;
         writer.write_all(&self.zip_file_comment)?;
         Ok(())
     }
@@ -158,10 +157,10 @@ impl Zip64CentralDirectoryEndLocator {
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32::<LittleEndian>(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)?;
-        writer.write_u32::<LittleEndian>(self.disk_with_central_directory)?;
-        writer.write_u64::<LittleEndian>(self.end_of_central_directory_offset)?;
-        writer.write_u32::<LittleEndian>(self.number_of_disks)?;
+        writer.write_all(&ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE.to_ne_bytes())?;
+        writer.write_all(&self.disk_with_central_directory.to_ne_bytes())?;
+        writer.write_all(&self.end_of_central_directory_offset.to_ne_bytes())?;
+        writer.write_all(&self.number_of_disks.to_ne_bytes())?;
         Ok(())
     }
 }
@@ -228,16 +227,16 @@ impl Zip64CentralDirectoryEnd {
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
-        writer.write_u32::<LittleEndian>(ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)?;
-        writer.write_u64::<LittleEndian>(44)?; // record size
-        writer.write_u16::<LittleEndian>(self.version_made_by)?;
-        writer.write_u16::<LittleEndian>(self.version_needed_to_extract)?;
-        writer.write_u32::<LittleEndian>(self.disk_number)?;
-        writer.write_u32::<LittleEndian>(self.disk_with_central_directory)?;
-        writer.write_u64::<LittleEndian>(self.number_of_files_on_this_disk)?;
-        writer.write_u64::<LittleEndian>(self.number_of_files)?;
-        writer.write_u64::<LittleEndian>(self.central_directory_size)?;
-        writer.write_u64::<LittleEndian>(self.central_directory_offset)?;
+        writer.write_all(&ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes())?;
+        writer.write_all(&44u64.to_le_bytes())?; // record size
+        writer.write_all(&self.version_made_by.to_le_bytes())?;
+        writer.write_all(&self.version_needed_to_extract.to_le_bytes())?;
+        writer.write_all(&self.disk_number.to_le_bytes())?;
+        writer.write_all(&self.disk_with_central_directory.to_le_bytes())?;
+        writer.write_all(&self.number_of_files_on_this_disk.to_le_bytes())?;
+        writer.write_all(&self.number_of_files.to_le_bytes())?;
+        writer.write_all(&self.central_directory_size.to_le_bytes())?;
+        writer.write_all(&self.central_directory_offset.to_le_bytes())?;
         Ok(())
     }
 }
