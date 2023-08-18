@@ -3,9 +3,9 @@
 use crate::compression::CompressionMethod;
 use crate::read::{central_header_to_zip_file, ZipArchive, ZipFile};
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
+use crate::spec::{self, read_u16};
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt};
 use crc32fast::Hasher;
 use std::convert::TryInto;
 use std::default::Default;
@@ -1229,8 +1229,8 @@ fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
                 "Incomplete extra data header",
             )));
         }
-        let kind = data.read_u16::<LittleEndian>()?;
-        let size = data.read_u16::<LittleEndian>()? as usize;
+        let kind = read_u16(&mut data)?;
+        let size = read_u16(&mut data)? as usize;
         let left = left - 4;
 
         if kind == 0x0001 {
