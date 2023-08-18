@@ -6,7 +6,7 @@ use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
 use crate::result::{InvalidPassword, ZipError, ZipResult};
-use crate::spec;
+use crate::spec::{self, read_u16, read_u32, read_u64, read_u8};
 use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use std::borrow::Cow;
@@ -30,30 +30,6 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
-
-fn read_u8(reader: &mut impl Read) -> ZipResult<u8> {
-    let mut data = [0; 1];
-    reader.read_exact(&mut data)?;
-    Ok(u8::from_le_bytes(data))
-}
-
-fn read_u16(reader: &mut impl Read) -> ZipResult<u16> {
-    let mut data = [0; 2];
-    reader.read_exact(&mut data)?;
-    Ok(u16::from_le_bytes(data))
-}
-
-fn read_u32(reader: &mut impl Read) -> ZipResult<u32> {
-    let mut data = [0; 4];
-    reader.read_exact(&mut data)?;
-    Ok(u32::from_le_bytes(data))
-}
-
-fn read_u64(reader: &mut impl Read) -> ZipResult<u64> {
-    let mut data = [0; 8];
-    reader.read_exact(&mut data)?;
-    Ok(u64::from_le_bytes(data))
-}
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
