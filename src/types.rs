@@ -422,9 +422,13 @@ impl ZipFileData {
         }
     }
 
-    pub fn zip64_extension(&self) -> bool {
+    pub(crate) fn zip64_sizes(&self) -> bool {
         self.uncompressed_size > 0xFFFFFFFF
             || self.compressed_size > 0xFFFFFFFF
+    }
+
+    pub fn zip64_extension(&self) -> bool {
+        self.zip64_sizes()
             || self.header_start > 0xFFFFFFFF
     }
 
@@ -449,7 +453,9 @@ impl ZipFileData {
         } else {
             size += self.file_name_raw.len() as u64;
         };
-        if self.zip64_extension() || self.large_file {
+        // The local header does not necessarily need to be zip64 when its
+        // offset exceeds the 2^32 boundary.
+        if self.zip64_sizes() || self.large_file {
             size += 20;
         }
         size
