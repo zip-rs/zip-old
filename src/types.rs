@@ -218,7 +218,39 @@ impl DateTime {
     /// * hour: [0, 23]
     /// * minute: [0, 59]
     /// * second: [0, 60]
+    #[allow(clippy::result_unit_err)]
+    #[deprecated(note = "use DateTime::parse_from_date_and_time() instead")]
     pub fn from_date_and_time(
+        year: u16,
+        month: u8,
+        day: u8,
+        hour: u8,
+        minute: u8,
+        second: u8,
+    ) -> Result<DateTime, ()> {
+        Self::parse_from_date_and_time(year, month, day, hour, minute, second).map_err(|_| ())
+    }
+
+    /// Constructs a DateTime from a specific date and time
+    ///
+    /// The bounds are:
+    /// * year ([`Self::YEAR_RANGE`]): [1980, 2107]
+    /// * month ([`Self::MONTH_RANGE`]): [1, 12]
+    /// * day ([`Self::DAY_RANGE`]): [1, 31]
+    /// * hour ([`Self::HOUR_RANGE`]): [0, 23]
+    /// * minute ([`Self::MINUTE_RANGE`]): [0, 59]
+    /// * second ([`Self::SECOND_RANGE`]): [0, 60]
+    ///
+    ///```
+    /// use zip::{DateTime, result::DateTimeRangeError};
+    ///
+    /// assert!(DateTime::parse_from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
+    /// assert!(matches![
+    ///   DateTime::parse_from_date_and_time(1979, 1, 1, 0, 0, 0),
+    ///   Err(DateTimeRangeError::InvalidYear(1979, _)),
+    /// ]);
+    ///```
+    pub fn parse_from_date_and_time(
         year: u16,
         month: u8,
         day: u8,
@@ -347,7 +379,7 @@ impl TryFrom<OffsetDateTime> for DateTime {
         let minute: u8 = dt.minute().into();
         let second: u8 = dt.second().into();
 
-        Self::from_date_and_time(year, month, day, hour, minute, second)
+        Self::parse_from_date_and_time(year, month, day, hour, minute, second)
     }
 }
 
