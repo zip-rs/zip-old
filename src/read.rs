@@ -51,7 +51,6 @@ pub(crate) mod zip_archive {
         pub(crate) names_map: super::HashMap<Box<str>, usize>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
-        pub(super) dir_end: u64,
     }
 
     /// ZIP archive reader
@@ -331,6 +330,39 @@ pub(crate) struct CentralDirectoryInfo {
     pub(crate) disk_with_central_directory: u32,
 }
 
+impl<R> ZipArchive<R> {
+    pub(crate) fn from_finalized_writer(
+        files: Vec<ZipFileData>,
+        comment: Vec<u8>,
+        reader: R,
+        central_start: u64,
+    ) -> ZipResult<Self> {
+        if files.is_empty() {
+            return Err(ZipError::InvalidArchive(
+                "attempt to finalize empty zip writer into readable",
+            ));
+        }
+        /* This is where the whole file starts. */
+        let initial_offset = files.first().unwrap().header_start;
+        let names_map: HashMap<Box<str>, usize> = files
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.file_name.clone(), i))
+            .collect();
+        let shared = Arc::new(zip_archive::Shared {
+            files: files.into_boxed_slice(),
+            names_map,
+            offset: initial_offset,
+            dir_start: central_start,
+        });
+        Ok(Self {
+            reader,
+            shared,
+            comment: comment.into_boxed_slice().into(),
+        })
+    }
+}
+
 impl<R: Read + Seek> ZipArchive<R> {
     fn get_directory_info_zip32(
         footer: &spec::CentralDirectoryEnd,
@@ -482,11 +514,12 @@ impl<R: Read + Seek> ZipArchive<R> {
                 result.and_then(|dir_info| {
                     // If the parsed number of files is greater than the offset then
                     // something fishy is going on and we shouldn't trust number_of_files.
-                    let file_capacity = if dir_info.number_of_files > cde_start_pos as usize {
-                        0
-                    } else {
-                        dir_info.number_of_files
-                    };
+                    let file_capacity =
+                        if dir_info.number_of_files > dir_info.directory_start as usize {
+                            0
+                        } else {
+                            dir_info.number_of_files
+                        };
                     let mut files = Vec::with_capacity(file_capacity);
                     let mut names_map = HashMap::with_capacity(file_capacity);
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
@@ -495,7 +528,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                         names_map.insert(file.file_name.clone(), files.len());
                         files.push(file);
                     }
-                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
                         unsupported_zip_error("Support for multi-disk files is not implemented")
                     } else {
@@ -504,7 +536,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                             names_map,
                             offset: dir_info.archive_offset,
                             dir_start: dir_info.directory_start,
-                            dir_end,
                         })
                     }
                 })
@@ -524,7 +555,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         }
         let shared = ok_results
             .into_iter()
-            .max_by_key(|shared| shared.dir_end)
+            .max_by_key(|shared| shared.dir_start)
             .unwrap();
         reader.seek(io::SeekFrom::Start(shared.dir_start))?;
         Ok(shared)

@@ -597,6 +597,39 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     ) -> ZipResult<()> {
         self.deep_copy_file(&path_to_string(src_path), &path_to_string(dest_path))
     }
+
+    /// Write the zip file into the backing stream, then produce a readable archive of that data.
+    ///
+    /// This method avoids parsing the central directory records at the end of the stream for
+    /// a slight performance improvement over running [`ZipArchive::new()`] on the output of
+    /// [`Self::finish()`].
+    ///
+    ///```
+    /// # fn main() -> Result<(), zip::result::ZipError> {
+    /// use std::io::{Cursor, prelude::*};
+    /// use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(buf);
+    /// let options = SimpleFileOptions::default();
+    /// zip.start_file("a.txt", options)?;
+    /// zip.write_all(b"hello\n")?;
+    ///
+    /// let mut zip = zip.finish_into_readable()?;
+    /// let mut s: String = String::new();
+    /// zip.by_name("a.txt")?.read_to_string(&mut s)?;
+    /// assert_eq!(s, "hello\n");
+    /// # Ok(())
+    /// # }
+    ///```
+    pub fn finish_into_readable(mut self) -> ZipResult<ZipArchive<A>> {
+        let central_start = self.finalize()?;
+        let inner = mem::replace(&mut self.inner, Closed).unwrap();
+        let comment = mem::take(&mut self.comment);
+        let files = mem::take(&mut self.files);
+        let archive = ZipArchive::from_finalized_writer(files, comment, inner, central_start)?;
+        Ok(archive)
+    }
 }
 
 impl<W: Write + Seek> ZipWriter<W> {
@@ -1100,7 +1133,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
     pub fn finish(&mut self) -> ZipResult<W> {
-        self.finalize()?;
+        let _central_start = self.finalize()?;
         let inner = mem::replace(&mut self.inner, Closed);
         Ok(inner.unwrap())
     }
@@ -1160,10 +1193,10 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.add_symlink(path_to_string(path), path_to_string(target), options)
     }
 
-    fn finalize(&mut self) -> ZipResult<()> {
+    fn finalize(&mut self) -> ZipResult<u64> {
         self.finish_file()?;
 
-        {
+        let central_start = {
             let central_start = self.write_central_and_footer()?;
             let writer = self.inner.get_plain();
             let footer_end = writer.stream_position()?;
@@ -1175,9 +1208,10 @@ impl<W: Write + Seek> ZipWriter<W> {
                 writer.seek(SeekFrom::End(-(central_and_footer_size as i64)))?;
                 self.write_central_and_footer()?;
             }
-        }
+            central_start
+        };
 
-        Ok(())
+        Ok(central_start)
     }
 
     fn write_central_and_footer(&mut self) -> Result<u64, ZipError> {
