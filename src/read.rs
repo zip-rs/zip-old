@@ -648,36 +648,89 @@ impl<R: Read + io::Seek + Send> ZipArchive<R> {
         use crossbeam_utils::thread;
         use rayon::prelude::*;
         use std::fs;
-        use std::io::{self, Write};
         use std::sync::mpsc;
 
         let directory = directory.as_ref().to_path_buf();
 
-        let (tx, rx) = mpsc::channel::<(ZipFileData, Vec<u8>)>();
+        /* let (tx, rx) = mpsc::sync_channel::<(&ZipFileData, &Path, Box<[u8]>)>(50); */
+        let (tx, rx) = mpsc::channel::<(&ZipFileData, &Path, Box<[u8]>)>();
 
-        let pipeline_thread = thread::scope(move |s| {
-            let reader_thread = s.spawn(move |_| {
-                for data in self.shared.files.iter() {
-                    let mut limit_reader = find_content(data, &mut self.reader)?;
-                    let mut buffer = io::Cursor::new(Vec::new());
-                    io::copy(&mut limit_reader, &mut buffer)?;
-                    tx.send((data.clone(), buffer.into_inner())).unwrap();
+        thread::scope(move |s| {
+            /* (1) Collect a plan of where we'll need to seek and read in the underlying reader. */
+            let num_files = self.shared.files.len();
+            let mut stops: Vec<(&ZipFileData, &Path, u64, usize)> = Vec::with_capacity(num_files);
+            unsafe {
+                stops.set_len(num_files);
+            }
+            self.shared
+                .files
+                .par_iter()
+                .zip(stops.par_iter_mut())
+                .try_for_each(|(data, ref mut cur_stop)| {
+                    let relative_path = data
+                        .enclosed_name()
+                        .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+
+                    // NB: we avoid parsing the local header and assume it corresponds to the
+                    // central directory header we previously parsed at the end of the zip!
+                    let variable_fields_len: usize =
+                        data.file_name_raw.len() + data.extra_field.len();
+                    let data_start: u64 =
+                        data.header_start + 4 + 22 + 2 + 2 + variable_fields_len as u64;
+
+                    **cur_stop = (
+                        data,
+                        relative_path,
+                        data_start,
+                        data.compressed_size as usize,
+                    );
+
+                    Ok::<_, ZipError>(())
+                })?;
+
+            /* (2) Execute the chunk plan in a single serial pass over the reader. */
+            let reader = &mut self.reader;
+            let _reader_thread = s.spawn(move |_| {
+                /* (2.1) Use a persistent buffer for cache friendliness. */
+                let mut buf: Vec<u8> = Vec::new();
+                for (data, relative_path, start, len) in stops.into_iter() {
+                    let additional = (len - buf.capacity()) as isize;
+                    if additional > 0 {
+                        buf.reserve(additional as usize);
+                    }
+                    unsafe {
+                        buf.set_len(len);
+                    }
+                    reader.seek(io::SeekFrom::Start(start))?;
+                    reader.read_exact(&mut buf)?;
+                    /* (2.2) Perform exactly one copy of each chunk. */
+                    let msg: Box<[u8]> = Box::from(&buf[..]);
+                    tx.send((data, relative_path, msg)).unwrap();
                 }
+
                 Ok::<_, ZipError>(())
             });
-            let writer_thread = s.spawn(move |_| {
-                rx.into_iter()
-                    .par_bridge()
-                    .map(|(data, buf)| {
-                        let raw_len = buf.len() as u64;
-                        let mut cursor = io::Cursor::new(buf);
-                        let mut file =
-                            ZipFile::buffered(data, raw_len, &mut cursor as &mut dyn Read);
-                        let filepath = file
-                            .enclosed_name()
-                            .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
 
-                        let outpath = directory.join(filepath);
+            let _writer_thread = s.spawn(move |_| {
+                rx.into_iter().par_bridge().try_for_each_init(
+                    Vec::new,
+                    |ref mut buf, (data, relative_path, msg)| {
+                        let additional = (msg.len() - buf.capacity()) as isize;
+                        if additional > 0 {
+                            buf.reserve(additional as usize);
+                        }
+                        unsafe {
+                            buf.set_len(msg.len());
+                        }
+                        let raw_len = msg.len() as u64;
+                        let mut cursor = io::Cursor::new(buf);
+                        let mut file = ZipFile::buffered(
+                            Cow::Borrowed(data),
+                            raw_len,
+                            &mut cursor as &mut dyn Read,
+                        );
+
+                        let outpath = directory.join(relative_path);
 
                         if file.name().ends_with('/') {
                             fs::create_dir_all(&outpath)?;
@@ -699,12 +752,18 @@ impl<R: Read + io::Seek + Send> ZipArchive<R> {
                             }
                         }
                         Ok::<_, ZipError>(())
-                    })
-                    .collect::<Result<(), ZipError>>()?;
+                    },
+                )?;
+
                 Ok::<_, ZipError>(())
             });
+
+            /* reader_thread.join().unwrap().unwrap(); */
+            /* writer_thread.join().unwrap().unwrap(); */
+
+            Ok::<_, ZipError>(())
         })
-        .expect("no inner panics");
+        .expect("no inner panics")?;
 
         Ok(())
     }
@@ -890,11 +949,15 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
-    pub(crate) fn buffered(data: ZipFileData, raw_len: u64, reader: &'a mut dyn Read) -> Self {
+    pub(crate) fn buffered(
+        data: Cow<'a, ZipFileData>,
+        raw_len: u64,
+        reader: &'a mut dyn Read,
+    ) -> Self {
         let crypto_reader = CryptoReader::Plaintext(reader.take(raw_len));
         let reader = make_reader(data.compression_method, data.crc32, crypto_reader);
         Self {
-            data: Cow::Owned(data),
+            data,
             crypto_reader: None,
             reader,
         }

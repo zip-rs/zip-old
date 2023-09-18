@@ -44,8 +44,8 @@ fn perform_sync<R: Read + Seek, W: Write + Seek, P: AsRef<Path>>(
     src.extract(target)
 }
 
-const NUM_ENTRIES: usize = 1000;
-const ENTRY_SIZE: usize = 1024;
+const NUM_ENTRIES: usize = 100;
+const ENTRY_SIZE: usize = 1_000;
 
 fn extract_pipelined(bench: &mut Bencher) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -55,9 +55,7 @@ fn extract_pipelined(bench: &mut Bencher) {
 
     bench.iter(|| {
         let td = tempdir().unwrap();
-        let buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut zip =
-            perform_pipelined::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(src.clone(), td).unwrap();
+        perform_pipelined::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(src.clone(), td).unwrap();
     });
 }
 
@@ -69,8 +67,7 @@ fn extract_sync(bench: &mut Bencher) {
 
     bench.iter(|| {
         let td = tempdir().unwrap();
-        let buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut zip = perform_sync::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(src.clone(), td).unwrap();
+        perform_sync::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(src.clone(), td).unwrap();
     });
 }
 
