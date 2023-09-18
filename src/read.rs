@@ -638,6 +638,78 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 }
 
+impl<R: Read + io::Seek + Send> ZipArchive<R> {
+    /// Extract a Zip archive into a directory, overwriting files if they
+    /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
+    ///
+    /// Extraction is not atomic; If an error is encountered, some of the files
+    /// may be left on disk.
+    pub fn extract_pipelined<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
+        use crossbeam_utils::thread;
+        use rayon::prelude::*;
+        use std::fs;
+        use std::io::{self, Write};
+        use std::sync::mpsc;
+
+        let directory = directory.as_ref().to_path_buf();
+
+        let (tx, rx) = mpsc::channel::<(ZipFileData, Vec<u8>)>();
+
+        let pipeline_thread = thread::scope(move |s| {
+            let reader_thread = s.spawn(move |_| {
+                for data in self.shared.files.iter() {
+                    let mut limit_reader = find_content(data, &mut self.reader)?;
+                    let mut buffer = io::Cursor::new(Vec::new());
+                    io::copy(&mut limit_reader, &mut buffer)?;
+                    tx.send((data.clone(), buffer.into_inner())).unwrap();
+                }
+                Ok::<_, ZipError>(())
+            });
+            let writer_thread = s.spawn(move |_| {
+                rx.into_iter()
+                    .par_bridge()
+                    .map(|(data, buf)| {
+                        let raw_len = buf.len() as u64;
+                        let mut cursor = io::Cursor::new(buf);
+                        let mut file =
+                            ZipFile::buffered(data, raw_len, &mut cursor as &mut dyn Read);
+                        let filepath = file
+                            .enclosed_name()
+                            .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+
+                        let outpath = directory.join(filepath);
+
+                        if file.name().ends_with('/') {
+                            fs::create_dir_all(&outpath)?;
+                        } else {
+                            if let Some(p) = outpath.parent() {
+                                if !p.exists() {
+                                    fs::create_dir_all(p)?;
+                                }
+                            }
+                            let mut outfile = fs::File::create(&outpath)?;
+                            io::copy(&mut file, &mut outfile)?;
+                        }
+                        // Get and Set permissions
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Some(mode) = file.unix_mode() {
+                                fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
+                            }
+                        }
+                        Ok::<_, ZipError>(())
+                    })
+                    .collect::<Result<(), ZipError>>()?;
+                Ok::<_, ZipError>(())
+            });
+        })
+        .expect("no inner panics");
+
+        Ok(())
+    }
+}
+
 fn unsupported_zip_error<T>(detail: &'static str) -> ZipResult<T> {
     Err(ZipError::UnsupportedArchive(detail))
 }
@@ -818,6 +890,16 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 
 /// Methods for retrieving information on zip files
 impl<'a> ZipFile<'a> {
+    pub(crate) fn buffered(data: ZipFileData, raw_len: u64, reader: &'a mut dyn Read) -> Self {
+        let crypto_reader = CryptoReader::Plaintext(reader.take(raw_len));
+        let reader = make_reader(data.compression_method, data.crc32, crypto_reader);
+        Self {
+            data: Cow::Owned(data),
+            crypto_reader: None,
+            reader,
+        }
+    }
+
     fn get_reader(&mut self) -> &mut ZipFileReader<'a> {
         if let ZipFileReader::NoReader = self.reader {
             let data = &self.data;
