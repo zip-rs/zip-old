@@ -16,7 +16,6 @@ use std::fs;
 use std::io::{self, prelude::*};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread;
 
 #[cfg(any(
     feature = "deflate",
@@ -711,7 +710,7 @@ impl<'a> Clone for Handle<'a> {
     }
 }
 
-impl<'a> ZipArchive<Handle<'a>> {
+impl<R: Read + io::Seek + Send + Clone> ZipArchive<R> {
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
@@ -719,15 +718,20 @@ impl<'a> ZipArchive<Handle<'a>> {
     /// may be left on disk.
     pub fn extract_pipelined<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         use bytes::{Bytes, BytesMut};
-        use num_cpus;
+        use once_cell::sync::Lazy;
         use rayon::prelude::*;
+
         use std::fs;
         use std::sync::mpsc;
+        use std::thread;
+
+        static NUM_CPUS: Lazy<usize> = Lazy::new(|| match thread::available_parallelism() {
+            Ok(x) => x.into(),
+            /* Default to 2 if any error occurs. */
+            Err(_) => 2,
+        });
 
         let directory = directory.as_ref().to_path_buf();
-
-        /* let (tx, rx) = mpsc::sync_channel::<(&ZipFileData, &Path, Box<[u8]>)>(50); */
-        let (tx, rx) = mpsc::channel::<(&ZipFileData, &Path, Bytes)>();
 
         /* let pool = rayon::ThreadPoolBuilder::new().build().unwrap(); */
         /* let pool2 = rayon::ThreadPoolBuilder::new().build().unwrap(); */
@@ -764,18 +768,28 @@ impl<'a> ZipArchive<Handle<'a>> {
                 Ok::<_, ZipError>(())
             })?;
 
+        /* let (stops_tx, stops_rx) = mpsc::sync_channel::<(&ZipFileData, &Path, Box<[u8]>)>(50); */
+        let (stops_tx, stops_rx) = mpsc::channel::<(&ZipFileData, &Path, Bytes)>();
+        /* let (processed_tx, processed_rx) = mpsc::channel(); */
+        let (err_tx, err_rx) = mpsc::sync_channel::<ZipError>(1);
+
         let reader = self.reader.clone();
+        let err_tx2 = err_tx.clone();
+        /* Using rayon::join here unfortunately deadlocks if we try to then use .par_chunks() and
+         * write to the stops_tx channel. Using separate rayon threadpools for the join and
+         * .par_chunks() operations fixes the deadlock, but produces a significant slowdown over the
+         * manual scoped thread spawning below for some reason. */
         thread::scope(move |s| {
             /* (2) Execute the seek plan by splitting up the reader's extent into N contiguous
              * chunks. */
             s.spawn(move || {
-                let num_chunks: usize = num_cpus::get();
-                let chunk_size = stops.len() / num_chunks;
+                let chunk_size = stops.len() / *NUM_CPUS;
 
                 for chunk in stops.chunks(chunk_size) {
                     let chunk = chunk.to_vec();
                     let mut reader = reader.clone();
-                    let tx = tx.clone();
+                    let stops_tx = stops_tx.clone();
+                    let err_tx = err_tx2.clone();
                     s.spawn(move || {
                         /* (2.1) Use a persistent buffer for cache friendliness. */
                         let mut buf = BytesMut::new();
@@ -788,9 +802,29 @@ impl<'a> ZipArchive<Handle<'a>> {
                             unsafe {
                                 buf.set_len(len);
                             }
-                            reader.seek(io::SeekFrom::Start(start)).unwrap();
-                            reader.read_exact(&mut buf).unwrap();
-                            tx.send((data, relative_path, buf.clone().freeze()))
+                            match reader
+                                .seek(io::SeekFrom::Start(start))
+                                .and_then(|_| reader.read_exact(&mut buf))
+                            {
+                                Ok(()) => (),
+                                Err(e) => match err_tx.try_send(e.into()) {
+                                    Ok(()) => {
+                                        /* Avoid further processing with an early return. */
+                                        return;
+                                    }
+                                    Err(e) => match e {
+                                        mpsc::TrySendError::Full(_) => {
+                                            /* Ignore if there is already an error. */
+                                            return;
+                                        }
+                                        mpsc::TrySendError::Disconnected(_) => {
+                                            unreachable!("err_rx hung up!")
+                                        }
+                                    },
+                                },
+                            }
+                            stops_tx
+                                .send((data, relative_path, buf.clone().freeze()))
                                 .expect("rx hung up!");
                         }
                     });
@@ -799,9 +833,8 @@ impl<'a> ZipArchive<Handle<'a>> {
 
             /* (3) ??? */
             s.spawn(move || {
-                rx.into_iter()
-                    .par_bridge()
-                    .try_for_each(|(data, relative_path, msg)| {
+                match stops_rx.into_iter().par_bridge().try_for_each(
+                    |(data, relative_path, msg)| {
                         let raw_len = msg.len() as u64;
                         let mut cursor = io::Cursor::new(msg);
                         let mut file = ZipFile::buffered(
@@ -832,10 +865,41 @@ impl<'a> ZipArchive<Handle<'a>> {
                             }
                         }
                         Ok::<_, ZipError>(())
-                    })
-                    .unwrap();
+                    },
+                ) {
+                    Ok(()) => (),
+                    Err(e) => match err_tx.try_send(e.into()) {
+                        Ok(()) => {
+                            /* Avoid further processing with an early return. */
+                            return;
+                        }
+                        Err(e) => match e {
+                            mpsc::TrySendError::Full(_) => {
+                                /* Ignore if there is already an error. */
+                                return;
+                            }
+                            mpsc::TrySendError::Disconnected(_) => {
+                                unreachable!("err_rx hung up!")
+                            }
+                        },
+                    },
+                }
             });
         });
+
+        /* Check for errors after scope joins all spawned threads above. */
+        match err_rx.try_recv() {
+            /* Successfully retrieved an error from the channel. */
+            Ok(e) => {
+                return Err(e);
+            }
+            Err(e) => match e {
+                /* No error! */
+                mpsc::TryRecvError::Empty => unreachable!("all should be hung up!"),
+                /* We expect this to be true. */
+                mpsc::TryRecvError::Disconnected => (),
+            },
+        }
 
         Ok(())
     }
