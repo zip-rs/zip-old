@@ -727,7 +727,7 @@ impl<'a> ZipArchive<Handle<'a>> {
         let directory = directory.as_ref().to_path_buf();
 
         /* let (tx, rx) = mpsc::sync_channel::<(&ZipFileData, &Path, Box<[u8]>)>(50); */
-        let (tx, rx) = mpsc::channel::<(&ZipFileData, &Path, Box<[u8]>)>();
+        let (tx, rx) = mpsc::channel::<(&ZipFileData, &Path, Bytes)>();
 
         /* let pool = rayon::ThreadPoolBuilder::new().build().unwrap(); */
         /* let pool2 = rayon::ThreadPoolBuilder::new().build().unwrap(); */
@@ -778,7 +778,7 @@ impl<'a> ZipArchive<Handle<'a>> {
                     let tx = tx.clone();
                     s.spawn(move || {
                         /* (2.1) Use a persistent buffer for cache friendliness. */
-                        let mut buf = Vec::new();
+                        let mut buf = BytesMut::new();
 
                         for (data, relative_path, start, len) in chunk.into_iter() {
                             let additional = len as isize - buf.capacity() as isize;
@@ -790,7 +790,7 @@ impl<'a> ZipArchive<Handle<'a>> {
                             }
                             reader.seek(io::SeekFrom::Start(start)).unwrap();
                             reader.read_exact(&mut buf).unwrap();
-                            tx.send((data, relative_path, buf.clone().into()))
+                            tx.send((data, relative_path, buf.clone().freeze()))
                                 .expect("rx hung up!");
                         }
                     });
