@@ -710,7 +710,7 @@ impl<'a> Clone for Handle<'a> {
     }
 }
 
-impl<R: Read + io::Seek + Send + Clone> ZipArchive<R> {
+impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
@@ -720,6 +720,7 @@ impl<R: Read + io::Seek + Send + Clone> ZipArchive<R> {
         use bytes::{Bytes, BytesMut};
         use once_cell::sync::Lazy;
         use rayon::prelude::*;
+        use tempfile::SpooledTempFile;
 
         use std::fs;
         use std::sync::mpsc;
@@ -768,140 +769,143 @@ impl<R: Read + io::Seek + Send + Clone> ZipArchive<R> {
                 Ok::<_, ZipError>(())
             })?;
 
-        /* let (stops_tx, stops_rx) = mpsc::sync_channel::<(&ZipFileData, &Path, Box<[u8]>)>(50); */
         let (stops_tx, stops_rx) = mpsc::channel::<(&ZipFileData, &Path, Bytes)>();
-        /* let (processed_tx, processed_rx) = mpsc::channel(); */
-        let (err_tx, err_rx) = mpsc::sync_channel::<ZipError>(1);
+        let (processed_tx, processed_rx) =
+            mpsc::channel::<(&ZipFileData, &Path, SpooledTempFile)>();
 
         let reader = self.reader.clone();
-        let err_tx2 = err_tx.clone();
-        /* Using rayon::join here unfortunately deadlocks if we try to then use .par_chunks() and
-         * write to the stops_tx channel. Using separate rayon threadpools for the join and
-         * .par_chunks() operations fixes the deadlock, but produces a significant slowdown over the
-         * manual scoped thread spawning below for some reason. */
-        thread::scope(move |s| {
-            /* (2) Execute the seek plan by splitting up the reader's extent into N contiguous
-             * chunks. */
-            s.spawn(move || {
-                let chunk_size = stops.len() / *NUM_CPUS;
 
-                for chunk in stops.chunks(chunk_size) {
-                    let chunk = chunk.to_vec();
-                    let mut reader = reader.clone();
-                    let stops_tx = stops_tx.clone();
-                    let err_tx = err_tx2.clone();
-                    s.spawn(move || {
-                        /* (2.1) Use a persistent buffer for cache friendliness. */
-                        let mut buf = BytesMut::new();
-
-                        for (data, relative_path, start, len) in chunk.into_iter() {
-                            let additional = len as isize - buf.capacity() as isize;
-                            if additional > 0 {
-                                buf.reserve(additional as usize);
-                            }
-                            unsafe {
-                                buf.set_len(len);
-                            }
-                            match reader
-                                .seek(io::SeekFrom::Start(start))
-                                .and_then(|_| reader.read_exact(&mut buf))
-                            {
-                                Ok(()) => (),
-                                Err(e) => match err_tx.try_send(e.into()) {
-                                    Ok(()) => {
-                                        /* Avoid further processing with an early return. */
-                                        return;
-                                    }
-                                    Err(e) => match e {
-                                        mpsc::TrySendError::Full(_) => {
-                                            /* Ignore if there is already an error. */
-                                            return;
-                                        }
-                                        mpsc::TrySendError::Disconnected(_) => {
-                                            unreachable!("err_rx hung up!")
-                                        }
-                                    },
-                                },
-                            }
-                            stops_tx
-                                .send((data, relative_path, buf.clone().freeze()))
-                                .expect("rx hung up!");
-                        }
-                    });
-                }
-            });
-
-            /* (3) ??? */
-            s.spawn(move || {
-                match stops_rx.into_iter().par_bridge().try_for_each(
-                    |(data, relative_path, msg)| {
-                        let raw_len = msg.len() as u64;
-                        let mut cursor = io::Cursor::new(msg);
-                        let mut file = ZipFile::buffered(
-                            Cow::Borrowed(data),
-                            raw_len,
-                            &mut cursor as &mut dyn Read,
-                        );
-
-                        let outpath = directory.join(relative_path);
-
-                        if file.name().ends_with('/') {
-                            fs::create_dir_all(&outpath)?;
-                        } else {
-                            if let Some(p) = outpath.parent() {
-                                if !p.exists() {
-                                    fs::create_dir_all(p)?;
-                                }
-                            }
-                            let mut outfile = fs::File::create(&outpath)?;
-                            io::copy(&mut file, &mut outfile)?;
-                        }
-                        // Get and Set permissions
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            if let Some(mode) = file.unix_mode() {
-                                fs::set_permissions(&outpath, fs::Permissions::from_mode(mode))?;
-                            }
-                        }
-                        Ok::<_, ZipError>(())
-                    },
-                ) {
-                    Ok(()) => (),
-                    Err(e) => match err_tx.try_send(e.into()) {
-                        Ok(()) => {
-                            /* Avoid further processing with an early return. */
-                            return;
-                        }
-                        Err(e) => match e {
-                            mpsc::TrySendError::Full(_) => {
-                                /* Ignore if there is already an error. */
-                                return;
-                            }
-                            mpsc::TrySendError::Disconnected(_) => {
-                                unreachable!("err_rx hung up!")
-                            }
-                        },
-                    },
-                }
-            });
+        static READER_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(*NUM_CPUS)
+                .build()
+                .unwrap()
+        });
+        static WRITER_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(*NUM_CPUS)
+                .build()
+                .unwrap()
+        });
+        static EXTRACTOR_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(*NUM_CPUS)
+                .build()
+                .unwrap()
         });
 
-        /* Check for errors after scope joins all spawned threads above. */
-        match err_rx.try_recv() {
-            /* Successfully retrieved an error from the channel. */
-            Ok(e) => {
-                return Err(e);
-            }
-            Err(e) => match e {
-                /* No error! */
-                mpsc::TryRecvError::Empty => unreachable!("all should be hung up!"),
-                /* We expect this to be true. */
-                mpsc::TryRecvError::Disconnected => (),
-            },
-        }
+        match rayon::join(
+            /* (2) Execute the seek plan by splitting up the reader's extent into N contiguous
+             * chunks. */
+            move || {
+                READER_POOL.install(move || {
+                    let chunk_size = stops.len() / *NUM_CPUS;
 
-        Ok(())
+                    /* (2.1) Use a persistent buffer for cache friendliness. */
+                    let buf = BytesMut::new();
+                    stops
+                        .par_chunks(chunk_size)
+                        .map(|chunk| chunk.to_vec())
+                        .try_for_each_with(buf, move |ref mut buf, chunk| {
+                            let mut reader = reader.clone();
+                            let stops_tx = stops_tx.clone();
+
+                            for (data, relative_path, start, len) in chunk.into_iter() {
+                                let additional = len as isize - buf.capacity() as isize;
+                                if additional > 0 {
+                                    buf.reserve(additional as usize);
+                                }
+                                unsafe {
+                                    buf.set_len(len);
+                                }
+
+                                reader.seek(io::SeekFrom::Start(start))?;
+                                reader.read_exact(buf)?;
+
+                                stops_tx
+                                    .send((data, relative_path, buf.clone().freeze()))
+                                    .expect("rx hung up!");
+                            }
+                            Ok::<_, ZipError>(())
+                        })
+                })
+            },
+            move || {
+                rayon::join(
+                    /* (3) process/??? */
+                    move || {
+                        WRITER_POOL.install(move || {
+                            stops_rx.into_iter().par_bridge().try_for_each(
+                                move |(data, relative_path, msg)| {
+                                    let raw_len = msg.len() as u64;
+                                    /* We copied over the decompressed data into its own buffer, so extracting
+                                     * each entry here performs no i/o. */
+                                    let mut cursor = io::Cursor::new(msg);
+                                    let mut file = ZipFile::buffered(
+                                        Cow::Borrowed(data),
+                                        raw_len,
+                                        &mut cursor as &mut dyn Read,
+                                    );
+
+                                    const SPOOL_THRESHOLD: usize = 2_000;
+                                    let mut outfile = SpooledTempFile::new(SPOOL_THRESHOLD);
+                                    /* NB: this may decompress, which may take a lot of cpu! */
+                                    io::copy(&mut file, &mut outfile)?;
+                                    outfile.rewind()?;
+
+                                    /* dbg!(data); */
+
+                                    processed_tx
+                                        .send((data, relative_path, outfile))
+                                        .expect("processed_rx hung up!");
+
+                                    Ok::<_, ZipError>(())
+                                },
+                            )
+                        })
+                    },
+                    /* (4) extract/??? */
+                    move || {
+                        EXTRACTOR_POOL.install(move || {
+                            processed_rx.into_iter().par_bridge().try_for_each(
+                                move |(data, relative_path, mut file)| {
+                                    let outpath = directory.join(relative_path);
+
+                                    /* dbg!(&outpath); */
+
+                                    if relative_path.ends_with("/") {
+                                        fs::create_dir_all(&outpath)?;
+                                    } else {
+                                        if let Some(p) = outpath.parent() {
+                                            if !p.exists() {
+                                                fs::create_dir_all(p)?;
+                                            }
+                                        }
+                                        let mut outfile = fs::File::create(&outpath)?;
+                                        io::copy(&mut file, &mut outfile)?;
+                                    }
+                                    // Get and Set permissions
+                                    #[cfg(unix)]
+                                    {
+                                        use std::os::unix::fs::PermissionsExt;
+                                        if let Some(mode) = data.unix_mode() {
+                                            fs::set_permissions(
+                                                &outpath,
+                                                fs::Permissions::from_mode(mode),
+                                            )?;
+                                        }
+                                    }
+                                    Ok::<_, ZipError>(())
+                                },
+                            )
+                        })
+                    },
+                )
+            },
+        ) {
+            (Ok(()), (Ok(()), Ok(()))) => Ok(()),
+            (Err(e), _) | (_, (Err(e), _)) | (_, (_, Err(e))) => Err(e),
+        }
     }
 }
 

@@ -12,7 +12,7 @@ fn generate_random_archive(
     num_entries: usize,
     entry_size: usize,
     options: FileOptions,
-) -> ZipResult<(usize, Vec<u8>)> {
+) -> ZipResult<Vec<u8>> {
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
 
@@ -25,9 +25,8 @@ fn generate_random_archive(
     }
 
     let buf = zip.finish()?.into_inner();
-    let len = buf.len();
 
-    Ok((len, buf))
+    Ok(buf)
 }
 
 fn perform_pipelined<'a, P: AsRef<Path>>(src: ZipArchive<Handle<'a>>, target: P) -> ZipResult<()> {
@@ -41,15 +40,14 @@ fn perform_sync<R: Read + Seek, W: Write + Seek, P: AsRef<Path>>(
     src.extract(target)
 }
 
-const NUM_ENTRIES: usize = 100;
-const ENTRY_SIZE: usize = 100;
+const NUM_ENTRIES: usize = 1_000;
+const ENTRY_SIZE: usize = 10_000;
 
 fn extract_pipelined(bench: &mut Bencher) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    let (len, src) = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+    let src = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+    bench.bytes = src.len() as u64;
     let src = ZipArchive::new(Handle::mem(&src)).unwrap();
-
-    bench.bytes = len as u64;
 
     bench.iter(|| {
         let td = tempdir().unwrap();
@@ -59,9 +57,8 @@ fn extract_pipelined(bench: &mut Bencher) {
 
 fn extract_sync(bench: &mut Bencher) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    let (len, src) = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
-
-    bench.bytes = len as u64;
+    let src = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+    bench.bytes = src.len() as u64;
 
     bench.iter(|| {
         let td = tempdir().unwrap();
