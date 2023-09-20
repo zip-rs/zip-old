@@ -9,9 +9,12 @@ use crate::result::{InvalidPassword, ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
+
 use byteorder::{LittleEndian, ReadBytesExt};
+use once_cell::sync::Lazy;
+
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, prelude::*};
 use std::path::{Path, PathBuf};
@@ -447,8 +450,6 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
     pub fn extract<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
-        use std::fs;
-
         for i in 0..self.len() {
             let mut file = self.by_index(i)?;
             let filepath = file
@@ -710,6 +711,90 @@ impl<'a> Clone for Handle<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct CompletedPaths {
+    seen: HashSet<PathBuf>,
+}
+
+impl CompletedPaths {
+    pub fn new() -> Self {
+        Self {
+            seen: HashSet::new(),
+        }
+    }
+
+    pub fn contains(&self, path: impl AsRef<Path>) -> bool {
+        self.seen.contains(path.as_ref())
+    }
+
+    pub fn containing_dirs<'a>(
+        path: &'a (impl AsRef<Path> + ?Sized),
+    ) -> impl Iterator<Item = &'a Path> {
+        let is_dir = path.as_ref().ends_with("/");
+        path.as_ref()
+            .ancestors()
+            .inspect(|p| {
+                if p == &Path::new("/") {
+                    unreachable!("did not expect absolute paths")
+                }
+            })
+            .filter_map(move |p| {
+                if &p == &path.as_ref() {
+                    if is_dir {
+                        Some(p)
+                    } else {
+                        None
+                    }
+                } else if p == Path::new("") {
+                    None
+                } else {
+                    Some(p)
+                }
+            })
+    }
+
+    pub fn new_containing_dirs_needed<'a>(
+        &self,
+        path: &'a (impl AsRef<Path> + ?Sized),
+    ) -> Vec<&'a Path> {
+        Self::containing_dirs(path)
+            /* Assuming we are given ancestors in order from child to parent. */
+            .take_while(|p| !self.contains(p))
+            .collect()
+    }
+
+    pub fn write_dirs<'a>(&mut self, paths: &[&'a Path]) {
+        for path in paths.iter() {
+            if !self.contains(path) {
+                self.seen.insert(path.to_path_buf());
+            }
+        }
+    }
+}
+
+static NUM_CPUS: Lazy<usize> = Lazy::new(|| match std::thread::available_parallelism() {
+    Ok(x) => x.into(),
+    /* Default to 2 if any error occurs. */
+    Err(_) => 2,
+});
+
+fn build_thread_pool() -> rayon::ThreadPool {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(*NUM_CPUS)
+        .build()
+        .unwrap()
+}
+
+fn resize_buf(buf: &mut bytes::BytesMut, len: usize) {
+    let additional = len as isize - buf.capacity() as isize;
+    if additional > 0 {
+        buf.reserve(additional as usize);
+    }
+    unsafe {
+        buf.set_len(len);
+    }
+}
+
 impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
@@ -718,24 +803,13 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
     /// may be left on disk.
     pub fn extract_pipelined<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
         use bytes::{Bytes, BytesMut};
-        use once_cell::sync::Lazy;
         use rayon::prelude::*;
         use tempfile::SpooledTempFile;
 
-        use std::fs;
-        use std::sync::mpsc;
-        use std::thread;
-
-        static NUM_CPUS: Lazy<usize> = Lazy::new(|| match thread::available_parallelism() {
-            Ok(x) => x.into(),
-            /* Default to 2 if any error occurs. */
-            Err(_) => 2,
-        });
+        use std::sync::{mpsc, RwLock};
 
         let directory = directory.as_ref().to_path_buf();
-
-        /* let pool = rayon::ThreadPoolBuilder::new().build().unwrap(); */
-        /* let pool2 = rayon::ThreadPoolBuilder::new().build().unwrap(); */
+        fs::create_dir_all(&directory)?;
 
         /* (1) Collect a plan of where we'll need to seek and read in the underlying reader. */
         let num_files = self.shared.files.len();
@@ -772,32 +846,22 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
         let (stops_tx, stops_rx) = mpsc::channel::<(&ZipFileData, &Path, Bytes)>();
         let (processed_tx, processed_rx) =
             mpsc::channel::<(&ZipFileData, &Path, SpooledTempFile)>();
+        let (paths_tx, paths_rx) = mpsc::channel::<&Path>();
+
+        let completed_paths = Arc::new(RwLock::new(CompletedPaths::new()));
+        let completed_paths2 = Arc::clone(&completed_paths);
+
+        static READER_POOL: Lazy<rayon::ThreadPool> = Lazy::new(build_thread_pool);
+        static WRITER_POOL: Lazy<rayon::ThreadPool> = Lazy::new(build_thread_pool);
+        static DIR_POOL: Lazy<rayon::ThreadPool> = Lazy::new(build_thread_pool);
+        static EXTRACTOR_POOL: Lazy<rayon::ThreadPool> = Lazy::new(build_thread_pool);
 
         let reader = self.reader.clone();
-
-        static READER_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(*NUM_CPUS)
-                .build()
-                .unwrap()
-        });
-        static WRITER_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(*NUM_CPUS)
-                .build()
-                .unwrap()
-        });
-        static EXTRACTOR_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(*NUM_CPUS)
-                .build()
-                .unwrap()
-        });
-
         match rayon::join(
             /* (2) Execute the seek plan by splitting up the reader's extent into N contiguous
              * chunks. */
             move || {
+                let reader = reader; /* Move. */
                 READER_POOL.install(move || {
                     let chunk_size = stops.len() / *NUM_CPUS;
 
@@ -808,16 +872,9 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                         .map(|chunk| chunk.to_vec())
                         .try_for_each_with(buf, move |ref mut buf, chunk| {
                             let mut reader = reader.clone();
-                            let stops_tx = stops_tx.clone();
 
                             for (data, relative_path, start, len) in chunk.into_iter() {
-                                let additional = len as isize - buf.capacity() as isize;
-                                if additional > 0 {
-                                    buf.reserve(additional as usize);
-                                }
-                                unsafe {
-                                    buf.set_len(len);
-                                }
+                                resize_buf(buf, len);
 
                                 reader.seek(io::SeekFrom::Start(start))?;
                                 reader.read_exact(buf)?;
@@ -825,6 +882,7 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                                 stops_tx
                                     .send((data, relative_path, buf.clone().freeze()))
                                     .expect("rx hung up!");
+                                paths_tx.send(relative_path).expect("paths_rx hung up!");
                             }
                             Ok::<_, ZipError>(())
                         })
@@ -838,8 +896,8 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                             stops_rx.into_iter().par_bridge().try_for_each(
                                 move |(data, relative_path, msg)| {
                                     let raw_len = msg.len() as u64;
-                                    /* We copied over the decompressed data into its own buffer, so extracting
-                                     * each entry here performs no i/o. */
+                                    /* We copied over the decompressed data into its own buffer, so
+                                     * extracting each entry here performs no i/o. */
                                     let mut cursor = io::Cursor::new(msg);
                                     let mut file = ZipFile::buffered(
                                         Cow::Borrowed(data),
@@ -864,46 +922,130 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                             )
                         })
                     },
-                    /* (4) extract/??? */
                     move || {
-                        EXTRACTOR_POOL.install(move || {
-                            processed_rx.into_iter().par_bridge().try_for_each(
-                                move |(data, relative_path, mut file)| {
-                                    let outpath = directory.join(relative_path);
+                        let directory = directory; /* Move. */
+                        let directory2 = directory.clone();
+                        rayon::join(
+                            move || {
+                                /* (4.0) create dirs/??? */
+                                DIR_POOL.install(move || {
+                                    let completed_paths2 = Arc::clone(&completed_paths);
+                                    paths_rx
+                                        .into_iter()
+                                        .par_bridge()
+                                        .map(move |relative_path| {
+                                            completed_paths2
+                                                .read()
+                                                .unwrap()
+                                                .new_containing_dirs_needed(relative_path)
+                                        })
+                                        .filter(|new_dirs| !new_dirs.is_empty())
+                                        .try_for_each(move |mut new_dirs| {
+                                            /* Get dirs in order from parent to child. */
+                                            new_dirs.reverse();
 
-                                    /* dbg!(&outpath); */
+                                            for d in new_dirs.iter() {
+                                                let outpath = directory.join(d);
+                                                match fs::create_dir(outpath) {
+                                                    Ok(()) => (),
+                                                    Err(e) => {
+                                                        if e.kind() == io::ErrorKind::AlreadyExists
+                                                        {
+                                                            /* ignore */
+                                                        } else {
+                                                            return Err(e.into());
+                                                        }
+                                                    }
+                                                }
+                                            }
 
-                                    if relative_path.ends_with("/") {
-                                        fs::create_dir_all(&outpath)?;
-                                    } else {
-                                        if let Some(p) = outpath.parent() {
-                                            if !p.exists() {
-                                                fs::create_dir_all(p)?;
+                                            completed_paths
+                                                .write()
+                                                .unwrap()
+                                                .write_dirs(&new_dirs[..]);
+                                            Ok::<_, ZipError>(())
+                                        })
+                                })
+                            },
+                            move || {
+                                /* (4) extract/??? */
+                                EXTRACTOR_POOL.install(move || {
+                                    processed_rx
+                                        .into_iter()
+                                        .par_bridge()
+                                        .filter(|(_, relative_path, _)| {
+                                            /* Directories will be fulfilled by the DIR_POOL task! */
+                                            !relative_path.ends_with("/")
+                                        })
+                                        .try_for_each(move |(data, relative_path, mut file)| {
+                                            let outpath = directory2.join(relative_path);
+                                            /* dbg!(&outpath); */
+                                            if let Some(p) = outpath.parent() {
+                                                if !p.exists() {
+                                                    fs::create_dir_all(p)?;
+                                                }
                                             }
-                                        }
-                                        let mut outfile = fs::File::create(&outpath)?;
-                                        io::copy(&mut file, &mut outfile)?;
-                                        // Set permissions
-                                        #[cfg(unix)]
-                                        {
-                                            use std::os::unix::fs::PermissionsExt;
-                                            if let Some(mode) = data.unix_mode() {
-                                                outfile.set_permissions(
-                                                    fs::Permissions::from_mode(mode),
-                                                )?;
+                                            let mut outfile = match fs::File::create(&outpath) {
+                                                Ok(f) => f,
+                                                Err(e) => if e.kind() == io::ErrorKind::NotFound {
+                                                    /* Somehow, the containing dir didn't
+                                                     * exist. Let's make it ourself and
+                                                     * enter it into the registry. */
+                                                    let mut new_dirs = completed_paths2
+                                                        .read().unwrap()
+                                                        .new_containing_dirs_needed(&relative_path);
+                                                    new_dirs.reverse();
+
+                                                    for d in new_dirs.iter() {
+                                                        let outpath = directory2.join(d);
+                                                        match fs::create_dir(outpath) {
+                                                            Ok(()) => (),
+                                                            Err(e) => {
+                                                                if e.kind() == io::ErrorKind::AlreadyExists
+                                                                {
+                                                                    /* ignore */
+                                                                } else {
+                                                                    return Err(e.into());
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if !new_dirs.is_empty() {
+                                                        completed_paths2
+                                                            .write().unwrap()
+                                                            .write_dirs(&new_dirs[..]);
+                                                    }
+
+                                                    fs::File::create(&outpath)?
+                                                } else {
+                                                    return Err(e.into());
+                                                }
+                                            };
+                                            io::copy(&mut file, &mut outfile)?;
+                                            // Set permissions
+                                            #[cfg(unix)]
+                                            {
+                                                use std::os::unix::fs::PermissionsExt;
+                                                if let Some(mode) = data.unix_mode() {
+                                                    outfile.set_permissions(
+                                                        fs::Permissions::from_mode(mode),
+                                                    )?;
+                                                }
                                             }
-                                        }
-                                    }
-                                    Ok::<_, ZipError>(())
-                                },
-                            )
-                        })
+                                            Ok::<_, ZipError>(())
+                                        })
+                                })
+                            },
+                        )
                     },
                 )
             },
         ) {
-            (Ok(()), (Ok(()), Ok(()))) => Ok(()),
-            (Err(e), _) | (_, (Err(e), _)) | (_, (_, Err(e))) => Err(e),
+            (Ok(()), (Ok(()), (Ok(()), Ok(())))) => Ok(()),
+            (Err(e), _) | (_, (Err(e), _)) | (_, (_, (Err(e), _))) | (_, (_, (_, Err(e)))) => {
+                Err(e)
+            }
         }
     }
 }
