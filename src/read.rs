@@ -12,9 +12,11 @@ use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fs;
 use std::io::{self, prelude::*};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread;
 
 #[cfg(any(
     feature = "deflate",
@@ -638,14 +640,86 @@ impl<R: Read + io::Seek> ZipArchive<R> {
     }
 }
 
-impl<R: Read + io::Seek + Send> ZipArchive<R> {
+#[derive(Copy, Clone)]
+enum DupHandle<'a> {
+    Mem(&'a [u8]),
+    NamedFile(&'a Path),
+}
+
+enum DirectHandle<'a> {
+    Mem(io::Cursor<&'a [u8]>),
+    File(fs::File),
+}
+
+impl<'a> Read for DirectHandle<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Mem(cursor) => cursor.read(buf),
+            Self::File(handle) => handle.read(buf),
+        }
+    }
+}
+
+impl<'a> io::Seek for DirectHandle<'a> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        match self {
+            Self::Mem(cursor) => cursor.seek(pos),
+            Self::File(handle) => handle.seek(pos),
+        }
+    }
+}
+
+pub struct Handle<'a> {
+    src: DupHandle<'a>,
+    tgt: DirectHandle<'a>,
+}
+
+impl<'a> Handle<'a> {
+    pub fn mem(src: &'a [u8]) -> Self {
+        Self {
+            src: DupHandle::Mem(src),
+            tgt: DirectHandle::Mem(io::Cursor::new(src)),
+        }
+    }
+
+    pub fn named_file(path: &'a Path) -> io::Result<Self> {
+        Ok(Self {
+            src: DupHandle::NamedFile(path),
+            tgt: DirectHandle::File(fs::OpenOptions::new().read(true).open(path)?),
+        })
+    }
+}
+
+impl<'a> Read for Handle<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.tgt.read(buf)
+    }
+}
+
+impl<'a> io::Seek for Handle<'a> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        self.tgt.seek(pos)
+    }
+}
+
+impl<'a> Clone for Handle<'a> {
+    fn clone(&self) -> Self {
+        match self.src {
+            DupHandle::Mem(mem) => Self::mem(mem),
+            DupHandle::NamedFile(path) => Self::named_file(path).unwrap(),
+        }
+    }
+}
+
+impl<'a> ZipArchive<Handle<'a>> {
     /// Extract a Zip archive into a directory, overwriting files if they
     /// already exist. Paths are sanitized with [`ZipFile::enclosed_name`].
     ///
     /// Extraction is not atomic; If an error is encountered, some of the files
     /// may be left on disk.
-    pub fn extract_pipelined<P: AsRef<Path>>(&mut self, directory: P) -> ZipResult<()> {
-        use crossbeam_utils::thread;
+    pub fn extract_pipelined<P: AsRef<Path>>(self, directory: P) -> ZipResult<()> {
+        use bytes::{Bytes, BytesMut};
+        use num_cpus;
         use rayon::prelude::*;
         use std::fs;
         use std::sync::mpsc;
@@ -655,75 +729,81 @@ impl<R: Read + io::Seek + Send> ZipArchive<R> {
         /* let (tx, rx) = mpsc::sync_channel::<(&ZipFileData, &Path, Box<[u8]>)>(50); */
         let (tx, rx) = mpsc::channel::<(&ZipFileData, &Path, Box<[u8]>)>();
 
-        thread::scope(move |s| {
-            /* (1) Collect a plan of where we'll need to seek and read in the underlying reader. */
-            let num_files = self.shared.files.len();
-            let mut stops: Vec<(&ZipFileData, &Path, u64, usize)> = Vec::with_capacity(num_files);
-            unsafe {
-                stops.set_len(num_files);
-            }
-            self.shared
-                .files
-                .par_iter()
-                .zip(stops.par_iter_mut())
-                .try_for_each(|(data, ref mut cur_stop)| {
-                    let relative_path = data
-                        .enclosed_name()
-                        .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+        /* let pool = rayon::ThreadPoolBuilder::new().build().unwrap(); */
+        /* let pool2 = rayon::ThreadPoolBuilder::new().build().unwrap(); */
 
-                    // NB: we avoid parsing the local header and assume it corresponds to the
-                    // central directory header we previously parsed at the end of the zip!
-                    let variable_fields_len: usize =
-                        data.file_name_raw.len() + data.extra_field.len();
-                    let data_start: u64 =
-                        data.header_start + 4 + 22 + 2 + 2 + variable_fields_len as u64;
+        /* (1) Collect a plan of where we'll need to seek and read in the underlying reader. */
+        let num_files = self.shared.files.len();
+        let mut stops: Vec<(&ZipFileData, &Path, u64, usize)> = Vec::with_capacity(num_files);
+        unsafe {
+            stops.set_len(num_files);
+        }
 
-                    **cur_stop = (
-                        data,
-                        relative_path,
-                        data_start,
-                        data.compressed_size as usize,
-                    );
+        self.shared
+            .files
+            .par_iter()
+            .zip(stops.par_iter_mut())
+            .try_for_each(|(ref data, ref mut cur_stop)| {
+                let relative_path = data
+                    .enclosed_name()
+                    .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
 
-                    Ok::<_, ZipError>(())
-                })?;
+                // NB: we avoid parsing the local header and assume it corresponds to the
+                // central directory header we previously parsed at the end of the zip!
+                let variable_fields_len: usize = data.file_name_raw.len() + data.extra_field.len();
+                let data_start: u64 =
+                    data.header_start + 4 + 22 + 2 + 2 + variable_fields_len as u64;
 
-            /* (2) Execute the chunk plan in a single serial pass over the reader. */
-            let reader = &mut self.reader;
-            let _reader_thread = s.spawn(move |_| {
-                /* (2.1) Use a persistent buffer for cache friendliness. */
-                let mut buf: Vec<u8> = Vec::new();
-                for (data, relative_path, start, len) in stops.into_iter() {
-                    let additional = (len - buf.capacity()) as isize;
-                    if additional > 0 {
-                        buf.reserve(additional as usize);
-                    }
-                    unsafe {
-                        buf.set_len(len);
-                    }
-                    reader.seek(io::SeekFrom::Start(start))?;
-                    reader.read_exact(&mut buf)?;
-                    /* (2.2) Perform exactly one copy of each chunk. */
-                    let msg: Box<[u8]> = Box::from(&buf[..]);
-                    tx.send((data, relative_path, msg)).unwrap();
-                }
+                **cur_stop = (
+                    data,
+                    relative_path,
+                    data_start,
+                    data.compressed_size as usize,
+                );
 
                 Ok::<_, ZipError>(())
+            })?;
+
+        let reader = self.reader.clone();
+        thread::scope(move |s| {
+            /* (2) Execute the seek plan by splitting up the reader's extent into N contiguous
+             * chunks. */
+            s.spawn(move || {
+                let num_chunks: usize = num_cpus::get();
+                let chunk_size = stops.len() / num_chunks;
+
+                for chunk in stops.chunks(chunk_size) {
+                    let chunk = chunk.to_vec();
+                    let mut reader = reader.clone();
+                    let tx = tx.clone();
+                    s.spawn(move || {
+                        /* (2.1) Use a persistent buffer for cache friendliness. */
+                        let mut buf = Vec::new();
+
+                        for (data, relative_path, start, len) in chunk.into_iter() {
+                            let additional = len as isize - buf.capacity() as isize;
+                            if additional > 0 {
+                                buf.reserve(additional as usize);
+                            }
+                            unsafe {
+                                buf.set_len(len);
+                            }
+                            reader.seek(io::SeekFrom::Start(start)).unwrap();
+                            reader.read_exact(&mut buf).unwrap();
+                            tx.send((data, relative_path, buf.clone().into()))
+                                .expect("rx hung up!");
+                        }
+                    });
+                }
             });
 
-            let _writer_thread = s.spawn(move |_| {
-                rx.into_iter().par_bridge().try_for_each_init(
-                    Vec::new,
-                    |ref mut buf, (data, relative_path, msg)| {
-                        let additional = (msg.len() - buf.capacity()) as isize;
-                        if additional > 0 {
-                            buf.reserve(additional as usize);
-                        }
-                        unsafe {
-                            buf.set_len(msg.len());
-                        }
+            /* (3) ??? */
+            s.spawn(move || {
+                rx.into_iter()
+                    .par_bridge()
+                    .try_for_each(|(data, relative_path, msg)| {
                         let raw_len = msg.len() as u64;
-                        let mut cursor = io::Cursor::new(buf);
+                        let mut cursor = io::Cursor::new(msg);
                         let mut file = ZipFile::buffered(
                             Cow::Borrowed(data),
                             raw_len,
@@ -752,18 +832,10 @@ impl<R: Read + io::Seek + Send> ZipArchive<R> {
                             }
                         }
                         Ok::<_, ZipError>(())
-                    },
-                )?;
-
-                Ok::<_, ZipError>(())
+                    })
+                    .unwrap();
             });
-
-            /* reader_thread.join().unwrap().unwrap(); */
-            /* writer_thread.join().unwrap().unwrap(); */
-
-            Ok::<_, ZipError>(())
-        })
-        .expect("no inner panics")?;
+        });
 
         Ok(())
     }

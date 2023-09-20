@@ -6,13 +6,13 @@ use std::path::Path;
 use bencher::Bencher;
 use getrandom::getrandom;
 use tempfile::tempdir;
-use zip::{result::ZipResult, write::FileOptions, ZipArchive, ZipWriter};
+use zip::{read::Handle, result::ZipResult, write::FileOptions, ZipArchive, ZipWriter};
 
 fn generate_random_archive(
     num_entries: usize,
     entry_size: usize,
     options: FileOptions,
-) -> ZipResult<(usize, ZipArchive<Cursor<Vec<u8>>>)> {
+) -> ZipResult<(usize, Vec<u8>)> {
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
 
@@ -27,13 +27,10 @@ fn generate_random_archive(
     let buf = zip.finish()?.into_inner();
     let len = buf.len();
 
-    Ok((len, ZipArchive::new(Cursor::new(buf))?))
+    Ok((len, buf))
 }
 
-fn perform_pipelined<R: Read + Seek + Send, W: Write + Seek, P: AsRef<Path>>(
-    mut src: ZipArchive<R>,
-    target: P,
-) -> ZipResult<()> {
+fn perform_pipelined<'a, P: AsRef<Path>>(src: ZipArchive<Handle<'a>>, target: P) -> ZipResult<()> {
     src.extract_pipelined(target)
 }
 
@@ -45,17 +42,18 @@ fn perform_sync<R: Read + Seek, W: Write + Seek, P: AsRef<Path>>(
 }
 
 const NUM_ENTRIES: usize = 100;
-const ENTRY_SIZE: usize = 1_000;
+const ENTRY_SIZE: usize = 100;
 
 fn extract_pipelined(bench: &mut Bencher) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let (len, src) = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+    let src = ZipArchive::new(Handle::mem(&src)).unwrap();
 
     bench.bytes = len as u64;
 
     bench.iter(|| {
         let td = tempdir().unwrap();
-        perform_pipelined::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(src.clone(), td).unwrap();
+        perform_pipelined(src.clone(), td).unwrap();
     });
 }
 
@@ -67,7 +65,11 @@ fn extract_sync(bench: &mut Bencher) {
 
     bench.iter(|| {
         let td = tempdir().unwrap();
-        perform_sync::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(src.clone(), td).unwrap();
+        perform_sync::<Cursor<Vec<u8>>, Cursor<Vec<u8>>, _>(
+            ZipArchive::new(Cursor::new(src.clone())).unwrap(),
+            td,
+        )
+        .unwrap();
     });
 }
 
