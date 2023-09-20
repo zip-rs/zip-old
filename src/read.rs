@@ -883,16 +883,15 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                                         }
                                         let mut outfile = fs::File::create(&outpath)?;
                                         io::copy(&mut file, &mut outfile)?;
-                                    }
-                                    // Get and Set permissions
-                                    #[cfg(unix)]
-                                    {
-                                        use std::os::unix::fs::PermissionsExt;
-                                        if let Some(mode) = data.unix_mode() {
-                                            fs::set_permissions(
-                                                &outpath,
-                                                fs::Permissions::from_mode(mode),
-                                            )?;
+                                        // Set permissions
+                                        #[cfg(unix)]
+                                        {
+                                            use std::os::unix::fs::PermissionsExt;
+                                            if let Some(mode) = data.unix_mode() {
+                                                outfile.set_permissions(
+                                                    fs::Permissions::from_mode(mode),
+                                                )?;
+                                            }
                                         }
                                     }
                                     Ok::<_, ZipError>(())
