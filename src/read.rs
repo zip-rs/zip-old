@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, prelude::*};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 #[cfg(any(
     feature = "deflate",
@@ -757,10 +757,13 @@ impl CompletedPaths {
         &self,
         path: &'a (impl AsRef<Path> + ?Sized),
     ) -> Vec<&'a Path> {
-        Self::containing_dirs(path)
+        let mut ret: Vec<_> = Self::containing_dirs(path)
             /* Assuming we are given ancestors in order from child to parent. */
             .take_while(|p| !self.contains(p))
-            .collect()
+            .collect();
+        /* Get dirs in order from parent to child. */
+        ret.reverse();
+        ret
     }
 
     pub fn write_dirs<'a>(&mut self, paths: &[&'a Path]) {
@@ -940,10 +943,7 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                                                 .new_containing_dirs_needed(relative_path)
                                         })
                                         .filter(|new_dirs| !new_dirs.is_empty())
-                                        .try_for_each(move |mut new_dirs| {
-                                            /* Get dirs in order from parent to child. */
-                                            new_dirs.reverse();
-
+                                        .try_for_each(move |new_dirs| {
                                             for d in new_dirs.iter() {
                                                 let outpath = directory.join(d);
                                                 match fs::create_dir(outpath) {
@@ -991,10 +991,9 @@ impl<R: Read + io::Seek + Send + Sync + Clone> ZipArchive<R> {
                                                     /* Somehow, the containing dir didn't
                                                      * exist. Let's make it ourself and
                                                      * enter it into the registry. */
-                                                    let mut new_dirs = completed_paths2
+                                                    let new_dirs = completed_paths2
                                                         .read().unwrap()
                                                         .new_containing_dirs_needed(&relative_path);
-                                                    new_dirs.reverse();
 
                                                     for d in new_dirs.iter() {
                                                         let outpath = directory2.join(d);
