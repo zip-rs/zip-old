@@ -43,7 +43,7 @@ fn perform_sync<R: Read + Seek, W: Write + Seek, P: AsRef<Path>>(
 const NUM_ENTRIES: usize = 1_000;
 const ENTRY_SIZE: usize = 10_000;
 
-fn extract_pipelined(bench: &mut Bencher) {
+fn extract_pipelined_random(bench: &mut Bencher) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let src = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
     bench.bytes = src.len() as u64;
@@ -55,7 +55,7 @@ fn extract_pipelined(bench: &mut Bencher) {
     });
 }
 
-fn extract_sync(bench: &mut Bencher) {
+fn extract_sync_random(bench: &mut Bencher) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let src = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
     bench.bytes = src.len() as u64;
@@ -70,5 +70,5 @@ fn extract_sync(bench: &mut Bencher) {
     });
 }
 
-benchmark_group!(benches, extract_pipelined, extract_sync);
+benchmark_group!(benches, extract_pipelined_random, extract_sync_random);
 benchmark_main!(benches);
