@@ -1,6 +1,5 @@
 //! Helper module to compute a CRC32 checksum
 
-use std::io::prelude::*;
 use std::marker::Unpin;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -40,7 +39,7 @@ impl<R> Crc32Reader<R> {
     }
 }
 
-impl<R: Read> Read for Crc32Reader<R> {
+impl<R: std::io::Read> std::io::Read for Crc32Reader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let invalid_check = !buf.is_empty() && !self.check_matches() && !self.ae2_encrypted;
 
@@ -62,7 +61,9 @@ impl<R: io::AsyncRead + Unpin> io::AsyncRead for Crc32Reader<R> {
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        debug_assert!(buf.remaining() > 0);
+        if buf.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
         let start = buf.filled().len();
 
         let s = self.get_mut();
@@ -94,10 +95,11 @@ impl<R: io::AsyncRead + Unpin> io::AsyncRead for Crc32Reader<R> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::io::Read;
+    use crate::result::ZipResult;
 
     #[test]
     fn test_empty_reader() {
+        use std::io::Read;
         let data: &[u8] = b"";
         let mut buf = [0; 1];
 
@@ -112,8 +114,28 @@ mod test {
             .contains("Invalid checksum"));
     }
 
+    #[tokio::test]
+    async fn test_tokio_empty_reader() -> ZipResult<()> {
+        use tokio::io::AsyncReadExt;
+        let data: &[u8] = b"";
+        let mut buf = [0; 1];
+
+        let mut reader = Crc32Reader::new(data, 0, false);
+        assert_eq!(reader.read(&mut buf).await?, 0);
+
+        let mut reader = Crc32Reader::new(data, 1, false);
+        assert!(reader
+            .read(&mut buf)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid checksum"));
+        Ok(())
+    }
+
     #[test]
     fn test_byte_by_byte() {
+        use std::io::Read;
         let data: &[u8] = b"1234";
         let mut buf = [0; 1];
 
@@ -127,13 +149,45 @@ mod test {
         assert_eq!(reader.read(&mut buf).unwrap(), 0);
     }
 
+    #[tokio::test]
+    async fn test_tokio_byte_by_byte() -> ZipResult<()> {
+        use tokio::io::AsyncReadExt;
+        let data: &[u8] = b"1234";
+        let mut buf = [0; 1];
+
+        let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
+        assert_eq!(reader.read(&mut buf).await?, 1);
+        assert_eq!(reader.read(&mut buf).await?, 1);
+        assert_eq!(reader.read(&mut buf).await?, 1);
+        assert_eq!(reader.read(&mut buf).await?, 1);
+        assert_eq!(reader.read(&mut buf).await?, 0);
+        // Can keep reading 0 bytes after the end
+        assert_eq!(reader.read(&mut buf).await?, 0);
+
+        Ok(())
+    }
+
     #[test]
     fn test_zero_read() {
+        use std::io::Read;
         let data: &[u8] = b"1234";
         let mut buf = [0; 5];
 
         let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
         assert_eq!(reader.read(&mut buf[..0]).unwrap(), 0);
         assert_eq!(reader.read(&mut buf).unwrap(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_tokio_zero_read() -> ZipResult<()> {
+        use tokio::io::AsyncReadExt;
+        let data: &[u8] = b"1234";
+        let mut buf = [0; 5];
+
+        let mut reader = Crc32Reader::new(data, 0x9be3e0a3, false);
+        assert_eq!(reader.read(&mut buf[..0]).await?, 0);
+        assert_eq!(reader.read(&mut buf).await?, 4);
+
+        Ok(())
     }
 }

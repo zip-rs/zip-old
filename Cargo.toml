@@ -28,7 +28,7 @@ parking_lot = { version = "0.12.1", features = ["arc_lock"] }
 pbkdf2 = {version = "0.11.0", optional = true }
 sha1 = {version = "0.10.1", optional = true }
 time = { version = "0.3.7", optional = true, default-features = false, features = ["std"] }
-tokio = { version = "1.32.0", features = ["rt", "io-util", "sync", "fs"] }
+tokio = { version = "1.32.0", features = ["rt", "io-util", "sync", "fs", "macros"] }
 tokio-stream = "0.1.14"
 tokio-util = { version = "0.7.9", features = ["io", "io-util"] }
 zstd = { version = "0.11.2", optional = true }
