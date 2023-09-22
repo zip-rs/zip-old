@@ -125,6 +125,21 @@ pub mod utils {
         }
     }
 
+    ///```
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use std::{io::{Cursor, prelude::*}, pin::Pin, sync::Arc};
+    /// use tokio::{io::{self, AsyncReadExt}, fs};
+    ///
+    /// let mut buf = Cursor::new(Vec::new());
+    /// buf.write_all(b"hello\n")?;
+    /// buf.rewind()?;
+    /// let mut f = zip::read::tokio::utils::ReadAdapter::new(buf);
+    /// let mut buf: Vec<u8> = Vec::new();
+    /// f.read_to_end(&mut buf).await?;
+    /// assert_eq!(&buf, b"hello\n");
+    /// # Ok(())
+    /// # })}
+    ///```
     pub struct ReadAdapter<S> {
         inner: Arc<Mutex<S>>,
         completion_rx: oneshot::Receiver<io::Result<()>>,
