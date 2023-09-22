@@ -75,6 +75,323 @@ pub(crate) mod zip_archive {
 }
 pub use zip_archive::ZipArchive;
 
+pub(crate) mod tokio {
+    use crate::compression::CompressionMethod;
+    use crate::crc32::Crc32Reader;
+    use crate::result::{ZipError, ZipResult};
+    use crate::spec;
+    use crate::types::ZipFileData;
+
+    use std::{
+        any::Any,
+        cmp,
+        io::Read,
+        marker::PhantomData,
+        marker::Unpin,
+        ops,
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    use tokio::io::{self, AsyncReadExt, AsyncSeekExt};
+    use tokio_util::io::SyncIoBridge;
+
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib"
+    ))]
+    use flate2::read::DeflateDecoder;
+
+    #[cfg(feature = "bzip2")]
+    use bzip2::read::BzDecoder;
+
+    pub mod utils {
+        use super::*;
+
+        use bytes::{BufMut, Bytes, BytesMut};
+        use parking_lot::{lock_api::ArcRwLockUpgradableReadGuard, Mutex, RwLock};
+        use tokio::{sync::oneshot, task};
+
+        use std::future::Future;
+        use std::slice;
+        use std::sync::Arc;
+
+        pub struct Limiter<S> {
+            max_len: usize,
+            internal_pos: usize,
+            source_stream: S,
+        }
+
+        impl<S> Limiter<S> {
+            pub fn take(source_stream: S, limit: usize) -> Self {
+                Self {
+                    max_len: limit,
+                    internal_pos: 0,
+                    source_stream,
+                }
+            }
+
+            #[inline]
+            fn remaining_len(&self) -> usize {
+                self.max_len - self.internal_pos
+            }
+
+            #[inline]
+            fn limit_length(&self, requested_length: usize) -> usize {
+                cmp::min(self.remaining_len(), requested_length)
+            }
+
+            #[inline]
+            fn push_cursor(&mut self, len: usize) {
+                debug_assert!(len <= self.remaining_len());
+                self.internal_pos += len;
+            }
+        }
+
+        impl<S: Read> Read for Limiter<S> {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                let num_bytes_to_read: usize = self.limit_length(buf.len());
+                if num_bytes_to_read == 0 {
+                    return Ok(0);
+                }
+
+                let bytes_read = self.source_stream.read(&mut buf[..num_bytes_to_read])?;
+                assert!(bytes_read <= num_bytes_to_read);
+                if bytes_read > 0 {
+                    self.push_cursor(bytes_read);
+                }
+                Ok(bytes_read)
+            }
+        }
+
+        impl<S: io::AsyncRead + Unpin> io::AsyncRead for Limiter<S> {
+            fn poll_read(
+                self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buf: &mut io::ReadBuf<'_>,
+            ) -> Poll<io::Result<()>> {
+                let num_bytes_to_read: usize = self.limit_length(buf.remaining());
+                if num_bytes_to_read == 0 {
+                    return Poll::Ready(Ok(()));
+                }
+
+                let s = self.get_mut();
+                let start = buf.filled().len();
+                match Pin::new(&mut s.source_stream).poll_read(cx, &mut buf.take(num_bytes_to_read))
+                {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(x) => Poll::Ready(x.map(|()| {
+                        let bytes_read = buf.filled().len() - start;
+                        assert!(bytes_read <= num_bytes_to_read);
+                        if bytes_read > 0 {
+                            s.push_cursor(bytes_read);
+                        }
+                    })),
+                }
+            }
+        }
+
+        pub struct ReadAdapter<S> {
+            inner: Arc<Mutex<S>>,
+            completion_rx: oneshot::Receiver<io::Result<()>>,
+            completion_tx: Arc<Mutex<Option<oneshot::Sender<io::Result<()>>>>>,
+            buf: Arc<RwLock<BytesMut>>,
+        }
+        impl<S> ReadAdapter<S> {
+            pub fn new(inner: S) -> Self {
+                let (tx, rx) = oneshot::channel::<io::Result<()>>();
+                Self {
+                    inner: Arc::new(Mutex::new(inner)),
+                    completion_rx: rx,
+                    completion_tx: Arc::new(Mutex::new(Some(tx))),
+                    buf: Arc::new(RwLock::new(BytesMut::new())),
+                }
+            }
+        }
+
+        impl<S: Read + Unpin + Send + 'static> io::AsyncRead for ReadAdapter<S> {
+            fn poll_read(
+                self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buf: &mut io::ReadBuf<'_>,
+            ) -> Poll<io::Result<()>> {
+                assert!(buf.remaining() > 0);
+
+                {
+                    let ring_buf = self.buf.upgradable_read_arc();
+                    if !ring_buf.is_empty() {
+                        let len = cmp::min(buf.remaining(), ring_buf.len());
+
+                        let data = {
+                            let mut ring_buf = ArcRwLockUpgradableReadGuard::upgrade(ring_buf);
+                            ring_buf.split_to(len)
+                        };
+                        buf.put(data);
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+
+                let s = self.get_mut();
+
+                match Pin::new(&mut s.completion_rx).poll(cx) {
+                    Poll::Ready(x) => match x {
+                        Err(_) => unreachable!(),
+                        Ok(x) => Poll::Ready(x),
+                    },
+                    Poll::Pending => {
+                        let requested_length = buf.remaining();
+                        let completion_tx = s.completion_tx.clone();
+                        let inner = s.inner.clone();
+                        let ring_buf = s.buf.clone();
+
+                        let waker = cx.waker().clone();
+                        task::spawn_blocking(move || {
+                            let mut ring_buf = ring_buf.write();
+                            ring_buf.reserve(requested_length);
+
+                            match inner.lock().read(unsafe {
+                                slice::from_raw_parts_mut(
+                                    ring_buf.chunk_mut().as_mut_ptr(),
+                                    requested_length,
+                                )
+                            }) {
+                                Err(e) => {
+                                    if let Some(completion_tx) = completion_tx.lock().take() {
+                                        completion_tx.send(Err(e)).unwrap();
+                                    }
+                                }
+                                Ok(n) => {
+                                    if n == 0 {
+                                        if let Some(completion_tx) = completion_tx.lock().take() {
+                                            completion_tx.send(Ok(())).unwrap();
+                                        }
+                                    } else {
+                                        unsafe {
+                                            ring_buf.advance_mut(n);
+                                        }
+                                        waker.wake();
+                                    }
+                                }
+                            }
+                        });
+
+                        Poll::Pending
+                    }
+                }
+            }
+        }
+    }
+    use utils::{Limiter, ReadAdapter};
+
+    pub struct ZipFileReader<S> {
+        handle: Box<dyn io::AsyncRead + Unpin>,
+        _ph: PhantomData<S>,
+    }
+
+    impl<S> ZipFileReader<S> {
+        fn new(handle: (impl io::AsyncRead + Unpin + 'static)) -> Self {
+            Self {
+                handle: Box::new(handle),
+                _ph: PhantomData,
+            }
+        }
+    }
+
+    impl<S: io::AsyncRead + Unpin + 'static> ZipFileReader<S> {
+        pub fn raw(inner: Limiter<S>) -> Self {
+            Self::new(inner)
+        }
+        pub fn stored(inner: Crc32Reader<Limiter<S>>) -> Self {
+            Self::new(inner)
+        }
+    }
+    impl<S: io::AsyncRead + Send + Unpin + 'static> ZipFileReader<S> {
+        #[cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib"
+        ))]
+        pub fn deflated(
+            inner: Crc32Reader<ReadAdapter<DeflateDecoder<SyncIoBridge<Limiter<S>>>>>,
+        ) -> Self {
+            Self::new(inner)
+        }
+        #[cfg(feature = "bzip2")]
+        pub fn bzip2(inner: Crc32Reader<ReadAdapter<BzDecoder<SyncIoBridge<Limiter<S>>>>>) -> Self {
+            Self::new(inner)
+        }
+    }
+
+    impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFileReader<S> {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().handle).poll_read(cx, buf)
+        }
+    }
+
+    pub async fn find_content<S: io::AsyncRead + io::AsyncSeek + Unpin>(
+        data: &ZipFileData,
+        mut reader: S,
+    ) -> ZipResult<Limiter<S>> {
+        // Parse local header
+        reader.seek(io::SeekFrom::Start(data.header_start)).await?;
+
+        let signature = reader.read_u32_le().await?;
+        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid local file header"));
+        }
+
+        reader.seek(io::SeekFrom::Current(22)).await?;
+        let file_name_length = reader.read_u16_le().await? as u64;
+        /* NB: zip files have separate local and central extra data records. The length of the local
+         * extra field is being parsed here. The value of this field cannot be inferred from the
+         * central record data. */
+        let extra_field_length = reader.read_u16_le().await? as u64;
+        let magic_and_header = 4 + 22 + 2 + 2;
+        let data_start =
+            data.header_start + magic_and_header + file_name_length + extra_field_length;
+        data.data_start.store(data_start);
+
+        reader.seek(io::SeekFrom::Start(data_start)).await?;
+        Ok(Limiter::take(reader, data.compressed_size as usize))
+    }
+
+    pub async fn get_reader<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static>(
+        data: &ZipFileData,
+        mut reader: S,
+    ) -> ZipResult<ZipFileReader<S>> {
+        let limited_reader = find_content(data, reader).await?;
+        match data.compression_method {
+            CompressionMethod::Stored => Ok(ZipFileReader::stored(Crc32Reader::new(
+                limited_reader,
+                data.crc32,
+                false,
+            ))),
+            #[cfg(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib"
+            ))]
+            CompressionMethod::Deflated => Ok(ZipFileReader::deflated(Crc32Reader::new(
+                ReadAdapter::new(DeflateDecoder::new(SyncIoBridge::new(limited_reader))),
+                data.crc32,
+                false,
+            ))),
+            #[cfg(feature = "bzip2")]
+            CompressionMethod::Bzip2 => Ok(ZipFileReader::bzip2(Crc32Reader::new(
+                ReadAdapter::new(BzDecoder::new(SyncIoBridge::new(limited_reader))),
+                data.crc32,
+                false,
+            ))),
+            _ => todo!("other compression methods not supported!"),
+        }
+    }
+}
+
 pub(crate) enum StreamDropBehavior {
     NoOp,
     DriveToEnd,

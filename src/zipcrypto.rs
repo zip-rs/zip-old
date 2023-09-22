@@ -5,6 +5,13 @@
 
 use std::num::Wrapping;
 
+use std::io::prelude::*;
+use std::marker::Unpin;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use tokio::io;
+
 /// A container to hold the current key state
 #[derive(Clone, Copy)]
 pub(crate) struct ZipCryptoKeys {
@@ -65,12 +72,7 @@ pub struct ZipCryptoReader<R> {
     keys: ZipCryptoKeys,
 }
 
-pub enum ZipCryptoValidator {
-    PkzipCrc32(u32),
-    InfoZipMsdosTime(u16),
-}
-
-impl<R: std::io::Read> ZipCryptoReader<R> {
+impl<R> ZipCryptoReader<R> {
     /// Note: The password is `&[u8]` and not `&str` because the
     /// [zip specification](https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT)
     /// does not specify password encoding (see function `update_keys` in the specification).
@@ -83,12 +85,19 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
             keys: ZipCryptoKeys::derive(password),
         }
     }
+}
 
+pub enum ZipCryptoValidator {
+    PkzipCrc32(u32),
+    InfoZipMsdosTime(u16),
+}
+
+impl<R: Read> ZipCryptoReader<R> {
     /// Read the ZipCrypto header bytes and validate the password.
     pub fn validate(
         mut self,
         validator: ZipCryptoValidator,
-    ) -> Result<Option<ZipCryptoReaderValid<R>>, std::io::Error> {
+    ) -> Result<Option<ZipCryptoReaderValid<R>>, io::Error> {
         // ZipCrypto prefixes a file with a 12 byte header
         let mut header_buf = [0u8; 12];
         self.file.read_exact(&mut header_buf)?;
@@ -123,13 +132,56 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(Some(ZipCryptoReaderValid { reader: self }))
     }
 }
+
+impl<R: io::AsyncRead + Unpin> ZipCryptoReader<R> {
+    /// Read the ZipCrypto header bytes and validate the password.
+    pub async fn validate_async(
+        mut self,
+        validator: ZipCryptoValidator,
+    ) -> Result<Option<ZipCryptoReaderValid<R>>, io::Error> {
+        use io::AsyncReadExt;
+        // ZipCrypto prefixes a file with a 12 byte header
+        let mut header_buf = [0u8; 12];
+        self.file.read_exact(&mut header_buf).await?;
+        for byte in header_buf.iter_mut() {
+            *byte = self.keys.decrypt_byte(*byte);
+        }
+
+        match validator {
+            ZipCryptoValidator::PkzipCrc32(crc32_plaintext) => {
+                // PKZIP before 2.0 used 2 byte CRC check.
+                // PKZIP 2.0+ used 1 byte CRC check. It's more secure.
+                // We also use 1 byte CRC.
+
+                if (crc32_plaintext >> 24) as u8 != header_buf[11] {
+                    return Ok(None); // Wrong password
+                }
+            }
+            ZipCryptoValidator::InfoZipMsdosTime(last_mod_time) => {
+                // Info-ZIP modification to ZipCrypto format:
+                // If bit 3 of the general purpose bit flag is set
+                // (indicates that the file uses a data-descriptor section),
+                // it uses high byte of 16-bit File Time.
+                // Info-ZIP code probably writes 2 bytes of File Time.
+                // We check only 1 byte.
+
+                if (last_mod_time >> 8) as u8 != header_buf[11] {
+                    return Ok(None); // Wrong password
+                }
+            }
+        }
+
+        Ok(Some(ZipCryptoReaderValid { reader: self }))
+    }
+}
+
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
     pub(crate) buffer: Vec<u8>,
     pub(crate) keys: ZipCryptoKeys,
 }
-impl<W: std::io::Write> ZipCryptoWriter<W> {
-    pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
+impl<W: Write> ZipCryptoWriter<W> {
+    pub(crate) fn finish(mut self, crc32: u32) -> io::Result<W> {
         self.buffer[11] = (crc32 >> 24) as u8;
         for byte in self.buffer.iter_mut() {
             *byte = self.keys.encrypt_byte(*byte);
@@ -139,13 +191,41 @@ impl<W: std::io::Write> ZipCryptoWriter<W> {
         Ok(self.writer)
     }
 }
-impl<W: std::io::Write> std::io::Write for ZipCryptoWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl<W: Write> Write for ZipCryptoWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buffer.extend_from_slice(buf);
         Ok(buf.len())
     }
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+impl<W: io::AsyncWrite + Unpin> ZipCryptoWriter<W> {
+    pub(crate) async fn finish_async(mut self, crc32: u32) -> io::Result<W> {
+        use io::AsyncWriteExt;
+        self.buffer[11] = (crc32 >> 24) as u8;
+        for byte in self.buffer.iter_mut() {
+            *byte = self.keys.encrypt_byte(*byte);
+        }
+        self.writer.write_all(&self.buffer).await?;
+        self.writer.flush().await?;
+        Ok(self.writer)
+    }
+}
+impl<W: io::AsyncWrite + Unpin> io::AsyncWrite for ZipCryptoWriter<W> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.get_mut().buffer.extend_from_slice(buf);
+        Poll::Ready(Ok(buf.len()))
+    }
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -154,16 +234,35 @@ pub struct ZipCryptoReaderValid<R> {
     reader: ZipCryptoReader<R>,
 }
 
-impl<R: std::io::Read> std::io::Read for ZipCryptoReaderValid<R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+impl<R: Read> Read for ZipCryptoReaderValid<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // Note: There might be potential for optimization. Inspiration can be found at:
         // https://github.com/kornelski/7z/blob/master/CPP/7zip/Crypto/ZipCrypto.cpp
 
-        let result = self.reader.file.read(buf);
-        for byte in buf.iter_mut() {
+        let n = self.reader.file.read(buf)?;
+        for byte in buf[..n].iter_mut() {
             *byte = self.reader.keys.decrypt_byte(*byte);
         }
-        result
+        Ok(n)
+    }
+}
+
+impl<R: io::AsyncRead + Unpin> io::AsyncRead for ZipCryptoReaderValid<R> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let start = buf.filled().len();
+        let s = self.get_mut();
+        match Pin::new(&mut s.reader.file).poll_read(cx, buf) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(x) => Poll::Ready(x.map(|()| {
+                for byte in buf.filled_mut()[start..].iter_mut() {
+                    *byte = s.reader.keys.decrypt_byte(*byte);
+                }
+            })),
+        }
     }
 }
 

@@ -398,6 +398,7 @@ impl ZipFileData {
     }
 
     /// Get unix mode for the file
+    #[inline]
     pub(crate) fn unix_mode(&self) -> Option<u32> {
         if self.external_attributes == 0 {
             return None;
