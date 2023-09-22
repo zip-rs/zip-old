@@ -6,6 +6,7 @@ use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::io::prelude::*;
 use std::io::Seek;
 use std::marker;
+use std::pin::Pin;
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -65,7 +66,7 @@ impl CentralDirectoryEnd {
         })
     }
 
-    pub async fn parse_async<T: io::AsyncRead + marker::Unpin>(reader: &mut T) -> ZipResult<Self> {
+    pub async fn parse_async<T: io::AsyncRead>(mut reader: Pin<&mut T>) -> ZipResult<Self> {
         let magic = reader.read_u32_le().await?;
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"));
@@ -94,8 +95,8 @@ impl CentralDirectoryEnd {
     const HEADER_SIZE: u64 = 22;
     const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = Self::HEADER_SIZE - 6;
 
-    pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek + marker::Unpin>(
-        reader: &mut T,
+    pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek>(
+        mut reader: Pin<&mut T>,
     ) -> ZipResult<(CentralDirectoryEnd, u64)> {
         let file_length = reader.seek(io::SeekFrom::End(0)).await?;
 
@@ -173,10 +174,7 @@ impl CentralDirectoryEnd {
         Ok(())
     }
 
-    pub async fn write_async<T: io::AsyncWrite + marker::Unpin>(
-        &self,
-        writer: &mut T,
-    ) -> ZipResult<()> {
+    pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
         writer.write_u32_le(CENTRAL_DIRECTORY_END_SIGNATURE).await?;
         writer.write_u16_le(self.disk_number).await?;
         writer
@@ -221,7 +219,7 @@ impl Zip64CentralDirectoryEndLocator {
         })
     }
 
-    pub async fn parse_async<T: io::AsyncRead + marker::Unpin>(reader: &mut T) -> ZipResult<Self> {
+    pub async fn parse_async<T: io::AsyncRead>(mut reader: Pin<&mut T>) -> ZipResult<Self> {
         let magic = reader.read_u32_le().await?;
         if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
             return Err(ZipError::InvalidArchive(
@@ -247,10 +245,7 @@ impl Zip64CentralDirectoryEndLocator {
         Ok(())
     }
 
-    pub async fn write_async<T: io::AsyncWrite + marker::Unpin>(
-        &self,
-        writer: &mut T,
-    ) -> ZipResult<()> {
+    pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
         writer
             .write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)
             .await?;
@@ -326,8 +321,8 @@ impl Zip64CentralDirectoryEnd {
         ))
     }
 
-    pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek + marker::Unpin>(
-        reader: &mut T,
+    pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek>(
+        mut reader: Pin<&mut T>,
         nominal_offset: u64,
         search_upper_bound: u64,
     ) -> ZipResult<(Self, u64)> {
