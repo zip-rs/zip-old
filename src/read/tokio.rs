@@ -7,12 +7,14 @@ use crate::spec;
 use crate::types::ZipFileData;
 
 use std::{
-    cmp,
+    cmp, fmt,
     io::Read,
     marker::Unpin,
-    mem, ops,
+    mem,
+    ops::{self, DerefMut},
     path::{Path, PathBuf},
     pin::Pin,
+    str,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -21,10 +23,11 @@ use async_stream::try_stream;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
 use indexmap::IndexMap;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncSeekExt},
+    sync::mpsc,
 };
 use tokio_util::io::SyncIoBridge;
 
@@ -42,12 +45,14 @@ pub mod utils {
     use super::*;
 
     use bytes::{BufMut, BytesMut};
+    use indexmap::IndexSet;
     use parking_lot::{lock_api::ArcRwLockUpgradableReadGuard, Mutex, RwLock};
     use tokio::{sync::oneshot, task};
 
     use std::future::Future;
     use std::slice;
 
+    #[derive(Clone)]
     pub struct Limiter<S> {
         max_len: usize,
         internal_pos: usize,
@@ -67,11 +72,6 @@ pub mod utils {
         fn remaining_len(&self) -> usize {
             self.max_len - self.internal_pos
         }
-
-        /* #[inline] */
-        /* fn is_done(&self) -> bool { */
-        /*     self.remaining_len() == 0 */
-        /* } */
 
         #[inline]
         fn limit_length(&self, requested_length: usize) -> usize {
@@ -99,7 +99,7 @@ pub mod utils {
             }
 
             let bytes_read = self.source_stream.read(&mut buf[..num_bytes_to_read])?;
-            dbg!(bytes_read);
+            /* dbg!(bytes_read); */
             if bytes_read > 0 {
                 self.push_cursor(bytes_read);
             }
@@ -116,7 +116,7 @@ pub mod utils {
             debug_assert!(buf.remaining() > 0);
 
             let num_bytes_to_read: usize = self.limit_length(buf.remaining());
-            dbg!(num_bytes_to_read);
+            /* dbg!(num_bytes_to_read); */
             if num_bytes_to_read == 0 {
                 return Poll::Ready(Ok(()));
             }
@@ -132,13 +132,13 @@ pub mod utils {
                     let filled_len = unfilled_buf.filled().len();
                     Poll::Ready(x.map(|()| {
                         let bytes_read = filled_len - start;
-                        dbg!(bytes_read);
+                        /* dbg!(bytes_read); */
                         assert!(bytes_read <= num_bytes_to_read);
                         if bytes_read > 0 {
                             buf.advance(bytes_read);
                             s.push_cursor(bytes_read);
                         }
-                        dbg!(s.remaining_len());
+                        /* dbg!(s.remaining_len()); */
                     }))
                 }
             }
@@ -161,7 +161,7 @@ pub mod utils {
     /// # })}
     ///```
     pub struct ReadAdapter<S> {
-        inner: Arc<Mutex<S>>,
+        inner: Arc<Mutex<Option<S>>>,
         completion_rx: oneshot::Receiver<io::Result<()>>,
         completion_tx: Arc<Mutex<Option<oneshot::Sender<io::Result<()>>>>>,
         buf: Arc<RwLock<BytesMut>>,
@@ -170,15 +170,14 @@ pub mod utils {
         pub fn new(inner: S) -> Self {
             let (tx, rx) = oneshot::channel::<io::Result<()>>();
             Self {
-                inner: Arc::new(Mutex::new(inner)),
+                inner: Arc::new(Mutex::new(Some(inner))),
                 completion_rx: rx,
                 completion_tx: Arc::new(Mutex::new(Some(tx))),
                 buf: Arc::new(RwLock::new(BytesMut::new())),
             }
         }
         pub fn into_inner(self) -> S {
-            let inner = self.inner;
-            Arc::into_inner(inner).unwrap().into_inner()
+            self.inner.lock().take().unwrap()
         }
     }
 
@@ -224,28 +223,34 @@ pub mod utils {
                         let mut ring_buf = ring_buf.write();
                         ring_buf.reserve(requested_length);
 
-                        match inner.lock().read(unsafe {
-                            slice::from_raw_parts_mut(
-                                ring_buf.chunk_mut().as_mut_ptr(),
-                                requested_length,
-                            )
-                        }) {
-                            Err(e) => {
-                                if let Some(completion_tx) = completion_tx.lock().take() {
-                                    completion_tx.send(Err(e)).unwrap();
+                        if let Some(ref mut inner) = *inner.lock() {
+                            match inner.read(unsafe {
+                                slice::from_raw_parts_mut(
+                                    ring_buf.chunk_mut().as_mut_ptr(),
+                                    requested_length,
+                                )
+                            }) {
+                                Err(e) => {
+                                    if let Some(completion_tx) = completion_tx.lock().take() {
+                                        completion_tx.send(Err(e)).unwrap();
+                                    }
+                                }
+                                Ok(n) => {
+                                    if n == 0 {
+                                        if let Some(completion_tx) = completion_tx.lock().take() {
+                                            completion_tx.send(Ok(())).unwrap();
+                                        }
+                                    } else {
+                                        unsafe {
+                                            ring_buf.advance_mut(n);
+                                        }
+                                        waker.wake();
+                                    }
                                 }
                             }
-                            Ok(n) => {
-                                if n == 0 {
-                                    if let Some(completion_tx) = completion_tx.lock().take() {
-                                        completion_tx.send(Ok(())).unwrap();
-                                    }
-                                } else {
-                                    unsafe {
-                                        ring_buf.advance_mut(n);
-                                    }
-                                    waker.wake();
-                                }
+                        } else {
+                            if let Some(completion_tx) = completion_tx.lock().take() {
+                                completion_tx.send(Ok(())).unwrap();
                             }
                         }
                     });
@@ -255,8 +260,502 @@ pub mod utils {
             }
         }
     }
+
+    #[derive(Debug, Clone)]
+    struct CompletedPaths {
+        seen: IndexSet<PathBuf>,
+    }
+
+    impl CompletedPaths {
+        pub fn new() -> Self {
+            Self {
+                seen: IndexSet::new(),
+            }
+        }
+
+        pub fn contains(&self, path: impl AsRef<Path>) -> bool {
+            self.seen.contains(path.as_ref())
+        }
+
+        pub fn containing_dirs<'a>(
+            path: &'a (impl AsRef<Path> + ?Sized),
+        ) -> impl Iterator<Item = &'a Path> {
+            let is_dir = path.as_ref().to_string_lossy().ends_with('/');
+            path.as_ref()
+                .ancestors()
+                .inspect(|p| {
+                    if p == &Path::new("/") {
+                        unreachable!("did not expect absolute paths")
+                    }
+                })
+                .filter_map(move |p| {
+                    if &p == &path.as_ref() {
+                        if is_dir {
+                            Some(p)
+                        } else {
+                            None
+                        }
+                    } else if p == Path::new("") {
+                        None
+                    } else {
+                        Some(p)
+                    }
+                })
+        }
+
+        pub fn new_containing_dirs_needed<'a>(
+            &self,
+            path: &'a (impl AsRef<Path> + ?Sized),
+        ) -> Vec<&'a Path> {
+            let mut ret: Vec<_> = Self::containing_dirs(path)
+                /* Assuming we are given ancestors in order from child to parent. */
+                .take_while(|p| !self.contains(p))
+                .collect();
+            /* Get dirs in order from parent to child. */
+            ret.reverse();
+            ret
+        }
+
+        pub fn write_dirs<'a>(&mut self, paths: &[&'a Path]) {
+            for path in paths.iter() {
+                if !self.contains(path) {
+                    self.seen.insert(path.to_path_buf());
+                }
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    pub enum IntermediateFile {
+        Immediate(Arc<RwLock<Box<[u8]>>>, usize),
+        Paging(Arc<Mutex<fs::File>>, Arc<PathBuf>, usize),
+    }
+
+    impl fmt::Display for IntermediateFile {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let len = self.len();
+            match self {
+                Self::Immediate(arc, pos) => match str::from_utf8(arc.read().as_ref()) {
+                    Ok(s) => write!(f, "Immediate(@{})[{}](\"{}\")", pos, s.len(), s),
+                    Err(_) => write!(f, "Immediate[{}](<binary>)", len),
+                    /* Err(_) => write!( */
+                    /*     f, */
+                    /*     "Immediate(@{})[{}](<binary> = \"{}\")", */
+                    /*     pos, */
+                    /*     arc.read().unwrap().len(), */
+                    /*     String::from_utf8_lossy(arc.read().unwrap().as_ref()), */
+                    /* ), */
+                },
+                Self::Paging(_, path, len) => write!(f, "Paging[{}]({})", len, path.display()),
+            }
+        }
+    }
+
+    impl IntermediateFile {
+        pub async fn try_into_sync(self) -> io::Result<SyncIntermediateFile> {
+            match self {
+                Self::Immediate(arc, pos) => Ok(SyncIntermediateFile::Immediate(arc, pos)),
+                Self::Paging(f, path, len) => Ok(SyncIntermediateFile::Paging(
+                    /* TODO: .try_clone() only requires a read lock? */
+                    Arc::new(Mutex::new(f.lock().try_clone().await?.into_std().await)),
+                    path,
+                    len,
+                )),
+            }
+        }
+
+        pub fn len(&self) -> usize {
+            match self {
+                Self::Immediate(arc, _) => arc.read().len(),
+                Self::Paging(_, _, len) => *len,
+            }
+        }
+
+        pub fn immediate(len: usize) -> Self {
+            Self::Immediate(Arc::new(RwLock::new(vec![0; len].into_boxed_slice())), 0)
+        }
+
+        /* pub async fn paging(len: usize) -> io::Result<Self> { */
+        /*     let f = tempfile::NamedTempFile::with_prefix("intermediate")?; */
+        /*     let (mut f, path) = f.keep().unwrap(); */
+        /*     f.set_len(len as u64)?; */
+        /*     f.rewind()?; */
+        /*     Ok(Self::Paging(UnsafeCell::new(f), path, len)) */
+        /* } */
+
+        pub async fn create_at_path(path: impl AsRef<Path>, len: usize) -> io::Result<Self> {
+            let f = fs::File::create(path.as_ref()).await?;
+            f.set_len(len as u64).await?;
+            Ok(Self::Paging(
+                Arc::new(Mutex::new(f)),
+                Arc::new(path.as_ref().to_path_buf()),
+                len,
+            ))
+        }
+
+        pub async fn open_from_path(path: impl AsRef<Path>) -> io::Result<Self> {
+            let mut f = fs::File::open(path.as_ref()).await?;
+            let len = f.seek(io::SeekFrom::End(0)).await?;
+            f.rewind().await?;
+            Ok(Self::Paging(
+                Arc::new(Mutex::new(f)),
+                Arc::new(path.as_ref().to_path_buf()),
+                len as usize,
+            ))
+        }
+
+        pub async fn open_from_path_known_len(
+            path: impl AsRef<Path>,
+            len: usize,
+        ) -> io::Result<Self> {
+            let f = fs::File::open(path.as_ref()).await?;
+            Ok(Self::Paging(
+                Arc::new(Mutex::new(f)),
+                Arc::new(path.as_ref().to_path_buf()),
+                len,
+            ))
+        }
+
+        pub async fn with_cursor_at(mut self, pos: io::SeekFrom) -> io::Result<Self> {
+            self.seek(pos).await?;
+            Ok(self)
+        }
+
+        pub async fn clone_handle(&self) -> io::Result<Self> {
+            match self {
+                Self::Immediate(arc, pos) => Ok(Self::Immediate(arc.clone(), *pos)),
+                Self::Paging(prev_f, path, len) => {
+                    let prev_cursor = prev_f.lock().stream_position().await?;
+                    Ok(Self::open_from_path_known_len(path.as_ref(), *len)
+                        .await?
+                        .with_cursor_at(io::SeekFrom::Start(prev_cursor))
+                        .await?)
+                }
+            }
+        }
+
+        pub fn from_bytes(bytes: &[u8]) -> Self {
+            Self::Immediate(Arc::new(RwLock::new(bytes.into())), 0)
+        }
+
+        pub async fn remove_backing_file(&mut self) -> io::Result<()> {
+            match self {
+                Self::Immediate(_, _) => Ok(()),
+                Self::Paging(_, path, _) => fs::remove_file(path.as_ref()).await,
+            }
+        }
+    }
+
+    impl io::AsyncRead for IntermediateFile {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            debug_assert!(buf.remaining() > 0);
+            match self.get_mut() {
+                Self::Immediate(arc, pos) => {
+                    let beg = *pos;
+                    let full_len = arc.read().len();
+                    debug_assert!(full_len >= beg);
+                    let end = cmp::min(beg + buf.remaining(), full_len);
+                    let src = &arc.read()[beg..end];
+
+                    buf.put_slice(src);
+
+                    *pos += src.len();
+
+                    Poll::Ready(Ok(()))
+                }
+                Self::Paging(file, _, _) => {
+                    Pin::new(&mut file.lock().deref_mut()).poll_read(cx, buf)
+                }
+            }
+        }
+    }
+
+    impl io::AsyncSeek for IntermediateFile {
+        fn start_seek(self: Pin<&mut Self>, pos_arg: io::SeekFrom) -> io::Result<()> {
+            match self.get_mut() {
+                Self::Immediate(arc, pos) => {
+                    let full_len = arc.read().len();
+                    match pos_arg {
+                        io::SeekFrom::Start(s) => {
+                            *pos = cmp::min(s as usize, full_len);
+                        }
+                        io::SeekFrom::End(from_end) => {
+                            let result = ((full_len as i64) + from_end) as isize;
+                            assert!(full_len <= isize::MAX as usize);
+                            let result = cmp::min(result, full_len as isize);
+                            let result = cmp::max(result, 0) as usize;
+                            *pos = result;
+                        }
+                        io::SeekFrom::Current(from_cur) => {
+                            let result = ((*pos as i64) + from_cur) as isize;
+                            assert!(full_len <= isize::MAX as usize);
+                            let result = cmp::min(result, full_len as isize);
+                            let result = cmp::max(result, 0) as usize;
+                            *pos = result;
+                        }
+                    };
+                    Ok(())
+                }
+                Self::Paging(file, _, _) => {
+                    Pin::new(&mut file.lock().deref_mut()).start_seek(pos_arg)
+                }
+            }
+        }
+        fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+            match self.get_mut() {
+                Self::Immediate(_, pos) => Poll::Ready(Ok(*pos as u64)),
+                Self::Paging(file, _, _) => {
+                    Pin::new(&mut file.lock().deref_mut()).poll_complete(cx)
+                }
+            }
+        }
+    }
+
+    impl io::AsyncWrite for IntermediateFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            match self.get_mut() {
+                Self::Immediate(arc, ref mut pos) => {
+                    let beg = *pos;
+                    let full_len = arc.read().len();
+                    assert!(beg <= full_len);
+                    let end = cmp::min(beg + buf.len(), full_len);
+
+                    let dst = &mut arc.write()[beg..end];
+                    dst.copy_from_slice(&buf[..dst.len()]);
+                    *pos += dst.len();
+
+                    Poll::Ready(Ok(dst.len()))
+                }
+                Self::Paging(file, _, _) => {
+                    Pin::new(&mut file.lock().deref_mut()).poll_write(cx, buf)
+                }
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Immediate(_, _) => Poll::Ready(Ok(())),
+                Self::Paging(file, _, _) => Pin::new(&mut file.lock().deref_mut()).poll_flush(cx),
+            }
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Immediate(_, _) => Poll::Ready(Ok(())),
+                Self::Paging(file, _, _) => {
+                    Pin::new(&mut file.lock().deref_mut()).poll_shutdown(cx)
+                }
+            }
+        }
+    }
+
+    pub mod sync {
+        use parking_lot::{Mutex, RwLock};
+
+        use std::{
+            cmp, fmt, fs,
+            io::{self, prelude::*},
+            path::{Path, PathBuf},
+            str,
+            sync::Arc,
+        };
+
+        #[derive(Debug)]
+        pub enum SyncIntermediateFile {
+            Immediate(Arc<RwLock<Box<[u8]>>>, usize),
+            Paging(Arc<Mutex<fs::File>>, Arc<PathBuf>, usize),
+        }
+
+        impl fmt::Display for SyncIntermediateFile {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let len = self.len();
+                match self {
+                    Self::Immediate(arc, pos) => match str::from_utf8(arc.read().as_ref()) {
+                        Ok(s) => write!(f, "Immediate(@{})[{}](\"{}\")", pos, s.len(), s),
+                        Err(_) => write!(f, "Immediate[{}](<binary>)", len),
+                        /* Err(_) => write!( */
+                        /*     f, */
+                        /*     "Immediate(@{})[{}](<binary> = \"{}\")", */
+                        /*     pos, */
+                        /*     arc.read().unwrap().len(), */
+                        /*     String::from_utf8_lossy(arc.read().unwrap().as_ref()), */
+                        /* ), */
+                    },
+                    Self::Paging(_, path, len) => write!(f, "Paging[{}]({})", len, path.display()),
+                }
+            }
+        }
+
+        impl SyncIntermediateFile {
+            pub fn len(&self) -> usize {
+                match self {
+                    Self::Immediate(arc, _) => arc.read().len(),
+                    Self::Paging(_, _, len) => *len,
+                }
+            }
+
+            pub fn immediate(len: usize) -> Self {
+                Self::Immediate(Arc::new(RwLock::new(vec![0; len].into_boxed_slice())), 0)
+            }
+
+            /* pub async fn paging(len: usize) -> io::Result<Self> { */
+            /*     let f = tempfile::NamedTempFile::with_prefix("intermediate")?; */
+            /*     let (mut f, path) = f.keep().unwrap(); */
+            /*     f.set_len(len as u64)?; */
+            /*     f.rewind()?; */
+            /*     Ok(Self::Paging(UnsafeCell::new(f), path, len)) */
+            /* } */
+
+            pub fn create_at_path(path: impl AsRef<Path>, len: usize) -> io::Result<Self> {
+                let f = fs::File::create(path.as_ref())?;
+                f.set_len(len as u64)?;
+                Ok(Self::Paging(
+                    Arc::new(Mutex::new(f)),
+                    Arc::new(path.as_ref().to_path_buf()),
+                    len,
+                ))
+            }
+
+            pub fn open_from_path(path: impl AsRef<Path>) -> io::Result<Self> {
+                let mut f = fs::File::open(path.as_ref())?;
+                let len = f.seek(io::SeekFrom::End(0))?;
+                f.rewind()?;
+                Ok(Self::Paging(
+                    Arc::new(Mutex::new(f)),
+                    Arc::new(path.as_ref().to_path_buf()),
+                    len as usize,
+                ))
+            }
+
+            pub fn open_from_path_known_len(
+                path: impl AsRef<Path>,
+                len: usize,
+            ) -> io::Result<Self> {
+                let f = fs::File::open(path.as_ref())?;
+                Ok(Self::Paging(
+                    Arc::new(Mutex::new(f)),
+                    Arc::new(path.as_ref().to_path_buf()),
+                    len,
+                ))
+            }
+
+            pub fn with_cursor_at(mut self, pos: io::SeekFrom) -> io::Result<Self> {
+                self.seek(pos)?;
+                Ok(self)
+            }
+
+            pub fn clone_handle(&self) -> io::Result<Self> {
+                match self {
+                    Self::Immediate(arc, pos) => Ok(Self::Immediate(arc.clone(), *pos)),
+                    Self::Paging(prev_f, path, len) => {
+                        let prev_cursor = prev_f.lock().stream_position()?;
+                        Ok(Self::open_from_path_known_len(path.as_ref(), *len)?
+                            .with_cursor_at(io::SeekFrom::Start(prev_cursor))?)
+                    }
+                }
+            }
+
+            pub fn from_bytes(bytes: &[u8]) -> Self {
+                Self::Immediate(Arc::new(RwLock::new(bytes.into())), 0)
+            }
+
+            pub fn remove_backing_file(&mut self) -> io::Result<()> {
+                match self {
+                    Self::Immediate(_, _) => Ok(()),
+                    Self::Paging(_, path, _) => fs::remove_file(path.as_ref()),
+                }
+            }
+        }
+
+        impl std::io::Read for SyncIntermediateFile {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                debug_assert!(!buf.is_empty());
+                match self {
+                    Self::Immediate(arc, pos) => {
+                        let beg = *pos;
+                        let full_len = arc.read().len();
+                        debug_assert!(full_len >= beg);
+                        let end = cmp::min(beg + buf.len(), full_len);
+                        let src = &arc.read()[beg..end];
+
+                        buf[..src.len()].copy_from_slice(src);
+                        *pos += src.len();
+
+                        Ok(src.len())
+                    }
+                    Self::Paging(file, _, _) => file.lock().read(buf),
+                }
+            }
+        }
+
+        impl std::io::Seek for SyncIntermediateFile {
+            fn seek(&mut self, pos_arg: io::SeekFrom) -> io::Result<u64> {
+                match self {
+                    Self::Immediate(arc, pos) => {
+                        let full_len = arc.read().len();
+                        match pos_arg {
+                            io::SeekFrom::Start(s) => {
+                                *pos = cmp::min(s as usize, full_len);
+                            }
+                            io::SeekFrom::End(from_end) => {
+                                let result = ((full_len as i64) + from_end) as isize;
+                                assert!(full_len <= isize::MAX as usize);
+                                let result = cmp::min(result, full_len as isize);
+                                let result = cmp::max(result, 0) as usize;
+                                *pos = result;
+                            }
+                            io::SeekFrom::Current(from_cur) => {
+                                let result = ((*pos as i64) + from_cur) as isize;
+                                assert!(full_len <= isize::MAX as usize);
+                                let result = cmp::min(result, full_len as isize);
+                                let result = cmp::max(result, 0) as usize;
+                                *pos = result;
+                            }
+                        };
+                        Ok(*pos as u64)
+                    }
+                    Self::Paging(file, _, _) => file.lock().seek(pos_arg),
+                }
+            }
+        }
+
+        impl std::io::Write for SyncIntermediateFile {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                match self {
+                    Self::Immediate(arc, pos) => {
+                        let beg = *pos;
+                        let full_len = arc.read().len();
+                        assert!(beg <= full_len);
+                        let end = cmp::min(beg + buf.len(), full_len);
+
+                        let dst = &mut arc.write()[beg..end];
+                        dst.copy_from_slice(&buf[..dst.len()]);
+                        *pos += dst.len();
+                        Ok(dst.len())
+                    }
+                    Self::Paging(file, _, _) => file.lock().write(buf),
+                }
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                match self {
+                    Self::Immediate(_, _) => Ok(()),
+                    Self::Paging(file, _, _) => file.lock().flush(),
+                }
+            }
+        }
+    }
+    pub use sync::SyncIntermediateFile;
 }
-use utils::{Limiter, ReadAdapter};
+pub use utils::{IntermediateFile, Limiter, ReadAdapter, SyncIntermediateFile};
 
 pub trait ReaderWrapper<S>: io::AsyncRead + Unpin {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self
@@ -438,7 +937,10 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ops::Drop for ZipFile<S> {
         match mem::take(&mut self.wrapped_reader) {
             ZipFileWrappedReader::NoOp => (),
             x => {
-                *self.parent_reader.lock() = Some(x.into_inner().into_inner());
+                let _ = self
+                    .parent_reader
+                    .lock()
+                    .insert(x.into_inner().into_inner());
             }
         }
     }
@@ -673,7 +1175,7 @@ impl<S> ZipArchive<S> {
     }
 
     pub fn into_inner(self) -> S {
-        Arc::into_inner(self.reader).unwrap().into_inner().unwrap()
+        self.reader.lock().take().unwrap()
     }
 }
 
