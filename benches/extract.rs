@@ -7,10 +7,15 @@ use std::sync::Arc;
 
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
-use tempfile::tempdir;
+use tempfile::{tempdir, tempfile};
 use tokio::{io, runtime::Runtime};
 
-use zip::{read::tokio::IntermediateFile, result::ZipResult, write::FileOptions, ZipWriter};
+use zip::{
+    read::tokio::{IntermediateFile, SyncIntermediateFile},
+    result::ZipResult,
+    write::FileOptions,
+    ZipWriter,
+};
 
 fn generate_random_archive(
     num_entries: usize,
@@ -60,31 +65,38 @@ pub fn bench_io(c: &mut Criterion) {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let random = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
 
-    for (handle, desc) in [(IntermediateFile::from_bytes(&random[..]), "random archive")] {
+    for (handle, desc) in [
+        (rt.block_on(get_big_archive()).unwrap(), "big archive"),
+        (rt.block_on(get_small_archive()).unwrap(), "small archive"),
+        (IntermediateFile::from_bytes(&random[..]), "random archive"),
+    ] {
         let id = format!("{}({} bytes)", desc, handle.len());
 
-        let len = handle.len() as u64;
-        group.throughput(Throughput::Bytes(len));
+        let len = handle.len();
+        group.throughput(Throughput::Bytes(len as u64));
 
         let h2 = rt.block_on(handle.clone_handle()).unwrap();
-        group.bench_function(BenchmarkId::new(&id, "<async read>"), |b| {
-            use io::AsyncReadExt;
+        group.bench_function(BenchmarkId::new(&id, "<async copy>"), |b| {
             b.to_async(&rt).iter(|| async {
-                let mut buf = Vec::new();
                 let mut handle = handle.clone_handle().await.unwrap();
-                handle.read_to_end(&mut buf).await.unwrap();
-                assert_eq!(buf.len(), len as usize);
+                let td = tempdir().unwrap();
+                let tf = td.path().join("out.zip");
+                let mut out = IntermediateFile::create_at_path(&tf, len).await.unwrap();
+                assert_eq!(len as u64, io::copy(&mut handle, &mut out).await.unwrap());
             });
         });
 
         let sync_handle = rt.block_on(h2.try_into_sync()).unwrap();
-        group.bench_function(BenchmarkId::new(&id, "<sync read>"), |b| {
-            use std::io::Read;
+        group.bench_function(BenchmarkId::new(&id, "<sync copy>"), |b| {
             b.iter(|| {
-                let mut buf = Vec::new();
                 let mut sync_handle = sync_handle.clone_handle().unwrap();
-                sync_handle.read_to_end(&mut buf).unwrap();
-                assert_eq!(buf.len(), len as usize);
+                let td = tempdir().unwrap();
+                let tf = td.path().join("out.zip");
+                let mut out = SyncIntermediateFile::create_at_path(&tf, len).unwrap();
+                assert_eq!(
+                    len as u64,
+                    std::io::copy(&mut sync_handle, &mut out).unwrap()
+                );
             });
         });
     }
