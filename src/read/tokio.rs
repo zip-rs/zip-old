@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
@@ -67,6 +69,11 @@ pub mod utils {
             self.max_len - self.internal_pos
         }
 
+        /* #[inline] */
+        /* fn is_done(&self) -> bool { */
+        /*     self.remaining_len() == 0 */
+        /* } */
+
         #[inline]
         fn limit_length(&self, requested_length: usize) -> usize {
             cmp::min(self.remaining_len(), requested_length)
@@ -85,13 +92,15 @@ pub mod utils {
 
     impl<S: Read> Read for Limiter<S> {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            debug_assert!(!buf.is_empty());
+
             let num_bytes_to_read: usize = self.limit_length(buf.len());
             if num_bytes_to_read == 0 {
                 return Ok(0);
             }
 
             let bytes_read = self.source_stream.read(&mut buf[..num_bytes_to_read])?;
-            assert!(bytes_read <= num_bytes_to_read);
+            dbg!(bytes_read);
             if bytes_read > 0 {
                 self.push_cursor(bytes_read);
             }
@@ -105,22 +114,34 @@ pub mod utils {
             cx: &mut Context<'_>,
             buf: &mut io::ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
+            debug_assert!(buf.remaining() > 0);
+
             let num_bytes_to_read: usize = self.limit_length(buf.remaining());
+            dbg!(num_bytes_to_read);
             if num_bytes_to_read == 0 {
                 return Poll::Ready(Ok(()));
             }
 
             let s = self.get_mut();
             let start = buf.filled().len();
-            match Pin::new(&mut s.source_stream).poll_read(cx, &mut buf.take(num_bytes_to_read)) {
+            debug_assert_eq!(start, 0);
+            buf.initialize_unfilled_to(num_bytes_to_read);
+            let mut unfilled_buf = buf.take(num_bytes_to_read);
+            match Pin::new(&mut s.source_stream).poll_read(cx, &mut unfilled_buf) {
                 Poll::Pending => Poll::Pending,
-                Poll::Ready(x) => Poll::Ready(x.map(|()| {
-                    let bytes_read = buf.filled().len() - start;
-                    assert!(bytes_read <= num_bytes_to_read);
-                    if bytes_read > 0 {
-                        s.push_cursor(bytes_read);
-                    }
-                })),
+                Poll::Ready(x) => {
+                    let filled_len = unfilled_buf.filled().len();
+                    Poll::Ready(x.map(|()| {
+                        let bytes_read = filled_len - start;
+                        dbg!(bytes_read);
+                        assert!(bytes_read <= num_bytes_to_read);
+                        if bytes_read > 0 {
+                            buf.advance(bytes_read);
+                            s.push_cursor(bytes_read);
+                        }
+                        dbg!(s.remaining_len());
+                    }))
+                }
             }
         }
     }
@@ -168,7 +189,9 @@ pub mod utils {
             cx: &mut Context<'_>,
             buf: &mut io::ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
-            assert!(buf.remaining() > 0);
+            if buf.remaining() == 0 {
+                return Poll::Ready(Ok(()));
+            }
 
             {
                 let ring_buf = self.buf.upgradable_read_arc();
@@ -314,7 +337,10 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for BzipReader<
     }
 }
 
+#[derive(Default)]
 pub enum ZipFileWrappedReader<S> {
+    #[default]
+    NoOp,
     Stored(StoredReader<S>),
     Deflated(DeflateReader<S>),
     Bzip2(BzipReader<S>),
@@ -327,6 +353,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for ZipFileWrapped
         buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
+            Self::NoOp => unreachable!(),
             Self::Stored(r) => Pin::new(r).poll_read(cx, buf),
             Self::Deflated(r) => Pin::new(r).poll_read(cx, buf),
             Self::Bzip2(r) => Pin::new(r).poll_read(cx, buf),
@@ -351,43 +378,11 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for ZipFileWrap
     }
     fn into_inner(self) -> Limiter<S> {
         match self {
+            Self::NoOp => unreachable!(),
             Self::Stored(r) => r.into_inner(),
             Self::Deflated(r) => r.into_inner(),
             Self::Bzip2(r) => r.into_inner(),
         }
-    }
-}
-
-pub struct ZipFileReader<S, W> {
-    handle: W,
-    _ph: PhantomData<S>,
-}
-
-impl<S, W> ZipFileReader<S, W> {
-    pub fn new(handle: W) -> Self {
-        Self {
-            handle,
-            _ph: PhantomData,
-        }
-    }
-}
-
-impl<S, W: ReaderWrapper<S>> ZipFileReader<S, W> {
-    pub fn handle_into_inner(self) -> Limiter<S>
-    where
-        S: Sized,
-    {
-        self.handle.into_inner()
-    }
-}
-
-impl<S: io::AsyncRead + Unpin, W: ReaderWrapper<S>> io::AsyncRead for ZipFileReader<S, W> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut io::ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().handle).poll_read(cx, buf)
     }
 }
 
@@ -441,9 +436,12 @@ pub struct ZipFile<S: io::AsyncRead + Unpin + Send + 'static> {
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> ops::Drop for ZipFile<S> {
     fn drop(&mut self) {
-        let mut other = mem::MaybeUninit::<ZipFileWrappedReader<S>>::zeroed();
-        mem::swap(unsafe { other.assume_init_mut() }, &mut self.wrapped_reader);
-        *self.parent_reader.lock() = Some(unsafe { other.assume_init() }.into_inner().into_inner());
+        match mem::take(&mut self.wrapped_reader) {
+            ZipFileWrappedReader::NoOp => (),
+            x => {
+                *self.parent_reader.lock() = Some(x.into_inner().into_inner());
+            }
+        }
     }
 }
 
@@ -454,7 +452,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ZipFile<S> {
         data
     }
 
-    pub async fn extract_single(self: Pin<&mut Self>, target: Arc<PathBuf>) -> ZipResult<()> {
+    pub async fn extract_single(self: Pin<&mut Self>, target: Arc<PathBuf>) -> ZipResult<PathBuf> {
         match self.data().enclosed_name().and_then(|s| s.to_str()) {
             None => Err(ZipError::InvalidArchive(
                 "could not extract enclosed_name()",
@@ -475,7 +473,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ZipFile<S> {
                     let mut f = fs::File::create(&resulting_path).await?;
                     io::copy(self.get_mut(), &mut f).await?;
                 }
-                Ok(())
+                Ok(resulting_path)
             }
         }
     }
@@ -711,9 +709,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static> ZipArchive<S> {
         })
     }
 
-    pub fn entries_stream<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> impl Stream<Item = ZipResult<ZipFile<S>>> + 'a {
+    pub fn entries_stream(self: Pin<&mut Self>) -> impl Stream<Item = ZipResult<ZipFile<S>>> + '_ {
         try_stream! {
             let s = self.get_mut();
 
@@ -750,7 +746,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static> ZipArchive<S> {
 
         while let Some(file) = entries.next().await {
             let mut file = file?;
-            Pin::new(&mut file).extract_single(target.clone()).await?;
+            let _path = Pin::new(&mut file).extract_single(target.clone()).await?;
         }
         Ok(())
     }
@@ -934,4 +930,47 @@ async fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{
+        compression::CompressionMethod,
+        write::{FileOptions, ZipWriter},
+    };
+
+    use std::io::Cursor;
+
+    #[tokio::test]
+    async fn test_find_content() -> ZipResult<()> {
+        let buf = Cursor::new(Vec::new());
+        let buf = {
+            use std::io::Write;
+            let mut f = ZipWriter::new(buf);
+            let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+            f.start_file("a/b.txt", options)?;
+            f.write_all(b"hello\n")?;
+            f.finish()?
+        };
+        let mut f = ZipArchive::new(buf).await?;
+
+        assert_eq!(1, f.len());
+        let data = Pin::new(&mut f).by_index(0).await?.data().clone();
+        assert_eq!(b"a/b.txt", &data.file_name_raw[..]);
+
+        let mut limited = find_content(&data, f.into_inner()).await?;
+
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut limited, &mut buf)?;
+        assert_eq!(&buf, "hello\n");
+
+        let mut buf = String::new();
+        let f = limited.into_inner();
+        let mut limited = find_content(&data, f).await?;
+        io::AsyncReadExt::read_to_string(&mut limited, &mut buf).await?;
+        assert_eq!(&buf, "hello\n");
+
+        Ok(())
+    }
 }
