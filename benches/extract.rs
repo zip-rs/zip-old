@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
 use tempfile::tempdir;
-use tokio::runtime::Runtime;
+use tokio::{io, runtime::Runtime};
 
 use zip::{read::tokio::IntermediateFile, result::ZipResult, write::FileOptions, ZipWriter};
 
@@ -17,6 +17,8 @@ fn generate_random_archive(
     entry_size: usize,
     options: FileOptions,
 ) -> ZipResult<Vec<u8>> {
+    use std::io::Write;
+
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
 
@@ -50,17 +52,55 @@ async fn get_small_archive() -> ZipResult<IntermediateFile> {
 const NUM_ENTRIES: usize = 1_000;
 const ENTRY_SIZE: usize = 10_000;
 
+pub fn bench_io(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+
+    let mut group = c.benchmark_group("io");
+
+    let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let random = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+
+    for (handle, desc) in [(IntermediateFile::from_bytes(&random[..]), "random archive")] {
+        let id = format!("{}({} bytes)", desc, handle.len());
+
+        let len = handle.len() as u64;
+        group.throughput(Throughput::Bytes(len));
+
+        let h2 = rt.block_on(handle.clone_handle()).unwrap();
+        group.bench_function(BenchmarkId::new(&id, "<async read>"), |b| {
+            use io::AsyncReadExt;
+            b.to_async(&rt).iter(|| async {
+                let mut buf = Vec::new();
+                let mut handle = handle.clone_handle().await.unwrap();
+                handle.read_to_end(&mut buf).await.unwrap();
+                assert_eq!(buf.len(), len as usize);
+            });
+        });
+
+        let sync_handle = rt.block_on(h2.try_into_sync()).unwrap();
+        group.bench_function(BenchmarkId::new(&id, "<sync read>"), |b| {
+            use std::io::Read;
+            b.iter(|| {
+                let mut buf = Vec::new();
+                let mut sync_handle = sync_handle.clone_handle().unwrap();
+                sync_handle.read_to_end(&mut buf).unwrap();
+                assert_eq!(buf.len(), len as usize);
+            });
+        });
+    }
+}
+
 pub fn bench_extract(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let mut group = c.benchmark_group("async");
+    let mut group = c.benchmark_group("extract");
 
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let random = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
 
     for (handle, desc) in [
-        (rt.block_on(get_big_archive()).unwrap(), "big archive"),
-        (rt.block_on(get_small_archive()).unwrap(), "small archive"),
+        /* (rt.block_on(get_big_archive()).unwrap(), "big archive"), */
+        /* (rt.block_on(get_small_archive()).unwrap(), "small archive"), */
         (IntermediateFile::from_bytes(&random[..]), "random archive"),
     ] {
         let id = format!("{}({} bytes)", desc, handle.len());
@@ -77,6 +117,7 @@ pub fn bench_extract(c: &mut Criterion) {
                 Pin::new(&mut zip).extract(out_dir.clone()).await.unwrap();
             })
         });
+
         let sync_handle = rt.block_on(h2.try_into_sync()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<sync extraction>"), |b| {
             b.iter(|| {
@@ -89,5 +130,5 @@ pub fn bench_extract(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_extract);
+criterion_group!(benches, bench_io, bench_extract);
 criterion_main!(benches);
