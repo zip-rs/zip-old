@@ -75,10 +75,10 @@ pub fn bench_io(c: &mut Criterion) {
         let len = handle.len();
         group.throughput(Throughput::Bytes(len as u64));
 
-        let h2 = rt.block_on(handle.clone_handle()).unwrap();
+        let h2 = rt.block_on(handle.try_clone()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<async copy>"), |b| {
             b.to_async(&rt).iter(|| async {
-                let mut handle = handle.clone_handle().await.unwrap();
+                let mut handle = handle.try_clone().await.unwrap();
                 let td = tempdir().unwrap();
                 let tf = td.path().join("out.zip");
                 let mut out = IntermediateFile::create_at_path(&tf, len).await.unwrap();
@@ -89,7 +89,7 @@ pub fn bench_io(c: &mut Criterion) {
         let sync_handle = rt.block_on(h2.try_into_sync()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<sync copy>"), |b| {
             b.iter(|| {
-                let mut sync_handle = sync_handle.clone_handle().unwrap();
+                let mut sync_handle = sync_handle.try_clone().unwrap();
                 let td = tempdir().unwrap();
                 let tf = td.path().join("out.zip");
                 let mut out = SyncIntermediateFile::create_at_path(&tf, len).unwrap();
@@ -119,12 +119,12 @@ pub fn bench_extract(c: &mut Criterion) {
 
         group.throughput(Throughput::Bytes(handle.len() as u64));
 
-        let h2 = rt.block_on(handle.clone_handle()).unwrap();
+        let h2 = rt.block_on(handle.try_clone()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<async extraction>"), |b| {
             b.to_async(&rt).iter(|| async {
                 let td = tempdir().unwrap();
                 let out_dir = Arc::new(td.path().to_path_buf());
-                let handle = handle.clone_handle().await.unwrap();
+                let handle = handle.try_clone().await.unwrap();
                 let mut zip = zip::read::tokio::ZipArchive::new(handle).await.unwrap();
                 Pin::new(&mut zip).extract(out_dir.clone()).await.unwrap();
             })
@@ -134,7 +134,7 @@ pub fn bench_extract(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new(&id, "<sync extraction>"), |b| {
             b.iter(|| {
                 let td = tempdir().unwrap();
-                let sync_handle = sync_handle.clone_handle().unwrap();
+                let sync_handle = sync_handle.try_clone().unwrap();
                 let mut zip = zip::read::ZipArchive::new(sync_handle).unwrap();
                 zip.extract(td.path()).unwrap();
             })

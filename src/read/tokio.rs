@@ -421,7 +421,7 @@ pub mod utils {
             Ok(self)
         }
 
-        pub async fn clone_handle(&self) -> io::Result<Self> {
+        pub async fn try_clone(&self) -> io::Result<Self> {
             match self {
                 Self::Immediate(arc, pos) => Ok(Self::Immediate(arc.clone(), *pos)),
                 Self::Paging(prev_f, path, len) => {
@@ -652,7 +652,7 @@ pub mod utils {
                 Ok(self)
             }
 
-            pub fn clone_handle(&self) -> io::Result<Self> {
+            pub fn try_clone(&self) -> io::Result<Self> {
                 match self {
                     Self::Immediate(arc, pos) => Ok(Self::Immediate(arc.clone(), *pos)),
                     Self::Paging(prev_f, path, len) => {
