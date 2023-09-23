@@ -9,7 +9,6 @@ use crate::types::ZipFileData;
 use std::{
     cmp,
     io::Read,
-    marker::PhantomData,
     marker::Unpin,
     mem, ops,
     path::{Path, PathBuf},
@@ -20,7 +19,7 @@ use std::{
 
 use async_stream::try_stream;
 use futures_core::stream::Stream;
-use futures_util::{pin_mut, stream::StreamExt};
+use futures_util::{pin_mut, stream::TryStreamExt};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use tokio::{
@@ -728,7 +727,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static> ZipArchive<S> {
     /// let buf = Cursor::new(Vec::new());
     /// let mut f = zip::ZipWriter::new(buf);
     /// let options = zip::write::FileOptions::default()
-    ///   .compression_method(zip::CompressionMethod::Stored);
+    ///   .compression_method(zip::CompressionMethod::Deflated);
     /// f.start_file("a/b.txt", options)?;
     /// f.write_all(b"hello\n")?;
     /// let buf = f.finish()?;
@@ -736,7 +735,10 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static> ZipArchive<S> {
     ///
     /// let t = tempfile::tempdir()?;
     ///
-    /// Pin::new(&mut f).extract(Arc::new(t.path().to_path_buf())).await?;
+    /// let root = t.path();
+    /// Pin::new(&mut f).extract(Arc::new(root.to_path_buf())).await?;
+    /// let msg = fs::read_to_string(root.join("a/b.txt")).await?;
+    /// assert_eq!(&msg, "hello\n");
     /// # Ok(())
     /// # })}
     ///```
@@ -744,8 +746,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static> ZipArchive<S> {
         let entries = self.entries_stream();
         pin_mut!(entries);
 
-        while let Some(file) = entries.next().await {
-            let mut file = file?;
+        while let Some(mut file) = entries.try_next().await? {
             let _path = Pin::new(&mut file).extract_single(target.clone()).await?;
         }
         Ok(())
