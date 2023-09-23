@@ -973,4 +973,31 @@ mod test {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_get_reader() -> ZipResult<()> {
+        let buf = Cursor::new(Vec::new());
+        let buf = {
+            use std::io::Write;
+            let mut f = ZipWriter::new(buf);
+            let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
+            f.start_file("a/b.txt", options)?;
+            f.write_all(b"hello\n")?;
+            f.finish()?
+        };
+        let mut f = ZipArchive::new(buf).await?;
+
+        assert_eq!(1, f.len());
+        let data = Pin::new(&mut f).by_index(0).await?.data().clone();
+        assert_eq!(data.crc32, 909783072);
+        assert_eq!(b"a/b.txt", &data.file_name_raw[..]);
+
+        let mut limited = get_reader(&data, f.into_inner()).await?;
+
+        let mut buf = String::new();
+        io::AsyncReadExt::read_to_string(&mut limited, &mut buf).await?;
+        assert_eq!(&buf, "hello\n");
+
+        Ok(())
+    }
 }
