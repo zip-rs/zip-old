@@ -28,6 +28,13 @@ pub mod sync {
         }
     }
 
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    pub enum PermitState {
+        TakenOut,
+        #[default]
+        Unleased,
+    }
+
     ///```
     /// use zip::channels::sync::*;
     ///
@@ -74,8 +81,10 @@ pub mod sync {
         buf: Box<[u8]>,
         write_head: usize,
         remaining_inline_write: usize,
+        write_state: PermitState,
         read_head: usize,
         remaining_inline_read: usize,
+        read_state: PermitState,
     }
 
     impl Ring {
@@ -85,8 +94,10 @@ pub mod sync {
                 buf: vec![0u8; capacity].into_boxed_slice(),
                 write_head: 0,
                 remaining_inline_write: capacity,
+                write_state: PermitState::Unleased,
                 read_head: 0,
                 remaining_inline_read: 0,
+                read_state: PermitState::Unleased,
             }
         }
 
@@ -96,6 +107,7 @@ pub mod sync {
         }
 
         pub(crate) fn return_write_lease(&mut self, permit: &WritePermit<'_>) {
+            assert!(self.write_state == PermitState::TakenOut);
             let len = permit.len();
 
             self.write_head += len;
@@ -108,10 +120,13 @@ pub mod sync {
                 self.remaining_inline_write = self.read_head;
                 self.write_head = 0;
             }
+
+            self.write_state = PermitState::Unleased;
         }
 
         pub fn request_write_lease(&mut self, requested_length: usize) -> Lease<WritePermit<'_>> {
             assert!(requested_length > 0);
+            assert!(self.write_state == PermitState::Unleased);
             if self.remaining_inline_write == 0 {
                 return Lease::NoSpace;
             }
@@ -124,6 +139,7 @@ pub mod sync {
 
             let final_write_head = self.write_head + limited_length;
 
+            self.write_state = PermitState::TakenOut;
             let s = cell::UnsafeCell::new(self);
             Lease::Found(WritePermit::view(
                 &mut unsafe { &mut *s.get() }.buf[prev_write_head..final_write_head],
@@ -132,6 +148,7 @@ pub mod sync {
         }
 
         pub(crate) fn return_read_lease(&mut self, permit: &ReadPermit<'_>) {
+            assert!(self.read_state == PermitState::TakenOut);
             let len = permit.len();
 
             self.read_head += len;
@@ -144,10 +161,13 @@ pub mod sync {
                 self.remaining_inline_read = self.write_head;
                 self.read_head = 0;
             }
+
+            self.read_state = PermitState::Unleased;
         }
 
         pub fn request_read_lease(&mut self, requested_length: usize) -> Lease<ReadPermit<'_>> {
             assert!(requested_length > 0);
+            assert!(self.read_state == PermitState::Unleased);
             if self.remaining_inline_read == 0 {
                 return Lease::NoSpace;
             }
@@ -160,6 +180,7 @@ pub mod sync {
 
             let final_read_head = self.read_head + limited_length;
 
+            self.read_state = PermitState::TakenOut;
             let s = cell::UnsafeCell::new(self);
             Lease::Found(ReadPermit::view(
                 &unsafe { &*s.get() }.buf[prev_read_head..final_read_head],
