@@ -1,14 +1,14 @@
 #![allow(missing_docs)]
 
 use std::{
-    cell, cmp, mem, ops,
+    cmp, ops, slice,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
 #[derive(Debug, Copy, Clone)]
 pub enum Lease<Permit> {
     NoSpace,
-    AlreadyTaken,
+    PossiblyTaken,
     Taken(Permit),
 }
 
@@ -17,7 +17,7 @@ impl<Permit> Lease<Permit> {
     pub fn option(self) -> Option<Permit> {
         match self {
             Self::NoSpace => None,
-            Self::AlreadyTaken => None,
+            Self::PossiblyTaken => None,
             Self::Taken(permit) => Some(permit),
         }
     }
@@ -29,7 +29,7 @@ impl<Permit> Lease<Permit> {
 )]
 pub enum PermitState {
     #[default]
-    Unleased = 0,
+    Unleashed = 0,
     TakenOut = 1,
 }
 
@@ -77,12 +77,12 @@ pub enum PermitState {
 #[derive(Debug)]
 pub struct Ring {
     buf: Box<[u8]>,
-    write_head: usize,
-    remaining_inline_write: usize,
-    write_state: PermitState,
-    read_head: usize,
-    remaining_inline_read: usize,
-    read_state: PermitState,
+    write_head: AtomicUsize,
+    remaining_inline_write: AtomicUsize,
+    write_state: AtomicU8,
+    read_head: AtomicUsize,
+    remaining_inline_read: AtomicUsize,
+    read_state: AtomicU8,
 }
 
 impl Ring {
@@ -90,12 +90,12 @@ impl Ring {
         assert!(capacity > 0);
         Self {
             buf: vec![0u8; capacity].into_boxed_slice(),
-            write_head: 0,
-            remaining_inline_write: capacity,
-            write_state: PermitState::Unleased,
-            read_head: 0,
-            remaining_inline_read: 0,
-            read_state: PermitState::Unleased,
+            write_head: AtomicUsize::new(0),
+            remaining_inline_write: AtomicUsize::new(capacity),
+            write_state: AtomicU8::new(PermitState::Unleashed.into()),
+            read_head: AtomicUsize::new(0),
+            remaining_inline_read: AtomicUsize::new(0),
+            read_state: AtomicU8::new(PermitState::Unleashed.into()),
         }
     }
 
@@ -104,91 +104,124 @@ impl Ring {
         self.buf.len()
     }
 
-    pub(crate) fn return_write_lease(&mut self, permit: &WritePermit<'_>) {
-        assert!(self.write_state == PermitState::TakenOut);
+    pub(crate) fn return_write_lease(&self, permit: &WritePermit<'_>) {
+        debug_assert!(self.write_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
         let len = permit.len();
 
-        self.write_head += len;
+        let new_write_head = len + self.write_head.load(Ordering::Acquire);
+        let read_head = self.read_head.load(Ordering::Acquire);
 
-        if self.write_head > self.read_head {
-            self.remaining_inline_read += len;
-        }
-        if self.write_head == self.capacity() {
-            debug_assert_eq!(0, self.remaining_inline_write);
-            self.remaining_inline_write = self.read_head;
-            self.write_head = 0;
+        if new_write_head == self.capacity() {
+            debug_assert_eq!(0, self.remaining_inline_write.load(Ordering::Acquire));
+            self.remaining_inline_write
+                .store(read_head, Ordering::Release);
+            self.write_head.store(0, Ordering::Release);
+        } else {
+            self.write_head.store(new_write_head, Ordering::Release);
         }
 
-        self.write_state = PermitState::Unleased;
+        if new_write_head > read_head {
+            self.remaining_inline_read.fetch_add(len, Ordering::Release);
+        }
+
+        self.write_state
+            .store(PermitState::Unleashed.into(), Ordering::Release);
     }
 
-    pub fn request_write_lease(&mut self, requested_length: usize) -> Lease<WritePermit<'_>> {
-        if self.write_state == PermitState::TakenOut {
-            return Lease::AlreadyTaken;
-        }
-
+    pub fn request_write_lease(&self, requested_length: usize) -> Lease<WritePermit<'_>> {
         assert!(requested_length > 0);
-        if self.remaining_inline_write == 0 {
+        if self.remaining_inline_write.load(Ordering::Relaxed) == 0 {
             return Lease::NoSpace;
         }
 
-        let prev_write_head = self.write_head;
-
-        let limited_length = cmp::min(self.remaining_inline_write, requested_length);
-        debug_assert!(limited_length > 0);
-        self.remaining_inline_write -= limited_length;
-
-        let final_write_head = self.write_head + limited_length;
-
-        self.write_state = PermitState::TakenOut;
-        let s = cell::UnsafeCell::new(self);
-        Lease::Taken(WritePermit::view(
-            &mut unsafe { &mut *s.get() }.buf[prev_write_head..final_write_head],
-            unsafe { *s.get() },
-        ))
-    }
-
-    pub(crate) fn return_read_lease(&mut self, permit: &ReadPermit<'_>) {
-        assert!(self.read_state == PermitState::TakenOut);
-        let len = permit.len();
-
-        self.read_head += len;
-
-        if self.read_head > self.write_head {
-            self.remaining_inline_write += len;
-        }
-        if self.read_head == self.capacity() {
-            debug_assert_eq!(0, self.remaining_inline_read);
-            self.remaining_inline_read = self.write_head;
-            self.read_head = 0;
+        if let Err(_) = self.write_state.compare_exchange_weak(
+            PermitState::Unleashed.into(),
+            PermitState::TakenOut.into(),
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        ) {
+            return Lease::PossiblyTaken;
         }
 
-        self.read_state = PermitState::Unleased;
-    }
-
-    pub fn request_read_lease(&mut self, requested_length: usize) -> Lease<ReadPermit<'_>> {
-        if self.read_state == PermitState::TakenOut {
-            return Lease::AlreadyTaken;
-        }
-
-        assert!(requested_length > 0);
-        if self.remaining_inline_read == 0 {
+        let remaining_inline_write = self.remaining_inline_write.load(Ordering::Acquire);
+        if remaining_inline_write == 0 {
+            self.write_state
+                .store(PermitState::Unleashed.into(), Ordering::Release);
             return Lease::NoSpace;
         }
 
-        let prev_read_head = self.read_head;
-
-        let limited_length = cmp::min(self.remaining_inline_read, requested_length);
+        let limited_length = cmp::min(remaining_inline_write, requested_length);
         debug_assert!(limited_length > 0);
-        self.remaining_inline_read -= limited_length;
+        self.remaining_inline_write
+            .fetch_sub(limited_length, Ordering::Release);
 
-        let final_read_head = self.read_head + limited_length;
+        let prev_write_head = self.write_head.load(Ordering::Acquire);
 
-        self.read_state = PermitState::TakenOut;
-        let s = cell::UnsafeCell::new(self);
+        let buf: &mut [u8] = unsafe {
+            let buf: *const u8 = self.buf.as_ptr();
+            let start = buf.add(prev_write_head) as *mut u8;
+            slice::from_raw_parts_mut(start, limited_length)
+        };
+        Lease::Taken(WritePermit::view(buf, self))
+    }
+
+    pub(crate) fn return_read_lease(&self, permit: &ReadPermit<'_>) {
+        debug_assert!(self.read_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
+        let len = permit.len();
+
+        let new_read_head = len + self.read_head.load(Ordering::Acquire);
+        let write_head = self.write_head.load(Ordering::Acquire);
+
+        if new_read_head == self.capacity() {
+            debug_assert_eq!(0, self.remaining_inline_read.load(Ordering::Acquire));
+            self.remaining_inline_read
+                .store(write_head, Ordering::Release);
+            self.read_head.store(0, Ordering::Release);
+        } else {
+            self.read_head.store(new_read_head, Ordering::Release);
+        }
+
+        if new_read_head > write_head {
+            self.remaining_inline_write
+                .fetch_add(len, Ordering::Release);
+        }
+
+        self.read_state
+            .store(PermitState::Unleashed.into(), Ordering::Release);
+    }
+
+    pub fn request_read_lease(&self, requested_length: usize) -> Lease<ReadPermit<'_>> {
+        assert!(requested_length > 0);
+        if self.remaining_inline_read.load(Ordering::Relaxed) == 0 {
+            return Lease::NoSpace;
+        }
+
+        if let Err(_) = self.read_state.compare_exchange_weak(
+            PermitState::Unleashed.into(),
+            PermitState::TakenOut.into(),
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        ) {
+            return Lease::PossiblyTaken;
+        }
+
+        let remaining_inline_read = self.remaining_inline_read.load(Ordering::Acquire);
+        if remaining_inline_read == 0 {
+            self.read_state
+                .store(PermitState::Unleashed.into(), Ordering::Release);
+            return Lease::NoSpace;
+        }
+
+        let limited_length = cmp::min(remaining_inline_read, requested_length);
+        debug_assert!(limited_length > 0);
+        self.remaining_inline_read
+            .fetch_sub(limited_length, Ordering::Release);
+
+        let prev_read_head = self.read_head.load(Ordering::Acquire);
+
         Lease::Taken(ReadPermit::view(
-            &unsafe { &*s.get() }.buf[prev_read_head..final_read_head],
-            unsafe { *s.get() },
+            &self.buf[prev_read_head..(prev_read_head + limited_length)],
+            self,
         ))
     }
 }
@@ -199,21 +232,18 @@ pub struct ReadPermit<'a> {
      * (?) ideally this would be easier to implement and avoid tricky logic (and let us
      * masquerade as just a &[u8]). */
     view: &'a [u8],
-    parent: &'a mut Ring,
+    parent: &'a Ring,
 }
 
 impl<'a> ReadPermit<'a> {
-    pub(crate) fn view(view: &'a [u8], parent: &'a mut Ring) -> Self {
+    pub(crate) fn view(view: &'a [u8], parent: &'a Ring) -> Self {
         Self { view, parent }
     }
 }
 
 impl<'a> ops::Drop for ReadPermit<'a> {
     fn drop(&mut self) {
-        let s = cell::UnsafeCell::new(self);
-        unsafe { &mut *s.get() }
-            .parent
-            .return_read_lease(unsafe { &*s.get() });
+        self.parent.return_read_lease(self);
     }
 }
 
@@ -234,21 +264,18 @@ impl<'a> ops::Deref for ReadPermit<'a> {
 #[derive(Debug)]
 pub struct WritePermit<'a> {
     view: &'a mut [u8],
-    parent: &'a mut Ring,
+    parent: &'a Ring,
 }
 
 impl<'a> WritePermit<'a> {
-    pub(crate) fn view(view: &'a mut [u8], parent: &'a mut Ring) -> Self {
+    pub(crate) fn view(view: &'a mut [u8], parent: &'a Ring) -> Self {
         Self { view, parent }
     }
 }
 
 impl<'a> ops::Drop for WritePermit<'a> {
     fn drop(&mut self) {
-        let s = cell::UnsafeCell::new(self);
-        unsafe { &mut *s.get() }
-            .parent
-            .return_write_lease(unsafe { &*s.get() });
+        self.parent.return_write_lease(self);
     }
 }
 
