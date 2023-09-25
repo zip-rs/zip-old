@@ -53,3 +53,7 @@ mod zipcrypto;
 /// zip = "=0.6.6"
 /// ```
 pub mod unstable;
+
+pub mod combinators;
+pub(crate) mod extraction;
+pub mod channels;

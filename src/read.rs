@@ -36,6 +36,7 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
 
+/* FIXME! */
 pub mod tokio;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely

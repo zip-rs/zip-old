@@ -8,7 +8,7 @@ use std::sync::Arc;
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
 use tempfile::{tempdir, tempfile};
-use tokio::{io, runtime::Runtime};
+use tokio::{fs, io, runtime::Runtime};
 
 use zip::{
     read::tokio::{IntermediateFile, SyncIntermediateFile},
@@ -21,7 +21,7 @@ fn generate_random_archive(
     num_entries: usize,
     entry_size: usize,
     options: FileOptions,
-) -> ZipResult<Vec<u8>> {
+) -> ZipResult<(usize, Box<dyn io::AsyncRead>)> {
     use std::io::Write;
 
     let buf = Cursor::new(Vec::new());
@@ -37,7 +37,7 @@ fn generate_random_archive(
 
     let buf = zip.finish()?.into_inner();
 
-    Ok(buf)
+    Ok((buf.len(), Box::new(Cursor::new(buf))))
 }
 
 static BIG_ARCHIVE_PATH: Lazy<PathBuf> =
@@ -46,12 +46,14 @@ static BIG_ARCHIVE_PATH: Lazy<PathBuf> =
 static SMALL_ARCHIVE_PATH: Lazy<PathBuf> =
     Lazy::new(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/small-target.zip"));
 
-async fn get_big_archive() -> ZipResult<IntermediateFile> {
-    Ok(IntermediateFile::open_from_path(&*BIG_ARCHIVE_PATH).await?)
+async fn get_big_archive() -> ZipResult<(usize, Box<dyn io::AsyncRead>)> {
+    let f = fs::File::open(&*BIG_ARCHIVE_PATH).await?;
+    Ok((f.metadata().await?.len() as usize, Box::new(f)))
 }
 
-async fn get_small_archive() -> ZipResult<IntermediateFile> {
-    Ok(IntermediateFile::open_from_path(&*SMALL_ARCHIVE_PATH).await?)
+async fn get_small_archive() -> ZipResult<(usize, Box<dyn io::AsyncRead>)> {
+    let f = fs::File::open(&*SMALL_ARCHIVE_PATH).await?;
+    Ok((f.metadata().await?.len() as usize, Box::new(f)))
 }
 
 const NUM_ENTRIES: usize = 1_000;
@@ -63,16 +65,17 @@ pub fn bench_io(c: &mut Criterion) {
     let mut group = c.benchmark_group("io");
 
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    let random = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
 
-    for (handle, desc) in [
+    for ((len, handle), desc) in [
         (rt.block_on(get_big_archive()).unwrap(), "big archive"),
         (rt.block_on(get_small_archive()).unwrap(), "small archive"),
-        (IntermediateFile::from_bytes(&random[..]), "random archive"),
+        (
+            generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap(),
+            "random archive",
+        ),
     ] {
-        let id = format!("{}({} bytes)", desc, handle.len());
+        let id = format!("{}({} bytes)", desc, len);
 
-        let len = handle.len();
         group.throughput(Throughput::Bytes(len as u64));
 
         let h2 = rt.block_on(handle.try_clone()).unwrap();
