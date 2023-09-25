@@ -10,7 +10,7 @@
 /* }; */
 
 pub mod sync {
-    use std::{cmp, ops};
+    use std::{cell, cmp, ops};
 
     #[derive(Debug, Copy, Clone)]
     pub enum Lease<Permit> {
@@ -95,6 +95,21 @@ pub mod sync {
             self.buf.len()
         }
 
+        pub(crate) fn return_write_lease(&mut self, permit: &WritePermit<'_>) {
+            let len = permit.len();
+
+            self.write_head += len;
+
+            if self.write_head > self.read_head {
+                self.remaining_inline_read += len;
+            }
+            if self.write_head == self.capacity() {
+                debug_assert_eq!(0, self.remaining_inline_write);
+                self.remaining_inline_write = self.read_head;
+                self.write_head = 0;
+            }
+        }
+
         pub fn request_write_lease(&mut self, requested_length: usize) -> Lease<WritePermit<'_>> {
             assert!(requested_length > 0);
             if self.remaining_inline_write == 0 {
@@ -106,22 +121,29 @@ pub mod sync {
             let limited_length = cmp::min(self.remaining_inline_write, requested_length);
             debug_assert!(limited_length > 0);
             self.remaining_inline_write -= limited_length;
-            self.write_head += limited_length;
 
-            let final_write_head = self.write_head;
+            let final_write_head = self.write_head + limited_length;
 
-            if self.write_head > self.read_head {
-                self.remaining_inline_read += limited_length;
-            }
-            if self.write_head == self.capacity() {
-                debug_assert_eq!(0, self.remaining_inline_write);
-                self.remaining_inline_write = self.read_head;
-                self.write_head = 0;
-            }
-
+            let s = cell::UnsafeCell::new(self);
             Lease::Found(WritePermit::view(
-                &mut self.buf[prev_write_head..final_write_head],
+                &mut unsafe { &mut *s.get() }.buf[prev_write_head..final_write_head],
+                unsafe { *s.get() },
             ))
+        }
+
+        pub(crate) fn return_read_lease(&mut self, permit: &ReadPermit<'_>) {
+            let len = permit.len();
+
+            self.read_head += len;
+
+            if self.read_head > self.write_head {
+                self.remaining_inline_write += len;
+            }
+            if self.read_head == self.capacity() {
+                debug_assert_eq!(0, self.remaining_inline_read);
+                self.remaining_inline_read = self.write_head;
+                self.read_head = 0;
+            }
         }
 
         pub fn request_read_lease(&mut self, requested_length: usize) -> Lease<ReadPermit<'_>> {
@@ -135,20 +157,14 @@ pub mod sync {
             let limited_length = cmp::min(self.remaining_inline_read, requested_length);
             debug_assert!(limited_length > 0);
             self.remaining_inline_read -= limited_length;
-            self.read_head += limited_length;
 
-            let final_read_head = self.read_head;
+            let final_read_head = self.read_head + limited_length;
 
-            if self.read_head > self.write_head {
-                self.remaining_inline_write += limited_length;
-            }
-            if self.read_head == self.capacity() {
-                debug_assert_eq!(0, self.remaining_inline_read);
-                self.remaining_inline_read = self.write_head;
-                self.read_head = 0;
-            }
-
-            Lease::Found(ReadPermit::view(&self.buf[prev_read_head..final_read_head]))
+            let s = cell::UnsafeCell::new(self);
+            Lease::Found(ReadPermit::view(
+                &unsafe { &*s.get() }.buf[prev_read_head..final_read_head],
+                unsafe { *s.get() },
+            ))
         }
     }
 
@@ -158,11 +174,21 @@ pub mod sync {
          * (?) ideally this would be easier to implement and avoid tricky logic (and let us
          * masquerade as just a &[u8]). */
         view: &'a [u8],
+        parent: &'a mut Ring,
     }
 
     impl<'a> ReadPermit<'a> {
-        pub fn view(view: &'a [u8]) -> Self {
-            Self { view }
+        pub(crate) fn view(view: &'a [u8], parent: &'a mut Ring) -> Self {
+            Self { view, parent }
+        }
+    }
+
+    impl<'a> ops::Drop for ReadPermit<'a> {
+        fn drop(&mut self) {
+            let s = cell::UnsafeCell::new(self);
+            unsafe { &mut *s.get() }
+                .parent
+                .return_read_lease(unsafe { &*s.get() });
         }
     }
 
@@ -183,11 +209,21 @@ pub mod sync {
     #[derive(Debug)]
     pub struct WritePermit<'a> {
         view: &'a mut [u8],
+        parent: &'a mut Ring,
     }
 
     impl<'a> WritePermit<'a> {
-        pub fn view(view: &'a mut [u8]) -> Self {
-            Self { view }
+        pub(crate) fn view(view: &'a mut [u8], parent: &'a mut Ring) -> Self {
+            Self { view, parent }
+        }
+    }
+
+    impl<'a> ops::Drop for WritePermit<'a> {
+        fn drop(&mut self) {
+            let s = cell::UnsafeCell::new(self);
+            unsafe { &mut *s.get() }
+                .parent
+                .return_write_lease(unsafe { &*s.get() });
         }
     }
 
