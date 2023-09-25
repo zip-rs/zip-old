@@ -28,11 +28,21 @@ pub mod sync {
         }
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    #[repr(u8)]
+    #[derive(
+        Debug,
+        Copy,
+        Clone,
+        PartialEq,
+        Eq,
+        Default,
+        num_enum::TryFromPrimitive,
+        num_enum::IntoPrimitive,
+    )]
     pub enum PermitState {
-        TakenOut,
         #[default]
-        Unleased,
+        Unleased = 0,
+        TakenOut = 1,
     }
 
     ///```
