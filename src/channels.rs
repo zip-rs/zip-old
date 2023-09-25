@@ -15,7 +15,8 @@ pub mod sync {
     #[derive(Debug, Copy, Clone)]
     pub enum Lease<Permit> {
         NoSpace,
-        Found(Permit),
+        AlreadyTaken,
+        Taken(Permit),
     }
 
     impl<Permit> Lease<Permit> {
@@ -23,7 +24,8 @@ pub mod sync {
         pub fn option(self) -> Option<Permit> {
             match self {
                 Self::NoSpace => None,
-                Self::Found(permit) => Some(permit),
+                Self::AlreadyTaken => None,
+                Self::Taken(permit) => Some(permit),
             }
         }
     }
@@ -135,8 +137,11 @@ pub mod sync {
         }
 
         pub fn request_write_lease(&mut self, requested_length: usize) -> Lease<WritePermit<'_>> {
+            if self.write_state == PermitState::TakenOut {
+                return Lease::AlreadyTaken;
+            }
+
             assert!(requested_length > 0);
-            assert!(self.write_state == PermitState::Unleased);
             if self.remaining_inline_write == 0 {
                 return Lease::NoSpace;
             }
@@ -151,7 +156,7 @@ pub mod sync {
 
             self.write_state = PermitState::TakenOut;
             let s = cell::UnsafeCell::new(self);
-            Lease::Found(WritePermit::view(
+            Lease::Taken(WritePermit::view(
                 &mut unsafe { &mut *s.get() }.buf[prev_write_head..final_write_head],
                 unsafe { *s.get() },
             ))
@@ -176,8 +181,11 @@ pub mod sync {
         }
 
         pub fn request_read_lease(&mut self, requested_length: usize) -> Lease<ReadPermit<'_>> {
+            if self.read_state == PermitState::TakenOut {
+                return Lease::AlreadyTaken;
+            }
+
             assert!(requested_length > 0);
-            assert!(self.read_state == PermitState::Unleased);
             if self.remaining_inline_read == 0 {
                 return Lease::NoSpace;
             }
@@ -192,7 +200,7 @@ pub mod sync {
 
             self.read_state = PermitState::TakenOut;
             let s = cell::UnsafeCell::new(self);
-            Lease::Found(ReadPermit::view(
+            Lease::Taken(ReadPermit::view(
                 &unsafe { &*s.get() }.buf[prev_read_head..final_read_head],
                 unsafe { *s.get() },
             ))
