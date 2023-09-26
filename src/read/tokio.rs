@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+use crate::channels::Ring;
 use crate::combinators::{Limiter, ReadAdapter};
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
@@ -80,8 +81,10 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for DeflateReader<
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
+        /* FIXME: reuse the same ring buffer for all entries! */
+        let ring = Ring::with_capacity(2048);
         Self(Crc32Reader::new(
-            ReadAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s))),
+            ReadAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s)), ring),
             data.crc32,
             false,
         ))
@@ -105,8 +108,10 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for BzipReader<S> 
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for BzipReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
+        /* FIXME: reuse the same ring buffer for all entries! */
+        let ring = Ring::with_capacity(2048);
         Self(Crc32Reader::new(
-            ReadAdapter::new(BzDecoder::new(SyncIoBridge::new(s))),
+            ReadAdapter::new(BzDecoder::new(SyncIoBridge::new(s)), ring),
             data.crc32,
             false,
         ))

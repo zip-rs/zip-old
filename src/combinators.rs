@@ -10,13 +10,16 @@ use std::{
 
 pub mod stream_adaptors {
     use super::*;
-    use crate::channels::{ReadPermit, Ring, WritePermit};
+    use crate::channels::{futurized::*, *};
 
-    use std::{cmp, future::Future, slice, sync::Arc};
+    use std::{cmp, future::Future, mem, slice, sync::Arc, task::ready};
 
     use bytes::{BufMut, BytesMut};
     use parking_lot::{lock_api::ArcRwLockUpgradableReadGuard, Mutex, RwLock};
-    use tokio::{sync::oneshot, task};
+    use tokio::{
+        sync::{self, oneshot},
+        task,
+    };
 
     pub trait KnownExpanse {
         /* TODO: make this have a parameterized Self::Index type, used e.g. with RangeInclusive or
@@ -260,23 +263,30 @@ pub mod stream_adaptors {
     /// # })}
     ///```
     pub struct ReadAdapter<S> {
-        inner: Arc<Mutex<Option<S>>>,
-        completion_rx: oneshot::Receiver<io::Result<()>>,
-        completion_tx: Arc<Mutex<Option<oneshot::Sender<io::Result<()>>>>>,
-        buf: Arc<RwLock<BytesMut>>,
+        inner: Arc<sync::Mutex<Option<(S, oneshot::Sender<io::Result<()>>)>>>,
+        rx: oneshot::Receiver<io::Result<()>>,
+        ring: RingFuturized,
     }
     impl<S> ReadAdapter<S> {
-        pub fn new(inner: S) -> Self {
+        pub fn new(inner: S, ring: Ring) -> Self {
             let (tx, rx) = oneshot::channel::<io::Result<()>>();
             Self {
-                inner: Arc::new(Mutex::new(Some(inner))),
-                completion_rx: rx,
-                completion_tx: Arc::new(Mutex::new(Some(tx))),
-                buf: Arc::new(RwLock::new(BytesMut::new())),
+                inner: Arc::new(sync::Mutex::new(Some((inner, tx)))),
+                rx,
+                ring: RingFuturized::wrap_ring(ring),
             }
         }
+
         pub fn into_inner(self) -> S {
-            self.inner.lock().take().unwrap()
+            let (inner, tx) = task::block_in_place(move || self.inner.blocking_lock_owned())
+                .take()
+                .expect("inner stream already taken");
+            tx.send(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "inner stream was taken",
+            )))
+            .unwrap();
+            inner
         }
     }
 
@@ -287,82 +297,72 @@ pub mod stream_adaptors {
             buf: &mut io::ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
             debug_assert!(buf.remaining() > 0);
-            /* match self.buf.request_read_lease(buf.remaining()) { */
-            /*     Lease::NoSpace => (), */
-            /*     Lease::PossiblyTaken => (), */
-            /*     Lease::Taken(data) => { */
-            /*         debug_assert!(!data.is_empty()); */
-            /*         buf.put(&data); */
-            /*         return Poll::Ready(Ok(())); */
-            /*     } */
-            /* } */
-            {
-                let ring_buf = self.buf.upgradable_read_arc();
-                if !ring_buf.is_empty() {
-                    let len = cmp::min(buf.remaining(), ring_buf.len());
-
-                    let data = {
-                        let mut ring_buf = ArcRwLockUpgradableReadGuard::upgrade(ring_buf);
-                        ring_buf.split_to(len)
-                    };
-                    buf.put(data);
-                    return Poll::Ready(Ok(()));
-                }
-            }
 
             let s = self.get_mut();
 
-            match Pin::new(&mut s.completion_rx).poll(cx) {
-                Poll::Ready(x) => match x {
-                    Err(_) => unreachable!("completion_rx should never be dropped without sending"),
-                    Ok(x) => Poll::Ready(x),
-                },
-                Poll::Pending => {
-                    let requested_length = buf.remaining();
-                    let completion_tx = s.completion_tx.clone();
-                    /* FIXME: don't clone this, but instead move the mutex guard into the
-                     * spawn_blocking() to avoid unlocking before pulling from the source! */
-                    let inner = s.inner.clone();
-                    let ring_buf = s.buf.clone();
+            if let Poll::Ready(read_data) = s.ring.poll_read(cx, buf.remaining()) {
+                debug_assert!(!read_data.is_empty());
+                buf.put(&**read_data);
+                return Poll::Ready(Ok(()));
+            }
 
-                    let waker = cx.waker().clone();
+            if let Poll::Ready(result) = Pin::new(&mut s.rx).poll(cx) {
+                return Poll::Ready(
+                    result.expect("sender should not have been dropped without sending!"),
+                );
+            }
+
+            let mut write_data = ready!(s.ring.poll_write(cx, buf.remaining()));
+            if let Ok(mut inner) = s.inner.clone().try_lock_owned() {
+                if inner.is_none() {
+                    Poll::Ready(Ok(()))
+                } else {
                     task::spawn_blocking(move || {
-                        let mut ring_buf = ring_buf.write();
-                        ring_buf.reserve(requested_length);
-                        if let Some(ref mut inner) = *inner.lock() {
-                            match inner.read(unsafe {
-                                slice::from_raw_parts_mut(
-                                    ring_buf.chunk_mut().as_mut_ptr(),
-                                    requested_length,
-                                )
-                            }) {
-                                Err(e) => {
-                                    if let Some(completion_tx) = completion_tx.lock().take() {
-                                        completion_tx.send(Err(e)).unwrap();
-                                    }
-                                }
-                                Ok(n) => {
-                                    if n == 0 {
-                                        if let Some(completion_tx) = completion_tx.lock().take() {
-                                            completion_tx.send(Ok(())).unwrap();
-                                        }
-                                    } else {
-                                        unsafe {
-                                            ring_buf.advance_mut(n);
-                                        }
-                                        waker.wake();
-                                    }
+                        match inner.as_mut().unwrap().0.read(&mut write_data) {
+                            Err(e) => {
+                                if e.kind() == io::ErrorKind::Interrupted {
+                                    write_data.truncate(0);
+                                } else {
+                                    let (_, tx) = inner.take().unwrap();
+                                    tx.send(Err(e)).unwrap();
                                 }
                             }
-                        } else {
-                            if let Some(completion_tx) = completion_tx.lock().take() {
-                                completion_tx.send(Ok(())).unwrap();
+                            Ok(n) => {
+                                if n == 0 {
+                                    let (_, tx) = inner.take().unwrap();
+                                    tx.send(Ok(())).unwrap();
+                                } else {
+                                    write_data.truncate(n);
+                                }
                             }
                         }
                     });
-
                     Poll::Pending
                 }
+            } else {
+                let inner = s.inner.clone();
+                task::spawn(async move {
+                    let mut inner = inner.lock_owned().await;
+                    if inner.is_none() {
+                        return;
+                    }
+                    task::spawn_blocking(move || {
+                        match inner.as_mut().unwrap().0.read(&mut write_data) {
+                            Err(e) => {
+                                if e.kind() == io::ErrorKind::Interrupted {
+                                    write_data.truncate(0);
+                                } else {
+                                    let (_, tx) = inner.take().unwrap();
+                                    tx.send(Err(e)).unwrap();
+                                }
+                            }
+                            Ok(n) => {
+                                write_data.truncate(n);
+                            }
+                        }
+                    });
+                });
+                Poll::Pending
             }
         }
     }

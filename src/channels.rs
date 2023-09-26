@@ -326,6 +326,7 @@ impl ops::Drop for ReadPermit {
 }
 
 impl AsRef<[u8]> for ReadPermit {
+    #[inline]
     fn as_ref(&self) -> &[u8] {
         &self.view
     }
@@ -334,6 +335,7 @@ impl AsRef<[u8]> for ReadPermit {
 impl ops::Deref for ReadPermit {
     type Target = [u8];
 
+    #[inline]
     fn deref(&self) -> &[u8] {
         &self.view
     }
@@ -378,12 +380,14 @@ impl ops::Drop for WritePermit {
 }
 
 impl AsRef<[u8]> for WritePermit {
+    #[inline]
     fn as_ref(&self) -> &[u8] {
         &self.view
     }
 }
 
 impl AsMut<[u8]> for WritePermit {
+    #[inline]
     fn as_mut(&mut self) -> &mut [u8] {
         &mut self.view
     }
@@ -392,12 +396,14 @@ impl AsMut<[u8]> for WritePermit {
 impl ops::Deref for WritePermit {
     type Target = [u8];
 
+    #[inline]
     fn deref(&self) -> &[u8] {
         &self.view
     }
 }
 
 impl ops::DerefMut for WritePermit {
+    #[inline]
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.view
     }
@@ -423,10 +429,10 @@ pub mod futurized {
     ///
     /// let ring = Ring::with_capacity(20);
     /// let ring = UnsafeCell::new(RingFuturized::wrap_ring(ring));
-    /// let read_lease = poll_fn(|cx| Pin::new(unsafe { &mut *ring.get() }).poll_read(cx, 5));
+    /// let read_lease = poll_fn(|cx| unsafe { &mut *ring.get() }.poll_read(cx, 5));
     /// {
     ///   let mut write_lease = poll_fn(|cx| {
-    ///     Pin::new(unsafe { &mut *ring.get() }).poll_write(cx, 20)
+    ///     unsafe { &mut *ring.get() }.poll_write(cx, 20)
     ///   }).await;
     ///   write_lease.truncate(5).copy_from_slice(b"hello");
     /// }
@@ -462,12 +468,14 @@ pub mod futurized {
     }
 
     impl AsRef<ReadPermit> for ReadPermitFuturized {
+        #[inline]
         fn as_ref(&self) -> &ReadPermit {
             &self.buf
         }
     }
 
     impl AsMut<ReadPermit> for ReadPermitFuturized {
+        #[inline]
         fn as_mut(&mut self) -> &mut ReadPermit {
             &mut self.buf
         }
@@ -476,12 +484,14 @@ pub mod futurized {
     impl ops::Deref for ReadPermitFuturized {
         type Target = ReadPermit;
 
+        #[inline]
         fn deref(&self) -> &ReadPermit {
             &self.buf
         }
     }
 
     impl ops::DerefMut for ReadPermitFuturized {
+        #[inline]
         fn deref_mut(&mut self) -> &mut ReadPermit {
             &mut self.buf
         }
@@ -507,12 +517,14 @@ pub mod futurized {
     }
 
     impl AsRef<WritePermit> for WritePermitFuturized {
+        #[inline]
         fn as_ref(&self) -> &WritePermit {
             &self.buf
         }
     }
 
     impl AsMut<WritePermit> for WritePermitFuturized {
+        #[inline]
         fn as_mut(&mut self) -> &mut WritePermit {
             &mut self.buf
         }
@@ -521,12 +533,14 @@ pub mod futurized {
     impl ops::Deref for WritePermitFuturized {
         type Target = WritePermit;
 
+        #[inline]
         fn deref(&self) -> &WritePermit {
             &self.buf
         }
     }
 
     impl ops::DerefMut for WritePermitFuturized {
+        #[inline]
         fn deref_mut(&mut self) -> &mut WritePermit {
             &mut self.buf
         }
@@ -541,45 +555,48 @@ pub mod futurized {
             }
         }
 
-        fn get_read_wakers(self: Pin<&mut Self>) -> &mut Vec<Waker> {
-            unsafe { &mut self.get_unchecked_mut().read_wakers }
-        }
-
-        fn get_write_wakers(self: Pin<&mut Self>) -> &mut Vec<Waker> {
-            unsafe { &mut self.get_unchecked_mut().write_wakers }
-        }
-
         pub fn poll_read(
-            self: Pin<&mut Self>,
+            &mut self,
             cx: &mut Context<'_>,
             requested_length: usize,
         ) -> Poll<ReadPermitFuturized> {
             match self.buf.clone().request_read_lease(requested_length) {
                 Lease::NoSpace | Lease::PossiblyTaken => {
-                    self.get_read_wakers().push(cx.waker().clone());
+                    self.read_wakers.push(cx.waker().clone());
                     Poll::Pending
                 }
                 Lease::Taken(permit) => Poll::Ready(ReadPermitFuturized::with_wakers(
                     permit,
-                    mem::take(self.get_write_wakers()),
+                    mem::take(&mut self.write_wakers),
                 )),
             }
         }
 
         pub fn poll_write(
-            self: Pin<&mut Self>,
+            &mut self,
             cx: &mut Context<'_>,
             requested_length: usize,
         ) -> Poll<WritePermitFuturized> {
             match self.buf.clone().request_write_lease(requested_length) {
                 Lease::NoSpace | Lease::PossiblyTaken => {
-                    self.get_write_wakers().push(cx.waker().clone());
+                    self.write_wakers.push(cx.waker().clone());
                     Poll::Pending
                 }
                 Lease::Taken(permit) => Poll::Ready(WritePermitFuturized::with_wakers(
                     permit,
-                    mem::take(self.get_read_wakers()),
+                    mem::take(&mut self.read_wakers),
                 )),
+            }
+        }
+    }
+
+    impl ops::Drop for RingFuturized {
+        fn drop(&mut self) {
+            for waker in mem::take(&mut self.read_wakers).into_iter() {
+                waker.wake();
+            }
+            for waker in mem::take(&mut self.write_wakers).into_iter() {
+                waker.wake();
             }
         }
     }
