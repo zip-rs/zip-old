@@ -1,8 +1,11 @@
 #![allow(missing_docs)]
 
 use std::{
-    cmp, ops, slice,
+    cmp,
+    future::Future,
+    ops, slice,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+    task::{Context, Poll, Waker},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -106,22 +109,31 @@ impl Ring {
 
     pub(crate) fn return_write_lease(&self, permit: &WritePermit<'_>) {
         debug_assert!(self.write_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
-        let len = permit.len();
 
-        let new_write_head = len + self.write_head.load(Ordering::Acquire);
-        let read_head = self.read_head.load(Ordering::Acquire);
-
-        if new_write_head == self.capacity() {
-            debug_assert_eq!(0, self.remaining_inline_write.load(Ordering::Acquire));
+        let truncated_length = permit.truncated_length();
+        if truncated_length > 0 {
             self.remaining_inline_write
-                .store(read_head, Ordering::Release);
-            self.write_head.store(0, Ordering::Release);
-        } else {
-            self.write_head.store(new_write_head, Ordering::Release);
+                .fetch_add(truncated_length, Ordering::Release);
         }
 
-        if new_write_head > read_head {
-            self.remaining_inline_read.fetch_add(len, Ordering::Release);
+        let len = permit.len();
+
+        if len > 0 {
+            let new_write_head = len + self.write_head.load(Ordering::Acquire);
+            let read_head = self.read_head.load(Ordering::Acquire);
+
+            if new_write_head == self.capacity() {
+                debug_assert_eq!(0, self.remaining_inline_write.load(Ordering::Acquire));
+                self.remaining_inline_write
+                    .store(read_head, Ordering::Release);
+                self.write_head.store(0, Ordering::Release);
+            } else {
+                self.write_head.store(new_write_head, Ordering::Release);
+            }
+
+            if new_write_head > read_head {
+                self.remaining_inline_read.fetch_add(len, Ordering::Release);
+            }
         }
 
         self.write_state
@@ -167,23 +179,32 @@ impl Ring {
 
     pub(crate) fn return_read_lease(&self, permit: &ReadPermit<'_>) {
         debug_assert!(self.read_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
-        let len = permit.len();
 
-        let new_read_head = len + self.read_head.load(Ordering::Acquire);
-        let write_head = self.write_head.load(Ordering::Acquire);
-
-        if new_read_head == self.capacity() {
-            debug_assert_eq!(0, self.remaining_inline_read.load(Ordering::Acquire));
+        let truncated_length = permit.truncated_length();
+        if truncated_length > 0 {
             self.remaining_inline_read
-                .store(write_head, Ordering::Release);
-            self.read_head.store(0, Ordering::Release);
-        } else {
-            self.read_head.store(new_read_head, Ordering::Release);
+                .fetch_add(truncated_length, Ordering::Release);
         }
 
-        if new_read_head > write_head {
-            self.remaining_inline_write
-                .fetch_add(len, Ordering::Release);
+        let len = permit.len();
+
+        if len > 0 {
+            let new_read_head = len + self.read_head.load(Ordering::Acquire);
+            let write_head = self.write_head.load(Ordering::Acquire);
+
+            if new_read_head == self.capacity() {
+                debug_assert_eq!(0, self.remaining_inline_read.load(Ordering::Acquire));
+                self.remaining_inline_read
+                    .store(write_head, Ordering::Release);
+                self.read_head.store(0, Ordering::Release);
+            } else {
+                self.read_head.store(new_read_head, Ordering::Release);
+            }
+
+            if new_read_head > write_head {
+                self.remaining_inline_write
+                    .fetch_add(len, Ordering::Release);
+            }
         }
 
         self.read_state
@@ -226,18 +247,71 @@ impl Ring {
     }
 }
 
+///```
+/// use zip::channels::*;
+///
+/// let msg = "hello world";
+/// let mut ring = Ring::with_capacity(30);
+///
+/// let mut buf = Vec::new();
+/// {
+///   let mut write_lease = ring.request_write_lease(5).option().unwrap();
+///   write_lease.copy_from_slice(&msg.as_bytes()[..5]);
+///   write_lease.truncate(4);
+///   assert_eq!(4, write_lease.len());
+/// }
+/// {
+///   let mut read_lease = ring.request_read_lease(5).option().unwrap();
+///   assert_eq!(4, read_lease.len());
+///   buf.extend_from_slice(read_lease.truncate(1));
+///   assert_eq!(1, buf.len());
+///   assert_eq!(1, read_lease.len());
+/// }
+/// {
+///   let mut write_lease = ring.request_write_lease(msg.len() - 4).option().unwrap();
+///   write_lease.copy_from_slice(&msg.as_bytes()[4..]);
+/// }
+/// {
+///   let read_lease = ring.request_read_lease(msg.len() - 1).option().unwrap();
+///   assert_eq!(read_lease.len(), msg.len() - 1);
+///   buf.extend_from_slice(&read_lease);
+/// }
+/// assert_eq!(msg, std::str::from_utf8(&buf).unwrap());
+///```
+pub trait TruncateLength {
+    fn truncated_length(&self) -> usize;
+    fn truncate(&mut self, len: usize) -> &mut Self;
+}
+
 #[derive(Debug)]
 pub struct ReadPermit<'a> {
-    /* TODO: if we have any remaining bytes, return those immediately instead of wrapping around
-     * (?) ideally this would be easier to implement and avoid tricky logic (and let us
-     * masquerade as just a &[u8]). */
     view: &'a [u8],
     parent: &'a Ring,
+    original_length: usize,
 }
 
 impl<'a> ReadPermit<'a> {
     pub(crate) fn view(view: &'a [u8], parent: &'a Ring) -> Self {
-        Self { view, parent }
+        let original_length = view.len();
+        Self {
+            view,
+            parent,
+            original_length,
+        }
+    }
+}
+
+impl<'a> TruncateLength for ReadPermit<'a> {
+    #[inline]
+    fn truncated_length(&self) -> usize {
+        self.original_length - self.len()
+    }
+
+    #[inline]
+    fn truncate(&mut self, len: usize) -> &mut Self {
+        assert!(len <= self.len());
+        self.view = &self.view[..len];
+        self
     }
 }
 
@@ -265,11 +339,31 @@ impl<'a> ops::Deref for ReadPermit<'a> {
 pub struct WritePermit<'a> {
     view: &'a mut [u8],
     parent: &'a Ring,
+    original_length: usize,
 }
 
 impl<'a> WritePermit<'a> {
     pub(crate) fn view(view: &'a mut [u8], parent: &'a Ring) -> Self {
-        Self { view, parent }
+        let original_length = view.len();
+        Self {
+            view,
+            parent,
+            original_length,
+        }
+    }
+}
+
+impl<'a> TruncateLength for WritePermit<'a> {
+    #[inline]
+    fn truncated_length(&self) -> usize {
+        self.original_length - self.len()
+    }
+
+    #[inline]
+    fn truncate(&mut self, len: usize) -> &mut Self {
+        assert!(len <= self.len());
+        self.view = unsafe { slice::from_raw_parts_mut(self.view.as_ptr() as *mut u8, len) };
+        self
     }
 }
 

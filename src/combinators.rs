@@ -10,6 +10,7 @@ use std::{
 
 pub mod stream_adaptors {
     use super::*;
+    use crate::channels::{ReadPermit, Ring, WritePermit};
 
     use std::{cmp, future::Future, slice, sync::Arc};
 
@@ -286,6 +287,15 @@ pub mod stream_adaptors {
             buf: &mut io::ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
             debug_assert!(buf.remaining() > 0);
+            /* match self.buf.request_read_lease(buf.remaining()) { */
+            /*     Lease::NoSpace => (), */
+            /*     Lease::PossiblyTaken => (), */
+            /*     Lease::Taken(data) => { */
+            /*         debug_assert!(!data.is_empty()); */
+            /*         buf.put(&data); */
+            /*         return Poll::Ready(Ok(())); */
+            /*     } */
+            /* } */
             {
                 let ring_buf = self.buf.upgradable_read_arc();
                 if !ring_buf.is_empty() {
