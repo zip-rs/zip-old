@@ -358,8 +358,98 @@ pub mod stream_adaptors {
             }
         }
     }
+
+    impl<S: std::io::Write> AsyncIoAdapter<S> {
+        fn do_read(
+            mut read_lease: ReadPermitFuturized,
+            mut inner: sync::OwnedMutexGuard<Option<(S, oneshot::Sender<io::Result<()>>)>>,
+        ) {
+            match inner.as_mut().unwrap().0.write(&read_lease) {
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::Interrupted {
+                        read_lease.truncate(0);
+                    } else {
+                        let (_, tx) = inner.take().unwrap();
+                        tx.send(Err(e))
+                            .expect("receiver should not have been dropped yet!");
+                    }
+                }
+                Ok(n) => {
+                    read_lease.truncate(n);
+                    if n == 0 {
+                        let (_, tx) = inner.take().unwrap();
+                        tx.send(Ok(())).unwrap();
+                    }
+                }
+            }
+        }
+    }
+
+    impl<S: std::io::Write + Unpin + Send + 'static> io::AsyncWrite for AsyncIoAdapter<S> {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            debug_assert!(!buf.is_empty());
+
+            let s = self.get_mut();
+
+            if let Poll::Ready(mut write_data) = s.ring.poll_write(cx, buf.len()) {
+                debug_assert!(!write_data.is_empty());
+                let len = write_data.len();
+                write_data.copy_from_slice(&buf[..len]);
+                return Poll::Ready(Ok(len));
+            }
+
+            if let Poll::Ready(result) = Pin::new(&mut s.rx).poll(cx) {
+                return Poll::Ready(
+                    result
+                        .expect("sender should not have been dropped without sending!")
+                        .map(|()| 0),
+                );
+            }
+
+            let read_data = ready!(s.ring.poll_read(cx, buf.len()));
+            if let Ok(inner) = s.inner.clone().try_lock_owned() {
+                if inner.is_none() {
+                    Poll::Ready(Ok(0))
+                } else {
+                    task::spawn_blocking(move || {
+                        Self::do_read(read_data, inner);
+                    });
+                    Poll::Pending
+                }
+            } else {
+                let inner = s.inner.clone();
+                task::spawn(async move {
+                    let inner = inner.lock_owned().await;
+                    if inner.is_none() {
+                        return;
+                    }
+                    task::spawn_blocking(move || {
+                        Self::do_read(read_data, inner);
+                    });
+                });
+                Poll::Pending
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let s = self.get_mut();
+
+            match ready!(s.ring.poll_read_until_no_space(cx)) {
+                Some(mut read_data) => todo!(),
+                None => todo!(),
+            }
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
 }
-pub use stream_adaptors::{Limiter, AsyncIoAdapter};
+pub use stream_adaptors::{AsyncIoAdapter, Limiter};
 
 mod file_adaptors {
     use super::*;
