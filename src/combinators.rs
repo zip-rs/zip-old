@@ -255,19 +255,19 @@ pub mod stream_adaptors {
     /// let mut buf = Cursor::new(Vec::new());
     /// buf.write_all(b"hello\n")?;
     /// buf.rewind()?;
-    /// let mut f = zip::combinators::ReadAdapter::new(buf);
+    /// let mut f = zip::combinators::AsyncIoAdapter::new(buf);
     /// let mut buf: Vec<u8> = Vec::new();
     /// f.read_to_end(&mut buf).await?;
     /// assert_eq!(&buf, b"hello\n");
     /// # Ok(())
     /// # })}
     ///```
-    pub struct ReadAdapter<S> {
+    pub struct AsyncIoAdapter<S> {
         inner: Arc<sync::Mutex<Option<(S, oneshot::Sender<io::Result<()>>)>>>,
         rx: oneshot::Receiver<io::Result<()>>,
         ring: RingFuturized,
     }
-    impl<S> ReadAdapter<S> {
+    impl<S> AsyncIoAdapter<S> {
         pub fn new(inner: S, ring: Ring) -> Self {
             let (tx, rx) = oneshot::channel::<io::Result<()>>();
             Self {
@@ -278,19 +278,40 @@ pub mod stream_adaptors {
         }
 
         pub fn into_inner(self) -> S {
-            let (inner, tx) = task::block_in_place(move || self.inner.blocking_lock_owned())
+            let (inner, _) = task::block_in_place(move || self.inner.blocking_lock_owned())
                 .take()
                 .expect("inner stream already taken");
-            tx.send(Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "inner stream was taken",
-            )))
-            .unwrap();
             inner
         }
     }
 
-    impl<S: std::io::Read + Unpin + Send + 'static> io::AsyncRead for ReadAdapter<S> {
+    impl<S: std::io::Read> AsyncIoAdapter<S> {
+        fn do_write(
+            mut write_lease: WritePermitFuturized,
+            mut inner: sync::OwnedMutexGuard<Option<(S, oneshot::Sender<io::Result<()>>)>>,
+        ) {
+            match inner.as_mut().unwrap().0.read(&mut write_lease) {
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::Interrupted {
+                        write_lease.truncate(0);
+                    } else {
+                        let (_, tx) = inner.take().unwrap();
+                        tx.send(Err(e))
+                            .expect("receiver should not have been dropped yet!");
+                    }
+                }
+                Ok(n) => {
+                    write_lease.truncate(n);
+                    if n == 0 {
+                        let (_, tx) = inner.take().unwrap();
+                        tx.send(Ok(())).unwrap();
+                    }
+                }
+            }
+        }
+    }
+
+    impl<S: std::io::Read + Unpin + Send + 'static> io::AsyncRead for AsyncIoAdapter<S> {
         fn poll_read(
             self: Pin<&mut Self>,
             cx: &mut Context<'_>,
@@ -312,54 +333,25 @@ pub mod stream_adaptors {
                 );
             }
 
-            let mut write_data = ready!(s.ring.poll_write(cx, buf.remaining()));
-            if let Ok(mut inner) = s.inner.clone().try_lock_owned() {
+            let write_data = ready!(s.ring.poll_write(cx, buf.remaining()));
+            if let Ok(inner) = s.inner.clone().try_lock_owned() {
                 if inner.is_none() {
                     Poll::Ready(Ok(()))
                 } else {
                     task::spawn_blocking(move || {
-                        match inner.as_mut().unwrap().0.read(&mut write_data) {
-                            Err(e) => {
-                                if e.kind() == io::ErrorKind::Interrupted {
-                                    write_data.truncate(0);
-                                } else {
-                                    let (_, tx) = inner.take().unwrap();
-                                    tx.send(Err(e)).unwrap();
-                                }
-                            }
-                            Ok(n) => {
-                                if n == 0 {
-                                    let (_, tx) = inner.take().unwrap();
-                                    tx.send(Ok(())).unwrap();
-                                } else {
-                                    write_data.truncate(n);
-                                }
-                            }
-                        }
+                        Self::do_write(write_data, inner);
                     });
                     Poll::Pending
                 }
             } else {
                 let inner = s.inner.clone();
                 task::spawn(async move {
-                    let mut inner = inner.lock_owned().await;
+                    let inner = inner.lock_owned().await;
                     if inner.is_none() {
                         return;
                     }
                     task::spawn_blocking(move || {
-                        match inner.as_mut().unwrap().0.read(&mut write_data) {
-                            Err(e) => {
-                                if e.kind() == io::ErrorKind::Interrupted {
-                                    write_data.truncate(0);
-                                } else {
-                                    let (_, tx) = inner.take().unwrap();
-                                    tx.send(Err(e)).unwrap();
-                                }
-                            }
-                            Ok(n) => {
-                                write_data.truncate(n);
-                            }
-                        }
+                        Self::do_write(write_data, inner);
                     });
                 });
                 Poll::Pending
@@ -367,7 +359,7 @@ pub mod stream_adaptors {
         }
     }
 }
-pub use stream_adaptors::{Limiter, ReadAdapter};
+pub use stream_adaptors::{Limiter, AsyncIoAdapter};
 
 mod file_adaptors {
     use super::*;

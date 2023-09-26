@@ -10,12 +10,7 @@ use once_cell::sync::Lazy;
 use tempfile::{tempdir, tempfile};
 use tokio::{fs, io, runtime::Runtime};
 
-use zip::{
-    read::tokio::{IntermediateFile, SyncIntermediateFile},
-    result::ZipResult,
-    write::FileOptions,
-    ZipWriter,
-};
+use zip::{result::ZipResult, write::FileOptions, ZipWriter};
 
 fn generate_random_archive(
     num_entries: usize,

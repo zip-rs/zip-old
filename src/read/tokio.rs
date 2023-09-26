@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use crate::channels::Ring;
-use crate::combinators::{Limiter, ReadAdapter};
+use crate::combinators::{Limiter, AsyncIoAdapter};
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
@@ -67,7 +67,7 @@ impl<S: io::AsyncRead + Unpin> ReaderWrapper<S> for StoredReader<S> {
     }
 }
 
-pub struct DeflateReader<S>(Crc32Reader<ReadAdapter<DeflateDecoder<SyncIoBridge<Limiter<S>>>>>);
+pub struct DeflateReader<S>(Crc32Reader<AsyncIoAdapter<DeflateDecoder<SyncIoBridge<Limiter<S>>>>>);
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for DeflateReader<S> {
     fn poll_read(
@@ -84,7 +84,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for DeflateRead
         /* FIXME: reuse the same ring buffer for all entries! */
         let ring = Ring::with_capacity(2048);
         Self(Crc32Reader::new(
-            ReadAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s)), ring),
+            AsyncIoAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s)), ring),
             data.crc32,
             false,
         ))
@@ -94,7 +94,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for DeflateRead
     }
 }
 
-pub struct BzipReader<S>(Crc32Reader<ReadAdapter<BzDecoder<SyncIoBridge<Limiter<S>>>>>);
+pub struct BzipReader<S>(Crc32Reader<AsyncIoAdapter<BzDecoder<SyncIoBridge<Limiter<S>>>>>);
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for BzipReader<S> {
     fn poll_read(
@@ -111,7 +111,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for BzipReader<
         /* FIXME: reuse the same ring buffer for all entries! */
         let ring = Ring::with_capacity(2048);
         Self(Crc32Reader::new(
-            ReadAdapter::new(BzDecoder::new(SyncIoBridge::new(s)), ring),
+            AsyncIoAdapter::new(BzDecoder::new(SyncIoBridge::new(s)), ring),
             data.crc32,
             false,
         ))
