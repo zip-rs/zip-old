@@ -314,7 +314,7 @@ pub mod stream_adaptors {
 
             match Pin::new(&mut s.completion_rx).poll(cx) {
                 Poll::Ready(x) => match x {
-                    Err(_) => unreachable!(),
+                    Err(_) => unreachable!("completion_rx should never be dropped without sending"),
                     Ok(x) => Poll::Ready(x),
                 },
                 Poll::Pending => {

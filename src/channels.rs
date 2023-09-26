@@ -1,11 +1,8 @@
 #![allow(missing_docs)]
 
 use std::{
-    cmp,
-    future::Future,
-    ops, slice,
+    cmp, ops, slice,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
-    task::{Context, Poll, Waker},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -396,6 +393,184 @@ impl<'a> ops::Deref for WritePermit<'a> {
 impl<'a> ops::DerefMut for WritePermit<'a> {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.view
+    }
+}
+
+pub mod futurized {
+    use super::*;
+
+    use std::{
+        future::Future,
+        mem,
+        pin::Pin,
+        task::{Context, Poll, Waker},
+    };
+
+    ///```
+    /// # fn main() { tokio_test::block_on(async {
+    /// use zip::channels::{*, futurized::*};
+    /// use futures_util::future::poll_fn;
+    /// use tokio::task;
+    /// use std::pin::Pin;
+    ///
+    /// let ring = Ring::with_capacity(20);
+    /// let mut ring = RingFuturized::wrap_ring(&ring);
+    /// {
+    ///   let mut write_lease = poll_fn(|cx| Pin::new(&mut ring).poll_write(cx, 5)).await;
+    ///   write_lease.copy_from_slice(b"hello");
+    /// }
+    /// {
+    ///   let read_lease = poll_fn(|cx| Pin::new(&mut ring).poll_read(cx, 5)).await;
+    ///   assert_eq!("hello", std::str::from_utf8(&read_lease).unwrap());
+    /// }
+    /// # })}
+    ///```
+    pub struct RingFuturized<'a> {
+        buf: &'a Ring,
+        read_wakers: Vec<Waker>,
+        write_wakers: Vec<Waker>,
+    }
+
+    pub struct ReadPermitFuturized<'a> {
+        buf: ReadPermit<'a>,
+        write_wakers: Vec<Waker>,
+    }
+
+    impl<'a> ReadPermitFuturized<'a> {
+        pub fn with_wakers(buf: ReadPermit<'a>, write_wakers: Vec<Waker>) -> Self {
+            Self { buf, write_wakers }
+        }
+    }
+
+    impl<'a> ops::Drop for ReadPermitFuturized<'a> {
+        fn drop(&mut self) {
+            for waker in mem::take(&mut self.write_wakers).into_iter() {
+                waker.wake();
+            }
+        }
+    }
+
+    impl<'a> AsRef<ReadPermit<'a>> for ReadPermitFuturized<'a> {
+        fn as_ref(&self) -> &ReadPermit<'a> {
+            &self.buf
+        }
+    }
+
+    impl<'a> AsMut<ReadPermit<'a>> for ReadPermitFuturized<'a> {
+        fn as_mut(&mut self) -> &mut ReadPermit<'a> {
+            &mut self.buf
+        }
+    }
+
+    impl<'a> ops::Deref for ReadPermitFuturized<'a> {
+        type Target = ReadPermit<'a>;
+
+        fn deref(&self) -> &ReadPermit<'a> {
+            &self.buf
+        }
+    }
+
+    impl<'a> ops::DerefMut for ReadPermitFuturized<'a> {
+        fn deref_mut(&mut self) -> &mut ReadPermit<'a> {
+            &mut self.buf
+        }
+    }
+
+    pub struct WritePermitFuturized<'a> {
+        buf: WritePermit<'a>,
+        read_wakers: Vec<Waker>,
+    }
+
+    impl<'a> WritePermitFuturized<'a> {
+        pub fn with_wakers(buf: WritePermit<'a>, read_wakers: Vec<Waker>) -> Self {
+            Self { buf, read_wakers }
+        }
+    }
+
+    impl<'a> ops::Drop for WritePermitFuturized<'a> {
+        fn drop(&mut self) {
+            for waker in mem::take(&mut self.read_wakers).into_iter() {
+                waker.wake();
+            }
+        }
+    }
+
+    impl<'a> AsRef<WritePermit<'a>> for WritePermitFuturized<'a> {
+        fn as_ref(&self) -> &WritePermit<'a> {
+            &self.buf
+        }
+    }
+
+    impl<'a> AsMut<WritePermit<'a>> for WritePermitFuturized<'a> {
+        fn as_mut(&mut self) -> &mut WritePermit<'a> {
+            &mut self.buf
+        }
+    }
+
+    impl<'a> ops::Deref for WritePermitFuturized<'a> {
+        type Target = WritePermit<'a>;
+
+        fn deref(&self) -> &WritePermit<'a> {
+            &self.buf
+        }
+    }
+
+    impl<'a> ops::DerefMut for WritePermitFuturized<'a> {
+        fn deref_mut(&mut self) -> &mut WritePermit<'a> {
+            &mut self.buf
+        }
+    }
+
+    impl<'a> RingFuturized<'a> {
+        pub fn wrap_ring(buf: &'a Ring) -> Self {
+            Self {
+                buf,
+                read_wakers: Vec::new(),
+                write_wakers: Vec::new(),
+            }
+        }
+
+        fn get_read_wakers(self: Pin<&mut Self>) -> &mut Vec<Waker> {
+            unsafe { &mut self.get_unchecked_mut().read_wakers }
+        }
+
+        fn get_write_wakers(self: Pin<&mut Self>) -> &mut Vec<Waker> {
+            unsafe { &mut self.get_unchecked_mut().write_wakers }
+        }
+
+        pub fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            requested_length: usize,
+        ) -> Poll<ReadPermitFuturized<'a>> {
+            match self.buf.request_read_lease(requested_length) {
+                Lease::NoSpace | Lease::PossiblyTaken => {
+                    self.get_read_wakers().push(cx.waker().clone());
+                    Poll::Pending
+                }
+                Lease::Taken(permit) => Poll::Ready(ReadPermitFuturized::with_wakers(
+                    permit,
+                    mem::take(self.get_write_wakers()),
+                )),
+            }
+        }
+
+        pub fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            requested_length: usize,
+        ) -> Poll<WritePermitFuturized<'a>> {
+            match self.buf.request_write_lease(requested_length) {
+                Lease::NoSpace | Lease::PossiblyTaken => {
+                    self.get_write_wakers().push(cx.waker().clone());
+                    Poll::Pending
+                }
+                Lease::Taken(permit) => Poll::Ready(WritePermitFuturized::with_wakers(
+                    permit,
+                    mem::take(self.get_read_wakers()),
+                )),
+            }
+        }
     }
 }
 
