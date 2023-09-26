@@ -1,6 +1,5 @@
 #![allow(missing_docs)]
 
-use crate::channels::Ring;
 use crate::combinators::{AsyncIoAdapter, Limiter};
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;

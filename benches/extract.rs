@@ -10,12 +10,7 @@ use once_cell::sync::Lazy;
 use tempfile::tempdir;
 use tokio::{fs, io, runtime::Runtime};
 
-use zip::{
-    combinators::{FixedLengthFile, Limiter},
-    result::ZipResult,
-    write::FileOptions,
-    ZipWriter,
-};
+use zip::{combinators::FixedLengthFile, result::ZipResult, write::FileOptions, ZipWriter};
 
 fn generate_random_archive(
     num_entries: usize,
@@ -119,7 +114,7 @@ pub fn bench_extract(c: &mut Criterion) {
     .unwrap();
 
     for (path, desc) in [
-        (&*BIG_ARCHIVE_PATH, "big archive"),
+        /* (&*BIG_ARCHIVE_PATH, "big archive"), */
         (&*SMALL_ARCHIVE_PATH, "small archive"),
         (&random_path, "random archive"),
     ] {

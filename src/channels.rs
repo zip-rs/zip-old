@@ -35,11 +35,8 @@ pub mod ring {
     use super::{Lease, PermitState};
 
     use std::{
-        cmp, mem, ops, slice,
-        sync::{
-            atomic::{AtomicU8, AtomicUsize, Ordering},
-            Arc,
-        },
+        cmp, ops, slice,
+        sync::atomic::{AtomicU8, AtomicUsize, Ordering},
     };
 
     ///```
@@ -493,7 +490,6 @@ pub mod futurized {
     use std::{
         collections::VecDeque,
         mem, ops,
-        sync::Arc,
         task::{Context, Poll, Waker},
     };
 
