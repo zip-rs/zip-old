@@ -12,10 +12,9 @@ pub mod stream_adaptors {
     use super::*;
     use crate::channels::{futurized::*, *};
 
-    use std::{cmp, future::Future, mem, slice, sync::Arc, task::ready};
+    use std::{cmp, future::Future, mem, sync::Arc, task::ready};
 
-    use bytes::{BufMut, BytesMut};
-    use parking_lot::{lock_api::ArcRwLockUpgradableReadGuard, Mutex, RwLock};
+    use bytes::BufMut;
     use tokio::{
         sync::{self, oneshot},
         task,
@@ -37,7 +36,7 @@ pub mod stream_adaptors {
     /// buf.write_all(b"hello\n")?;
     /// buf.seek(SeekFrom::Start(1))?;
     ///
-    /// let mut limited = Limiter::take(buf, 3);
+    /// let mut limited = Limiter::take(1, buf, 3);
     /// let mut s = String::new();
     /// limited.read_to_string(&mut s)?;
     /// assert_eq!(s, "ell");
@@ -53,14 +52,16 @@ pub mod stream_adaptors {
     pub struct Limiter<S> {
         pub max_len: usize,
         pub internal_pos: usize,
+        pub start_pos: u64,
         pub source_stream: S,
     }
 
     impl<S> Limiter<S> {
-        pub fn take(source_stream: S, limit: usize) -> Self {
+        pub fn take(start_pos: u64, source_stream: S, limit: usize) -> Self {
             Self {
                 max_len: limit,
                 internal_pos: 0,
+                start_pos,
                 source_stream,
             }
         }
@@ -101,6 +102,13 @@ pub mod stream_adaptors {
             let diff = new_point as i64 - cur as i64;
             diff
         }
+
+        #[inline]
+        fn interpret_new_pos(&mut self, new_pos: u64) {
+            assert!(new_pos >= self.start_pos);
+            assert!(new_pos <= self.start_pos + self.max_len as u64);
+            self.internal_pos = (new_pos - self.start_pos) as usize;
+        }
     }
 
     impl<S> KnownExpanse for Limiter<S> {
@@ -131,10 +139,9 @@ pub mod stream_adaptors {
     impl<S: std::io::Seek> std::io::Seek for Limiter<S> {
         fn seek(&mut self, op: io::SeekFrom) -> io::Result<u64> {
             let diff = self.convert_seek_request_to_relative(op);
-            /* FIXME: what to do if the source stream doesn't seek back or forward as far as we
-             * asked it to? Should we be checking the result of .seek()? here? */
-            self.internal_pos = ((self.internal_pos as i64) + diff) as usize;
-            self.source_stream.seek(io::SeekFrom::Current(diff))
+            let cur_pos = self.source_stream.seek(io::SeekFrom::Current(diff))?;
+            self.interpret_new_pos(cur_pos);
+            Ok(cur_pos)
         }
     }
 
@@ -201,12 +208,15 @@ pub mod stream_adaptors {
         fn start_seek(self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> {
             let diff = self.convert_seek_request_to_relative(op);
             let s = self.get_mut();
-            s.internal_pos = ((s.internal_pos as i64) + diff) as usize;
             Pin::new(&mut s.source_stream).start_seek(io::SeekFrom::Current(diff))
         }
         fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
             let s = self.get_mut();
-            Pin::new(&mut s.source_stream).poll_complete(cx)
+            let result = ready!(Pin::new(&mut s.source_stream).poll_complete(cx));
+            if let Ok(ref cur_pos) = result {
+                s.interpret_new_pos(*cur_pos);
+            }
+            Poll::Ready(result)
         }
     }
 
@@ -263,48 +273,55 @@ pub mod stream_adaptors {
     /// # })}
     ///```
     pub struct AsyncIoAdapter<S> {
-        inner: Arc<sync::Mutex<Option<(S, oneshot::Sender<io::Result<()>>)>>>,
+        inner: Arc<sync::Mutex<Option<S>>>,
+        tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<io::Result<()>>>>>,
         rx: oneshot::Receiver<io::Result<()>>,
         ring: RingFuturized,
     }
     impl<S> AsyncIoAdapter<S> {
-        pub fn new(inner: S, ring: Ring) -> Self {
+        pub fn new(inner: S) -> Self {
             let (tx, rx) = oneshot::channel::<io::Result<()>>();
             Self {
-                inner: Arc::new(sync::Mutex::new(Some((inner, tx)))),
+                inner: Arc::new(sync::Mutex::new(Some(inner))),
+                tx: Arc::new(parking_lot::Mutex::new(Some(tx))),
                 rx,
-                ring: RingFuturized::wrap_ring(ring),
+                ring: RingFuturized::new(),
             }
         }
 
         pub fn into_inner(self) -> S {
-            let (inner, _) = task::block_in_place(move || self.inner.blocking_lock_owned())
+            self.inner
+                .try_lock_owned()
+                .expect("there should be no further handles to this mutex")
                 .take()
-                .expect("inner stream already taken");
-            inner
+                .unwrap()
         }
     }
 
     impl<S: std::io::Read> AsyncIoAdapter<S> {
         fn do_write(
             mut write_lease: WritePermitFuturized,
-            mut inner: sync::OwnedMutexGuard<Option<(S, oneshot::Sender<io::Result<()>>)>>,
+            mut inner: sync::OwnedMappedMutexGuard<Option<S>, S>,
+            tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<io::Result<()>>>>>,
         ) {
-            match inner.as_mut().unwrap().0.read(&mut write_lease) {
+            match inner.read(&mut write_lease) {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::Interrupted {
                         write_lease.truncate(0);
                     } else {
-                        let (_, tx) = inner.take().unwrap();
-                        tx.send(Err(e))
-                            .expect("receiver should not have been dropped yet!");
+                        if let Some(tx) = tx.lock().take() {
+                            tx.send(Err(e))
+                                .expect("receiver should not have been dropped yet!");
+                        }
                     }
                 }
                 Ok(n) => {
                     write_lease.truncate(n);
                     if n == 0 {
-                        let (_, tx) = inner.take().unwrap();
-                        tx.send(Ok(())).unwrap();
+                        if let Some(tx) = tx.lock().take() {
+                            tx.send(Ok(()))
+                                .expect("receiver should not have been dropped yet!");
+                        }
                     }
                 }
             }
@@ -334,24 +351,22 @@ pub mod stream_adaptors {
             }
 
             let write_data = ready!(s.ring.poll_write(cx, buf.remaining()));
+            let write_data: WritePermitFuturized<'static> = unsafe { mem::transmute(write_data) };
+            let tx = s.tx.clone();
             if let Ok(inner) = s.inner.clone().try_lock_owned() {
-                if inner.is_none() {
-                    Poll::Ready(Ok(()))
-                } else {
-                    task::spawn_blocking(move || {
-                        Self::do_write(write_data, inner);
-                    });
-                    Poll::Pending
-                }
+                let inner = sync::OwnedMutexGuard::map(inner, |inner| inner.as_mut().unwrap());
+                task::spawn_blocking(move || {
+                    Self::do_write(write_data, inner, tx);
+                });
+                Poll::Pending
             } else {
                 let inner = s.inner.clone();
                 task::spawn(async move {
-                    let inner = inner.lock_owned().await;
-                    if inner.is_none() {
-                        return;
-                    }
+                    let inner = sync::OwnedMutexGuard::map(inner.lock_owned().await, |inner| {
+                        inner.as_mut().unwrap()
+                    });
                     task::spawn_blocking(move || {
-                        Self::do_write(write_data, inner);
+                        Self::do_write(write_data, inner, tx);
                     });
                 });
                 Poll::Pending
@@ -359,109 +374,156 @@ pub mod stream_adaptors {
         }
     }
 
-    impl<S: std::io::Write> AsyncIoAdapter<S> {
-        fn do_read(
-            mut read_lease: ReadPermitFuturized,
-            mut inner: sync::OwnedMutexGuard<Option<(S, oneshot::Sender<io::Result<()>>)>>,
-        ) {
-            match inner.as_mut().unwrap().0.write(&read_lease) {
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::Interrupted {
-                        read_lease.truncate(0);
-                    } else {
-                        let (_, tx) = inner.take().unwrap();
-                        tx.send(Err(e))
-                            .expect("receiver should not have been dropped yet!");
-                    }
-                }
-                Ok(n) => {
-                    read_lease.truncate(n);
-                    if n == 0 {
-                        let (_, tx) = inner.take().unwrap();
-                        tx.send(Ok(())).unwrap();
-                    }
-                }
-            }
-        }
-    }
+    /* impl<S: std::io::Write> AsyncIoAdapter<S> { */
+    /*     fn do_read( */
+    /*         mut read_lease: ReadPermitFuturized, */
+    /*         mut inner: sync::OwnedMappedMutexGuard<Option<S>, S>, */
+    /*         tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<io::Result<()>>>>>, */
+    /*     ) { */
+    /*         match inner.write(&read_lease) { */
+    /*             Err(e) => { */
+    /*                 if e.kind() == io::ErrorKind::Interrupted { */
+    /*                     read_lease.truncate(0); */
+    /*                 } else { */
+    /*                     if let Some(tx) = tx.lock().take() { */
+    /*                         tx.send(Err(e)) */
+    /*                             .expect("receiver should not have been dropped yet!"); */
+    /*                     } */
+    /*                 } */
+    /*             } */
+    /*             Ok(n) => { */
+    /*                 read_lease.truncate(n); */
+    /*                 if n == 0 { */
+    /*                     if let Some(tx) = tx.lock().take() { */
+    /*                         tx.send(Ok(())) */
+    /*                             .expect("receiver should not have been dropped yet!"); */
+    /*                     } */
+    /*                 } */
+    /*             } */
+    /*         } */
+    /*     } */
+    /* } */
 
-    impl<S: std::io::Write + Unpin + Send + 'static> io::AsyncWrite for AsyncIoAdapter<S> {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            debug_assert!(!buf.is_empty());
+    /* impl<S: std::io::Write + Unpin + Send + 'static> io::AsyncWrite for AsyncIoAdapter<S> { */
+    /*     fn poll_write( */
+    /*         self: Pin<&mut Self>, */
+    /*         cx: &mut Context<'_>, */
+    /*         buf: &[u8], */
+    /*     ) -> Poll<io::Result<usize>> { */
+    /*         debug_assert!(!buf.is_empty()); */
 
-            let s = self.get_mut();
+    /*         let s = self.get_mut(); */
 
-            if let Poll::Ready(mut write_data) = s.ring.poll_write(cx, buf.len()) {
-                debug_assert!(!write_data.is_empty());
-                let len = write_data.len();
-                write_data.copy_from_slice(&buf[..len]);
-                return Poll::Ready(Ok(len));
-            }
+    /*         if let Poll::Ready(mut write_data) = s.ring.poll_write(cx, buf.len()) { */
+    /*             debug_assert!(!write_data.is_empty()); */
+    /*             let len = write_data.len(); */
+    /*             write_data.copy_from_slice(&buf[..len]); */
+    /*             return Poll::Ready(Ok(len)); */
+    /*         } */
 
-            if let Poll::Ready(result) = Pin::new(&mut s.rx).poll(cx) {
-                return Poll::Ready(
-                    result
-                        .expect("sender should not have been dropped without sending!")
-                        .map(|()| 0),
-                );
-            }
+    /*         if let Poll::Ready(result) = Pin::new(&mut s.rx).poll(cx) { */
+    /*             return Poll::Ready( */
+    /*                 result */
+    /*                     .expect("sender should not have been dropped without sending!") */
+    /*                     .map(|()| 0), */
+    /*             ); */
+    /*         } */
 
-            let read_data = ready!(s.ring.poll_read(cx, buf.len()));
-            if let Ok(inner) = s.inner.clone().try_lock_owned() {
-                if inner.is_none() {
-                    Poll::Ready(Ok(0))
-                } else {
-                    task::spawn_blocking(move || {
-                        Self::do_read(read_data, inner);
-                    });
-                    Poll::Pending
-                }
-            } else {
-                let inner = s.inner.clone();
-                task::spawn(async move {
-                    let inner = inner.lock_owned().await;
-                    if inner.is_none() {
-                        return;
-                    }
-                    task::spawn_blocking(move || {
-                        Self::do_read(read_data, inner);
-                    });
-                });
-                Poll::Pending
-            }
-        }
+    /*         let tx = s.tx.clone(); */
+    /*         let read_data = ready!(s.ring.poll_read(cx, buf.len())); */
+    /*         if let Ok(inner) = s.inner.clone().try_lock_owned() { */
+    /*             let inner = sync::OwnedMutexGuard::map(inner, |inner| inner.as_mut().unwrap()); */
+    /*             task::spawn_blocking(move || { */
+    /*                 Self::do_read(read_data, inner, tx); */
+    /*             }); */
+    /*             Poll::Pending */
+    /*         } else { */
+    /*             let inner = s.inner.clone(); */
+    /*             task::spawn(async move { */
+    /*                 let inner = sync::OwnedMutexGuard::map(inner.lock_owned().await, |inner| { */
+    /*                     inner.as_mut().unwrap() */
+    /*                 }); */
+    /*                 task::spawn_blocking(move || { */
+    /*                     Self::do_read(read_data, inner, tx); */
+    /*                 }); */
+    /*             }); */
+    /*             Poll::Pending */
+    /*         } */
+    /*     } */
 
-        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            let s = self.get_mut();
+    /*     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
+    /*         let s = self.get_mut(); */
 
-            match ready!(s.ring.poll_read_until_no_space(cx)) {
-                Some(mut read_data) => todo!(),
-                None => todo!(),
-            }
-        }
+    /*         let tx = s.tx.clone(); */
+    /*         match ready!(s.ring.poll_read_until_no_space(cx)) { */
+    /*             Some(read_data) => { */
+    /*                 if let Ok(inner) = s.inner.clone().try_lock_owned() { */
+    /*                     let inner = */
+    /*                         sync::OwnedMutexGuard::map(inner, |inner| inner.as_mut().unwrap()); */
+    /*                     task::spawn_blocking(move || { */
+    /*                         Self::do_read(read_data, inner, tx); */
+    /*                     }); */
+    /*                     Poll::Pending */
+    /*                 } else { */
+    /*                     let inner = s.inner.clone(); */
+    /*                     task::spawn(async move { */
+    /*                         let inner = */
+    /*                             sync::OwnedMutexGuard::map(inner.lock_owned().await, |inner| { */
+    /*                                 inner.as_mut().unwrap() */
+    /*                             }); */
+    /*                         task::spawn_blocking(move || { */
+    /*                             Self::do_read(read_data, inner, tx); */
+    /*                         }); */
+    /*                     }); */
+    /*                     Poll::Pending */
+    /*                 } */
+    /*             } */
+    /*             None => { */
+    /*                 if let Ok(inner) = s.inner.clone().try_lock_owned() { */
+    /*                     let mut inner = */
+    /*                         sync::OwnedMutexGuard::map(inner, |inner| inner.as_mut().unwrap()); */
+    /*                     task::spawn_blocking(move || { */
+    /*                         match inner.flush() { */
+    /*                             Ok(())  */
+    /*                         } */
+    /*                         Self::do_read(read_data, inner, tx); */
+    /*                     }); */
+    /*                     Poll::Pending */
+    /*                 } else { */
+    /*                     let inner = s.inner.clone(); */
+    /*                     task::spawn(async move { */
+    /*                         let inner = */
+    /*                             sync::OwnedMutexGuard::map(inner.lock_owned().await, |inner| { */
+    /*                                 inner.as_mut().unwrap() */
+    /*                             }); */
+    /*                         task::spawn_blocking(move || { */
+    /*                             Self::do_read(read_data, inner, tx); */
+    /*                         }); */
+    /*                     }); */
+    /*                     Poll::Pending */
+    /*                 } */
+    /*             } */
+    /*         } */
+    /*     } */
 
-        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            self.poll_flush(cx)
-        }
-    }
+    /*     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
+    /*         self.poll_flush(cx) */
+    /*     } */
+    /* } */
 }
-pub use stream_adaptors::{AsyncIoAdapter, Limiter};
+pub use stream_adaptors::{AsyncIoAdapter, KnownExpanse, Limiter};
 
-mod file_adaptors {
+pub mod file_adaptors {
     use super::*;
 
-    use std::io::Cursor;
+    use std::{io::Cursor, path::Path};
 
     use tokio::fs;
 
     #[derive(Debug)]
     pub enum FixedLengthFile<F> {
         Immediate(Cursor<Box<[u8]>>),
-        Paging(Limiter<F>),
+        Paging(F, usize),
     }
 
     impl<F> stream_adaptors::KnownExpanse for FixedLengthFile<F> {
@@ -469,41 +531,49 @@ mod file_adaptors {
         fn full_length(&self) -> usize {
             match self {
                 Self::Immediate(cursor) => cursor.get_ref().len(),
-                Self::Paging(limited) => limited.full_length(),
+                Self::Paging(_, len) => *len,
             }
         }
     }
 
     impl FixedLengthFile<fs::File> {
+        pub async fn create_at_path<P: AsRef<Path>>(p: P, len: usize) -> io::Result<Self> {
+            let f = fs::File::create(p).await?;
+            f.set_len(len as u64).await?;
+            Ok(Self::Paging(f, len))
+        }
+
+        pub async fn read_from_path<P: AsRef<Path>>(p: P, len: usize) -> io::Result<Self> {
+            let f = fs::File::open(p).await?;
+            assert_eq!(len, f.metadata().await?.len() as usize);
+            Ok(Self::Paging(f, len))
+        }
+
         pub async fn into_sync(self) -> FixedLengthFile<std::fs::File> {
             match self {
                 Self::Immediate(cursor) => FixedLengthFile::Immediate(cursor),
-                Self::Paging(Limiter {
-                    max_len,
-                    internal_pos,
-                    source_stream,
-                }) => FixedLengthFile::Paging(Limiter {
-                    max_len,
-                    internal_pos,
-                    source_stream: source_stream.into_std().await,
-                }),
+                Self::Paging(f, len) => FixedLengthFile::Paging(f.into_std().await, len),
             }
         }
     }
 
     impl FixedLengthFile<std::fs::File> {
+        pub fn create_at_path<P: AsRef<Path>>(p: P, len: usize) -> io::Result<Self> {
+            let f = std::fs::File::create(p)?;
+            f.set_len(len as u64)?;
+            Ok(Self::Paging(f, len))
+        }
+
+        pub fn read_from_path<P: AsRef<Path>>(p: P, len: usize) -> io::Result<Self> {
+            let f = std::fs::File::open(p)?;
+            assert_eq!(len, f.metadata()?.len() as usize);
+            Ok(Self::Paging(f, len))
+        }
+
         pub fn into_async(self) -> FixedLengthFile<fs::File> {
             match self {
                 Self::Immediate(cursor) => FixedLengthFile::Immediate(cursor),
-                Self::Paging(Limiter {
-                    max_len,
-                    internal_pos,
-                    source_stream,
-                }) => FixedLengthFile::Paging(Limiter {
-                    max_len,
-                    internal_pos,
-                    source_stream: fs::File::from_std(source_stream),
-                }),
+                Self::Paging(f, len) => FixedLengthFile::Paging(fs::File::from_std(f), len),
             }
         }
     }
@@ -533,7 +603,7 @@ mod file_adaptors {
             debug_assert!(!buf.is_empty());
             match self {
                 Self::Immediate(ref mut cursor) => cursor.read(buf),
-                Self::Paging(ref mut limited) => limited.read(buf),
+                Self::Paging(ref mut f, _) => f.read(buf),
             }
         }
     }
@@ -542,7 +612,7 @@ mod file_adaptors {
         fn seek(&mut self, op: io::SeekFrom) -> io::Result<u64> {
             match self {
                 Self::Immediate(ref mut cursor) => cursor.seek(op),
-                Self::Paging(ref mut limited) => limited.seek(op),
+                Self::Paging(ref mut f, _) => f.seek(op),
             }
         }
     }
@@ -551,14 +621,14 @@ mod file_adaptors {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             match self {
                 Self::Immediate(ref mut cursor) => cursor.write(buf),
-                Self::Paging(ref mut limited) => limited.write(buf),
+                Self::Paging(ref mut f, _) => f.write(buf),
             }
         }
 
         fn flush(&mut self) -> io::Result<()> {
             match self {
                 Self::Immediate(ref mut cursor) => cursor.flush(),
-                Self::Paging(ref mut limited) => limited.flush(),
+                Self::Paging(ref mut f, _) => f.flush(),
             }
         }
     }
@@ -572,7 +642,7 @@ mod file_adaptors {
             debug_assert!(buf.remaining() > 0);
             match self.get_mut() {
                 Self::Immediate(ref mut cursor) => Pin::new(cursor).poll_read(cx, buf),
-                Self::Paging(ref mut limited) => Pin::new(limited).poll_read(cx, buf),
+                Self::Paging(ref mut f, _) => Pin::new(f).poll_read(cx, buf),
             }
         }
     }
@@ -581,13 +651,13 @@ mod file_adaptors {
         fn start_seek(self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> {
             match self.get_mut() {
                 Self::Immediate(ref mut cursor) => Pin::new(cursor).start_seek(op),
-                Self::Paging(ref mut limited) => Pin::new(limited).start_seek(op),
+                Self::Paging(ref mut f, _) => Pin::new(f).start_seek(op),
             }
         }
         fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
             match self.get_mut() {
                 Self::Immediate(ref mut cursor) => Pin::new(cursor).poll_complete(cx),
-                Self::Paging(ref mut limited) => Pin::new(limited).poll_complete(cx),
+                Self::Paging(ref mut f, _) => Pin::new(f).poll_complete(cx),
             }
         }
     }
@@ -601,22 +671,23 @@ mod file_adaptors {
             debug_assert!(!buf.is_empty());
             match self.get_mut() {
                 Self::Immediate(ref mut cursor) => Pin::new(cursor).poll_write(cx, buf),
-                Self::Paging(ref mut limited) => Pin::new(limited).poll_write(cx, buf),
+                Self::Paging(ref mut f, _) => Pin::new(f).poll_write(cx, buf),
             }
         }
 
         fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
             match self.get_mut() {
                 Self::Immediate(ref mut cursor) => Pin::new(cursor).poll_flush(cx),
-                Self::Paging(ref mut limited) => Pin::new(limited).poll_flush(cx),
+                Self::Paging(ref mut f, _) => Pin::new(f).poll_flush(cx),
             }
         }
 
         fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
             match self.get_mut() {
                 Self::Immediate(ref mut cursor) => Pin::new(cursor).poll_shutdown(cx),
-                Self::Paging(ref mut limited) => Pin::new(limited).poll_shutdown(cx),
+                Self::Paging(ref mut f, _) => Pin::new(f).poll_shutdown(cx),
             }
         }
     }
 }
+pub use file_adaptors::FixedLengthFile;

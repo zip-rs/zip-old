@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use crate::channels::Ring;
-use crate::combinators::{Limiter, AsyncIoAdapter};
+use crate::combinators::{AsyncIoAdapter, Limiter};
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
@@ -81,10 +81,8 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for DeflateReader<
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
-        /* FIXME: reuse the same ring buffer for all entries! */
-        let ring = Ring::with_capacity(2048);
         Self(Crc32Reader::new(
-            AsyncIoAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s)), ring),
+            AsyncIoAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s))),
             data.crc32,
             false,
         ))
@@ -108,10 +106,8 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for BzipReader<S> 
 
 impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for BzipReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
-        /* FIXME: reuse the same ring buffer for all entries! */
-        let ring = Ring::with_capacity(2048);
         Self(Crc32Reader::new(
-            AsyncIoAdapter::new(BzDecoder::new(SyncIoBridge::new(s)), ring),
+            AsyncIoAdapter::new(BzDecoder::new(SyncIoBridge::new(s))),
             data.crc32,
             false,
         ))
@@ -196,8 +192,12 @@ pub async fn find_content<S: io::AsyncRead + io::AsyncSeek + Unpin>(
     let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
     data.data_start.store(data_start);
 
-    reader.seek(io::SeekFrom::Start(data_start)).await?;
-    Ok(Limiter::take(reader, data.compressed_size as usize))
+    let cur_pos = reader.seek(io::SeekFrom::Start(data_start)).await?;
+    Ok(Limiter::take(
+        cur_pos,
+        reader,
+        data.compressed_size as usize,
+    ))
 }
 
 pub async fn get_reader<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static>(

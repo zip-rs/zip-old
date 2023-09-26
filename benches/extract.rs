@@ -7,16 +7,21 @@ use std::sync::Arc;
 
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
-use tempfile::{tempdir, tempfile};
+use tempfile::tempdir;
 use tokio::{fs, io, runtime::Runtime};
 
-use zip::{result::ZipResult, write::FileOptions, ZipWriter};
+use zip::{
+    combinators::{FixedLengthFile, Limiter},
+    result::ZipResult,
+    write::FileOptions,
+    ZipWriter,
+};
 
 fn generate_random_archive(
     num_entries: usize,
     entry_size: usize,
     options: FileOptions,
-) -> ZipResult<(usize, Box<dyn io::AsyncRead>)> {
+) -> ZipResult<Cursor<Box<[u8]>>> {
     use std::io::Write;
 
     let buf = Cursor::new(Vec::new());
@@ -32,7 +37,7 @@ fn generate_random_archive(
 
     let buf = zip.finish()?.into_inner();
 
-    Ok((buf.len(), Box::new(Cursor::new(buf))))
+    Ok(Cursor::new(buf.into_boxed_slice()))
 }
 
 static BIG_ARCHIVE_PATH: Lazy<PathBuf> =
@@ -40,16 +45,6 @@ static BIG_ARCHIVE_PATH: Lazy<PathBuf> =
 
 static SMALL_ARCHIVE_PATH: Lazy<PathBuf> =
     Lazy::new(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/small-target.zip"));
-
-async fn get_big_archive() -> ZipResult<(usize, Box<dyn io::AsyncRead>)> {
-    let f = fs::File::open(&*BIG_ARCHIVE_PATH).await?;
-    Ok((f.metadata().await?.len() as usize, Box::new(f)))
-}
-
-async fn get_small_archive() -> ZipResult<(usize, Box<dyn io::AsyncRead>)> {
-    let f = fs::File::open(&*SMALL_ARCHIVE_PATH).await?;
-    Ok((f.metadata().await?.len() as usize, Box::new(f)))
-}
 
 const NUM_ENTRIES: usize = 1_000;
 const ENTRY_SIZE: usize = 10_000;
@@ -61,36 +56,45 @@ pub fn bench_io(c: &mut Criterion) {
 
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    for ((len, handle), desc) in [
-        (rt.block_on(get_big_archive()).unwrap(), "big archive"),
-        (rt.block_on(get_small_archive()).unwrap(), "small archive"),
-        (
-            generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap(),
-            "random archive",
-        ),
+    let gen_td = tempdir().unwrap();
+    let random_path = gen_td.path().join("random.zip");
+    std::io::copy(
+        &mut generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap(),
+        &mut std::fs::File::create(&random_path).unwrap(),
+    )
+    .unwrap();
+
+    for (path, desc) in [
+        (&*BIG_ARCHIVE_PATH, "big archive"),
+        (&*SMALL_ARCHIVE_PATH, "small archive"),
+        (&random_path, "random archive"),
     ] {
+        let len = std::fs::metadata(&path).unwrap().len() as usize;
         let id = format!("{}({} bytes)", desc, len);
 
         group.throughput(Throughput::Bytes(len as u64));
 
-        let h2 = rt.block_on(handle.try_clone()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<async copy>"), |b| {
             b.to_async(&rt).iter(|| async {
-                let mut handle = handle.try_clone().await.unwrap();
+                let mut handle = FixedLengthFile::<fs::File>::read_from_path(path, len)
+                    .await
+                    .unwrap();
                 let td = tempdir().unwrap();
                 let tf = td.path().join("out.zip");
-                let mut out = IntermediateFile::create_at_path(&tf, len).await.unwrap();
+                let mut out = FixedLengthFile::<fs::File>::create_at_path(tf, len)
+                    .await
+                    .unwrap();
                 assert_eq!(len as u64, io::copy(&mut handle, &mut out).await.unwrap());
             });
         });
 
-        let sync_handle = rt.block_on(h2.try_into_sync()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<sync copy>"), |b| {
             b.iter(|| {
-                let mut sync_handle = sync_handle.try_clone().unwrap();
+                let mut sync_handle =
+                    FixedLengthFile::<std::fs::File>::read_from_path(path, len).unwrap();
                 let td = tempdir().unwrap();
                 let tf = td.path().join("out.zip");
-                let mut out = SyncIntermediateFile::create_at_path(&tf, len).unwrap();
+                let mut out = FixedLengthFile::<std::fs::File>::create_at_path(tf, len).unwrap();
                 assert_eq!(
                     len as u64,
                     std::io::copy(&mut sync_handle, &mut out).unwrap()
@@ -106,33 +110,41 @@ pub fn bench_extract(c: &mut Criterion) {
 
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    let random = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
+    let gen_td = tempdir().unwrap();
+    let random_path = gen_td.path().join("random.zip");
+    std::io::copy(
+        &mut generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap(),
+        &mut std::fs::File::create(&random_path).unwrap(),
+    )
+    .unwrap();
 
-    for (handle, desc) in [
-        /* (rt.block_on(get_big_archive()).unwrap(), "big archive"), */
-        /* (rt.block_on(get_small_archive()).unwrap(), "small archive"), */
-        (IntermediateFile::from_bytes(&random[..]), "random archive"),
+    for (path, desc) in [
+        (&*BIG_ARCHIVE_PATH, "big archive"),
+        (&*SMALL_ARCHIVE_PATH, "small archive"),
+        (&random_path, "random archive"),
     ] {
-        let id = format!("{}({} bytes)", desc, handle.len());
+        let len = std::fs::metadata(&path).unwrap().len() as usize;
+        let id = format!("{}({} bytes)", desc, len);
 
-        group.throughput(Throughput::Bytes(handle.len() as u64));
+        group.throughput(Throughput::Bytes(len as u64));
 
-        let h2 = rt.block_on(handle.try_clone()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<async extraction>"), |b| {
             b.to_async(&rt).iter(|| async {
                 let td = tempdir().unwrap();
                 let out_dir = Arc::new(td.path().to_path_buf());
-                let handle = handle.try_clone().await.unwrap();
+                let handle = FixedLengthFile::<fs::File>::read_from_path(path, len)
+                    .await
+                    .unwrap();
                 let mut zip = zip::read::tokio::ZipArchive::new(handle).await.unwrap();
-                Pin::new(&mut zip).extract(out_dir.clone()).await.unwrap();
+                Pin::new(&mut zip).extract(out_dir).await.unwrap();
             })
         });
 
-        let sync_handle = rt.block_on(h2.try_into_sync()).unwrap();
         group.bench_function(BenchmarkId::new(&id, "<sync extraction>"), |b| {
             b.iter(|| {
                 let td = tempdir().unwrap();
-                let sync_handle = sync_handle.try_clone().unwrap();
+                let sync_handle =
+                    FixedLengthFile::<std::fs::File>::read_from_path(path, len).unwrap();
                 let mut zip = zip::read::ZipArchive::new(sync_handle).unwrap();
                 zip.extract(td.path()).unwrap();
             })

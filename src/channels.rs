@@ -48,36 +48,36 @@ pub mod ring {
     ///
     /// let ring = Arc::new(Ring::with_capacity(10));
     ///
-    /// assert!(matches![ring.clone().request_read_lease(1), Lease::NoSpace]);
+    /// assert!(matches![ring.request_read_lease(1), Lease::NoSpace]);
     /// {
-    ///   let mut write_lease = ring.clone().request_write_lease(5).option().unwrap();
+    ///   let mut write_lease = ring.request_write_lease(5).option().unwrap();
     ///   write_lease.copy_from_slice(b"world");
     /// }
     /// {
-    ///   let read_lease = ring.clone().request_read_lease(5).option().unwrap();
+    ///   let read_lease = ring.request_read_lease(5).option().unwrap();
     ///   assert_eq!(std::str::from_utf8(&*read_lease).unwrap(), "world");
     /// }
     /// {
-    ///   let mut write_lease = ring.clone().request_write_lease(6).option().unwrap();
+    ///   let mut write_lease = ring.request_write_lease(6).option().unwrap();
     ///   assert_eq!(5, write_lease.len());
     ///   write_lease.copy_from_slice(b"hello");
     /// }
     /// {
-    ///   let read_lease = ring.clone().request_read_lease(4).option().unwrap();
+    ///   let read_lease = ring.request_read_lease(4).option().unwrap();
     ///   assert_eq!(std::str::from_utf8(&*read_lease).unwrap(), "hell");
     /// }
     /// {
-    ///   let mut write_lease = ring.clone().request_write_lease(2).option().unwrap();
+    ///   let mut write_lease = ring.request_write_lease(2).option().unwrap();
     ///   write_lease.copy_from_slice(b"k!");
     /// }
     /// let mut buf = Vec::new();
     /// {
-    ///   let read_lease = ring.clone().request_read_lease(3).option().unwrap();
+    ///   let read_lease = ring.request_read_lease(3).option().unwrap();
     ///   assert_eq!(1, read_lease.len());
     ///   buf.extend_from_slice(&read_lease);
     /// }
     /// {
-    ///   let read_lease = ring.clone().request_read_lease(3).option().unwrap();
+    ///   let read_lease = ring.request_read_lease(3).option().unwrap();
     ///   assert_eq!(2, read_lease.len());
     ///   buf.extend_from_slice(&read_lease);
     /// }
@@ -96,6 +96,15 @@ pub mod ring {
     }
 
     impl Ring {
+        pub fn clear(&mut self) {
+            *self.write_head.get_mut() = 0;
+            *self.remaining_inline_write.get_mut() = self.capacity();
+            *self.write_state.get_mut() = PermitState::Unleashed.into();
+            *self.read_head.get_mut() = 0;
+            *self.remaining_inline_read.get_mut() = 0;
+            *self.read_state.get_mut() = PermitState::Unleashed.into();
+        }
+
         pub fn with_capacity(capacity: usize) -> Self {
             assert!(capacity > 0);
             Self {
@@ -114,7 +123,7 @@ pub mod ring {
             self.buf.len()
         }
 
-        pub(crate) fn return_write_lease(&self, permit: &WritePermit) {
+        pub(crate) fn return_write_lease(&self, permit: &WritePermit<'_>) {
             debug_assert!(self.write_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
 
             let truncated_length = permit.truncated_length();
@@ -147,7 +156,7 @@ pub mod ring {
                 .store(PermitState::Unleashed.into(), Ordering::Release);
         }
 
-        pub fn request_write_lease(self: Arc<Self>, requested_length: usize) -> Lease<WritePermit> {
+        pub fn request_write_lease(&self, requested_length: usize) -> Lease<WritePermit<'_>> {
             assert!(requested_length > 0);
             if self.remaining_inline_write.load(Ordering::Relaxed) == 0 {
                 return Lease::NoSpace;
@@ -176,15 +185,15 @@ pub mod ring {
 
             let prev_write_head = self.write_head.load(Ordering::Acquire);
 
-            let buf: &'static mut [u8] = unsafe {
+            let buf: &mut [u8] = unsafe {
                 let buf: *const u8 = self.buf.as_ptr();
                 let start = buf.add(prev_write_head) as *mut u8;
                 slice::from_raw_parts_mut(start, limited_length)
             };
-            Lease::Taken(unsafe { WritePermit::view(buf, self) })
+            Lease::Taken(WritePermit::view(buf, self))
         }
 
-        pub(crate) fn return_read_lease(&self, permit: &ReadPermit) {
+        pub(crate) fn return_read_lease(&self, permit: &ReadPermit<'_>) {
             debug_assert!(self.read_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
 
             let truncated_length = permit.truncated_length();
@@ -218,7 +227,7 @@ pub mod ring {
                 .store(PermitState::Unleashed.into(), Ordering::Release);
         }
 
-        pub fn request_read_lease(self: Arc<Self>, requested_length: usize) -> Lease<ReadPermit> {
+        pub fn request_read_lease(&self, requested_length: usize) -> Lease<ReadPermit<'_>> {
             assert!(requested_length > 0);
             if self.remaining_inline_read.load(Ordering::Relaxed) == 0 {
                 return Lease::NoSpace;
@@ -247,12 +256,12 @@ pub mod ring {
 
             let prev_read_head = self.read_head.load(Ordering::Acquire);
 
-            let buf: &'static [u8] = unsafe {
+            let buf: &[u8] = unsafe {
                 let buf: *const u8 = self.buf.as_ptr();
                 let start = buf.add(prev_read_head);
                 slice::from_raw_parts(start, limited_length)
             };
-            Lease::Taken(unsafe { ReadPermit::view(buf, self) })
+            Lease::Taken(ReadPermit::view(buf, self))
         }
     }
 
@@ -265,20 +274,20 @@ pub mod ring {
     ///
     /// let mut buf = Vec::new();
     /// {
-    ///   let mut write_lease = ring.clone().request_write_lease(5).option().unwrap();
+    ///   let mut write_lease = ring.request_write_lease(5).option().unwrap();
     ///   write_lease.copy_from_slice(&msg.as_bytes()[..5]);
     ///   write_lease.truncate(4);
     ///   assert_eq!(4, write_lease.len());
     /// }
     /// {
-    ///   let mut read_lease = ring.clone().request_read_lease(5).option().unwrap();
+    ///   let mut read_lease = ring.request_read_lease(5).option().unwrap();
     ///   assert_eq!(4, read_lease.len());
     ///   buf.extend_from_slice(read_lease.truncate(1));
     ///   assert_eq!(1, buf.len());
     ///   assert_eq!(1, read_lease.len());
     /// }
     /// {
-    ///   let mut write_lease = ring.clone().request_write_lease(msg.len() - 4).option().unwrap();
+    ///   let mut write_lease = ring.request_write_lease(msg.len() - 4).option().unwrap();
     ///   write_lease.copy_from_slice(&msg.as_bytes()[4..]);
     /// }
     /// {
@@ -294,24 +303,24 @@ pub mod ring {
     }
 
     #[derive(Debug)]
-    pub struct ReadPermit {
-        view: &'static [u8],
-        parent: Arc<Ring>,
+    pub struct ReadPermit<'a> {
+        view: &'a [u8],
+        parent: &'a Ring,
         original_length: usize,
     }
 
-    impl ReadPermit {
-        pub(crate) unsafe fn view<'a>(view: &'a [u8], parent: Arc<Ring>) -> Self {
+    impl<'a> ReadPermit<'a> {
+        pub(crate) fn view(view: &'a [u8], parent: &'a Ring) -> Self {
             let original_length = view.len();
             Self {
-                view: mem::transmute(view),
+                view,
                 parent,
                 original_length,
             }
         }
     }
 
-    impl TruncateLength for ReadPermit {
+    impl<'a> TruncateLength for ReadPermit<'a> {
         #[inline]
         fn truncated_length(&self) -> usize {
             self.original_length - self.len()
@@ -325,20 +334,20 @@ pub mod ring {
         }
     }
 
-    impl ops::Drop for ReadPermit {
+    impl<'a> ops::Drop for ReadPermit<'a> {
         fn drop(&mut self) {
             self.parent.return_read_lease(self);
         }
     }
 
-    impl AsRef<[u8]> for ReadPermit {
+    impl<'a> AsRef<[u8]> for ReadPermit<'a> {
         #[inline]
         fn as_ref(&self) -> &[u8] {
             &self.view
         }
     }
 
-    impl ops::Deref for ReadPermit {
+    impl<'a> ops::Deref for ReadPermit<'a> {
         type Target = [u8];
 
         #[inline]
@@ -348,24 +357,24 @@ pub mod ring {
     }
 
     #[derive(Debug)]
-    pub struct WritePermit {
-        view: &'static mut [u8],
-        parent: Arc<Ring>,
+    pub struct WritePermit<'a> {
+        view: &'a mut [u8],
+        parent: &'a Ring,
         original_length: usize,
     }
 
-    impl WritePermit {
-        pub(crate) unsafe fn view<'a>(view: &'a mut [u8], parent: Arc<Ring>) -> Self {
+    impl<'a> WritePermit<'a> {
+        pub(crate) fn view(view: &'a mut [u8], parent: &'a Ring) -> Self {
             let original_length = view.len();
             Self {
-                view: mem::transmute(view),
+                view,
                 parent,
                 original_length,
             }
         }
     }
 
-    impl TruncateLength for WritePermit {
+    impl<'a> TruncateLength for WritePermit<'a> {
         #[inline]
         fn truncated_length(&self) -> usize {
             self.original_length - self.len()
@@ -379,27 +388,27 @@ pub mod ring {
         }
     }
 
-    impl ops::Drop for WritePermit {
+    impl<'a> ops::Drop for WritePermit<'a> {
         fn drop(&mut self) {
             self.parent.return_write_lease(self);
         }
     }
 
-    impl AsRef<[u8]> for WritePermit {
+    impl<'a> AsRef<[u8]> for WritePermit<'a> {
         #[inline]
         fn as_ref(&self) -> &[u8] {
             &self.view
         }
     }
 
-    impl AsMut<[u8]> for WritePermit {
+    impl<'a> AsMut<[u8]> for WritePermit<'a> {
         #[inline]
         fn as_mut(&mut self) -> &mut [u8] {
             &mut self.view
         }
     }
 
-    impl ops::Deref for WritePermit {
+    impl<'a> ops::Deref for WritePermit<'a> {
         type Target = [u8];
 
         #[inline]
@@ -408,7 +417,7 @@ pub mod ring {
         }
     }
 
-    impl ops::DerefMut for WritePermit {
+    impl<'a> ops::DerefMut for WritePermit<'a> {
         #[inline]
         fn deref_mut(&mut self) -> &mut [u8] {
             &mut self.view
@@ -418,7 +427,7 @@ pub mod ring {
 pub use ring::{ReadPermit, Ring, TruncateLength, WritePermit};
 
 pub mod push {
-    use super::{Lease, PermitState};
+    use super::PermitState;
 
     use std::{
         cell, mem,
@@ -462,6 +471,10 @@ pub mod push {
         pub fn extract(&self) -> Vec<T> {
             self.within_lock(|v| mem::take(v))
         }
+
+        pub fn take_owned(&mut self) -> Vec<T> {
+            mem::replace(&mut self.elements, cell::UnsafeCell::new(Vec::new())).into_inner()
+        }
     }
 
     unsafe impl<T: Send> Sync for Pusher<T> {}
@@ -471,16 +484,30 @@ pub mod futurized {
     use super::{
         push::Pusher,
         ring::{ReadPermit, Ring, WritePermit},
-        Lease, PermitState,
+        Lease,
     };
 
+    use once_cell::sync::Lazy;
+    use parking_lot::Mutex;
+
     use std::{
-        future::Future,
+        collections::VecDeque,
         mem, ops,
-        pin::Pin,
         sync::Arc,
         task::{Context, Poll, Waker},
     };
+
+    static RING_BUF_FREE_LIST: Lazy<Mutex<VecDeque<Ring>>> =
+        Lazy::new(|| Mutex::new(VecDeque::new()));
+
+    fn get_or_create_ring<F: FnOnce() -> Ring>(f: F) -> Ring {
+        RING_BUF_FREE_LIST.lock().pop_front().unwrap_or_else(f)
+    }
+
+    fn return_ring(mut ring: Ring) {
+        ring.clear();
+        RING_BUF_FREE_LIST.lock().push_back(ring);
+    }
 
     ///```
     /// # fn main() { tokio_test::block_on(async {
@@ -489,8 +516,7 @@ pub mod futurized {
     /// use tokio::task;
     /// use std::{cell::UnsafeCell, pin::Pin};
     ///
-    /// let ring = Ring::with_capacity(20);
-    /// let ring = UnsafeCell::new(RingFuturized::wrap_ring(ring));
+    /// let ring = UnsafeCell::new(RingFuturized::new());
     /// let read_lease = poll_fn(|cx| unsafe { &mut *ring.get() }.poll_read(cx, 5));
     /// {
     ///   let mut write_lease = poll_fn(|cx| {
@@ -505,9 +531,27 @@ pub mod futurized {
     /// # })}
     ///```
     pub struct RingFuturized {
-        buf: Arc<Ring>,
-        read_wakers: Arc<Pusher<Waker>>,
-        write_wakers: Arc<Pusher<Waker>>,
+        buf: mem::ManuallyDrop<Ring>,
+        read_wakers: Pusher<Waker>,
+        write_wakers: Pusher<Waker>,
+    }
+
+    impl ops::Drop for RingFuturized {
+        fn drop(&mut self) {
+            let Self {
+                buf,
+                read_wakers,
+                write_wakers,
+            } = self;
+            for waker in read_wakers
+                .take_owned()
+                .into_iter()
+                .chain(write_wakers.take_owned().into_iter())
+            {
+                waker.wake();
+            }
+            return_ring(unsafe { mem::ManuallyDrop::take(buf) });
+        }
     }
 
     impl RingFuturized {
@@ -516,46 +560,55 @@ pub mod futurized {
             self.buf.capacity()
         }
 
-        pub fn wrap_ring(buf: Ring) -> Self {
+        pub fn new() -> Self {
+            let ring = get_or_create_ring(|| Ring::with_capacity(8096));
             Self {
-                buf: Arc::new(buf),
-                read_wakers: Arc::new(Pusher::<Waker>::new()),
-                write_wakers: Arc::new(Pusher::<Waker>::new()),
+                buf: mem::ManuallyDrop::new(ring),
+                read_wakers: Pusher::<Waker>::new(),
+                write_wakers: Pusher::<Waker>::new(),
             }
         }
 
-        pub fn poll_read_until_no_space(
-            &mut self,
-            cx: &mut Context<'_>,
-        ) -> Poll<Option<ReadPermitFuturized>> {
-            match self.buf.clone().request_read_lease(self.capacity()) {
-                Lease::NoSpace => Poll::Ready(None),
-                Lease::PossiblyTaken => {
-                    self.read_wakers.push(cx.waker().clone());
-                    Poll::Pending
-                }
-                Lease::Taken(permit) => Poll::Ready(Some(ReadPermitFuturized::for_buf(
-                    permit,
-                    self.read_wakers.clone(),
-                    self.write_wakers.clone(),
-                ))),
-            }
-        }
+        /* pub fn wrap_ring(buf: Ring) -> Self { */
+        /*     Self { */
+        /*         buf: Arc::new(buf), */
+        /*         read_wakers: Arc::new(Pusher::<Waker>::new()), */
+        /*         write_wakers: Arc::new(Pusher::<Waker>::new()), */
+        /*     } */
+        /* } */
+
+        /* pub fn poll_read_until_no_space( */
+        /*     &mut self, */
+        /*     cx: &mut Context<'_>, */
+        /* ) -> Poll<Option<ReadPermitFuturized>> { */
+        /*     match self.buf.request_read_lease(self.capacity()) { */
+        /*         Lease::NoSpace => Poll::Ready(None), */
+        /*         Lease::PossiblyTaken => { */
+        /*             self.read_wakers.push(cx.waker().clone()); */
+        /*             Poll::Pending */
+        /*         } */
+        /*         Lease::Taken(permit) => Poll::Ready(Some(ReadPermitFuturized::for_buf( */
+        /*             permit, */
+        /*             self.read_wakers.clone(), */
+        /*             self.write_wakers.clone(), */
+        /*         ))), */
+        /*     } */
+        /* } */
 
         pub fn poll_read(
             &mut self,
             cx: &mut Context<'_>,
             requested_length: usize,
-        ) -> Poll<ReadPermitFuturized> {
-            match self.buf.clone().request_read_lease(requested_length) {
+        ) -> Poll<ReadPermitFuturized<'_>> {
+            match self.buf.request_read_lease(requested_length) {
                 Lease::NoSpace | Lease::PossiblyTaken => {
                     self.read_wakers.push(cx.waker().clone());
                     Poll::Pending
                 }
                 Lease::Taken(permit) => Poll::Ready(ReadPermitFuturized::for_buf(
                     permit,
-                    self.read_wakers.clone(),
-                    self.write_wakers.clone(),
+                    &self.read_wakers,
+                    &self.write_wakers,
                 )),
             }
         }
@@ -564,45 +617,32 @@ pub mod futurized {
             &mut self,
             cx: &mut Context<'_>,
             requested_length: usize,
-        ) -> Poll<WritePermitFuturized> {
-            match self.buf.clone().request_write_lease(requested_length) {
+        ) -> Poll<WritePermitFuturized<'_>> {
+            match self.buf.request_write_lease(requested_length) {
                 Lease::NoSpace | Lease::PossiblyTaken => {
                     self.write_wakers.push(cx.waker().clone());
                     Poll::Pending
                 }
                 Lease::Taken(permit) => Poll::Ready(WritePermitFuturized::for_buf(
                     permit,
-                    self.read_wakers.clone(),
-                    self.write_wakers.clone(),
+                    &self.read_wakers,
+                    &self.write_wakers,
                 )),
             }
         }
     }
 
-    impl ops::Drop for RingFuturized {
-        fn drop(&mut self) {
-            for waker in self
-                .read_wakers
-                .extract()
-                .into_iter()
-                .chain(self.write_wakers.extract().into_iter())
-            {
-                waker.wake();
-            }
-        }
+    pub struct ReadPermitFuturized<'a> {
+        buf: mem::ManuallyDrop<ReadPermit<'a>>,
+        read_wakers: &'a Pusher<Waker>,
+        write_wakers: &'a Pusher<Waker>,
     }
 
-    pub struct ReadPermitFuturized {
-        buf: mem::ManuallyDrop<ReadPermit>,
-        read_wakers: Arc<Pusher<Waker>>,
-        write_wakers: Arc<Pusher<Waker>>,
-    }
-
-    impl ReadPermitFuturized {
+    impl<'a> ReadPermitFuturized<'a> {
         pub(crate) fn for_buf(
-            buf: ReadPermit,
-            read_wakers: Arc<Pusher<Waker>>,
-            write_wakers: Arc<Pusher<Waker>>,
+            buf: ReadPermit<'a>,
+            read_wakers: &'a Pusher<Waker>,
+            write_wakers: &'a Pusher<Waker>,
         ) -> Self {
             Self {
                 buf: mem::ManuallyDrop::new(buf),
@@ -612,7 +652,7 @@ pub mod futurized {
         }
     }
 
-    impl ops::Drop for ReadPermitFuturized {
+    impl<'a> ops::Drop for ReadPermitFuturized<'a> {
         fn drop(&mut self) {
             let Self {
                 buf,
@@ -638,47 +678,47 @@ pub mod futurized {
         }
     }
 
-    impl AsRef<ReadPermit> for ReadPermitFuturized {
+    impl<'a> AsRef<ReadPermit<'a>> for ReadPermitFuturized<'a> {
         #[inline]
-        fn as_ref(&self) -> &ReadPermit {
+        fn as_ref(&self) -> &ReadPermit<'a> {
             &self.buf
         }
     }
 
-    impl AsMut<ReadPermit> for ReadPermitFuturized {
+    impl<'a> AsMut<ReadPermit<'a>> for ReadPermitFuturized<'a> {
         #[inline]
-        fn as_mut(&mut self) -> &mut ReadPermit {
+        fn as_mut(&mut self) -> &mut ReadPermit<'a> {
             &mut self.buf
         }
     }
 
-    impl ops::Deref for ReadPermitFuturized {
-        type Target = ReadPermit;
+    impl<'a> ops::Deref for ReadPermitFuturized<'a> {
+        type Target = ReadPermit<'a>;
 
         #[inline]
-        fn deref(&self) -> &ReadPermit {
+        fn deref(&self) -> &ReadPermit<'a> {
             &self.buf
         }
     }
 
-    impl ops::DerefMut for ReadPermitFuturized {
+    impl<'a> ops::DerefMut for ReadPermitFuturized<'a> {
         #[inline]
-        fn deref_mut(&mut self) -> &mut ReadPermit {
+        fn deref_mut(&mut self) -> &mut ReadPermit<'a> {
             &mut self.buf
         }
     }
 
-    pub struct WritePermitFuturized {
-        buf: mem::ManuallyDrop<WritePermit>,
-        read_wakers: Arc<Pusher<Waker>>,
-        write_wakers: Arc<Pusher<Waker>>,
+    pub struct WritePermitFuturized<'a> {
+        buf: mem::ManuallyDrop<WritePermit<'a>>,
+        read_wakers: &'a Pusher<Waker>,
+        write_wakers: &'a Pusher<Waker>,
     }
 
-    impl WritePermitFuturized {
+    impl<'a> WritePermitFuturized<'a> {
         pub(crate) fn for_buf(
-            buf: WritePermit,
-            read_wakers: Arc<Pusher<Waker>>,
-            write_wakers: Arc<Pusher<Waker>>,
+            buf: WritePermit<'a>,
+            read_wakers: &'a Pusher<Waker>,
+            write_wakers: &'a Pusher<Waker>,
         ) -> Self {
             Self {
                 buf: mem::ManuallyDrop::new(buf),
@@ -688,7 +728,7 @@ pub mod futurized {
         }
     }
 
-    impl ops::Drop for WritePermitFuturized {
+    impl<'a> ops::Drop for WritePermitFuturized<'a> {
         fn drop(&mut self) {
             let Self {
                 buf,
@@ -714,32 +754,32 @@ pub mod futurized {
         }
     }
 
-    impl AsRef<WritePermit> for WritePermitFuturized {
+    impl<'a> AsRef<WritePermit<'a>> for WritePermitFuturized<'a> {
         #[inline]
-        fn as_ref(&self) -> &WritePermit {
+        fn as_ref(&self) -> &WritePermit<'a> {
             &self.buf
         }
     }
 
-    impl AsMut<WritePermit> for WritePermitFuturized {
+    impl<'a> AsMut<WritePermit<'a>> for WritePermitFuturized<'a> {
         #[inline]
-        fn as_mut(&mut self) -> &mut WritePermit {
+        fn as_mut(&mut self) -> &mut WritePermit<'a> {
             &mut self.buf
         }
     }
 
-    impl ops::Deref for WritePermitFuturized {
-        type Target = WritePermit;
+    impl<'a> ops::Deref for WritePermitFuturized<'a> {
+        type Target = WritePermit<'a>;
 
         #[inline]
-        fn deref(&self) -> &WritePermit {
+        fn deref(&self) -> &WritePermit<'a> {
             &self.buf
         }
     }
 
-    impl ops::DerefMut for WritePermitFuturized {
+    impl<'a> ops::DerefMut for WritePermitFuturized<'a> {
         #[inline]
-        fn deref_mut(&mut self) -> &mut WritePermit {
+        fn deref_mut(&mut self) -> &mut WritePermit<'a> {
             &mut self.buf
         }
     }
