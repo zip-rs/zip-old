@@ -304,11 +304,14 @@ pub mod stream_adaptors {
             mut inner: sync::OwnedMappedMutexGuard<Option<S>, S>,
             tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<io::Result<()>>>>>,
         ) {
+            assert!(!write_lease.is_empty());
             match inner.read(&mut write_lease) {
                 Err(e) => {
-                    if e.kind() == io::ErrorKind::Interrupted {
-                        write_lease.truncate(0);
-                    } else {
+                    /* If any error occurs, assume no bytes were written, as per std::io::Read
+                     * docs. */
+                    write_lease.truncate(0);
+                    if e.kind() != io::ErrorKind::Interrupted {
+                        /* Interrupted is the only retryable error according to the docs. */
                         if let Some(tx) = tx.lock().take() {
                             tx.send(Err(e))
                                 .expect("receiver should not have been dropped yet!");
@@ -317,6 +320,8 @@ pub mod stream_adaptors {
                 }
                 Ok(n) => {
                     write_lease.truncate(n);
+                    /* If we received 0 after providing a non-empty output buf, assume we are
+                     * OVER! */
                     if n == 0 {
                         if let Some(tx) = tx.lock().take() {
                             tx.send(Ok(()))
@@ -340,7 +345,7 @@ pub mod stream_adaptors {
 
             if let Poll::Ready(read_data) = s.ring.poll_read(cx, buf.remaining()) {
                 debug_assert!(!read_data.is_empty());
-                buf.put(&**read_data);
+                buf.put_slice(&**read_data);
                 return Poll::Ready(Ok(()));
             }
 
@@ -350,7 +355,9 @@ pub mod stream_adaptors {
                 );
             }
 
-            let write_data = ready!(s.ring.poll_write(cx, buf.remaining()));
+            let write_data = ready!(s.ring.poll_write(cx, s.ring.capacity()));
+            /* FIXME: i'm pretty sure this can cause a segfault with the current
+             * mem::ManuallyDrop::take() strategy and global mutex for Ring instances. */
             let write_data: WritePermitFuturized<'static> = unsafe { mem::transmute(write_data) };
             let tx = s.tx.clone();
             if let Ok(inner) = s.inner.clone().try_lock_owned() {

@@ -557,7 +557,7 @@ pub mod futurized {
         }
 
         pub fn new() -> Self {
-            let ring = get_or_create_ring(|| Ring::with_capacity(8096));
+            let ring = get_or_create_ring(|| Ring::with_capacity(32 * 1024));
             Self {
                 buf: mem::ManuallyDrop::new(ring),
                 read_wakers: Pusher::<Waker>::new(),
