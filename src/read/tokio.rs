@@ -489,9 +489,8 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
         let paths = Arc::new(sync::RwLock::new(CompletedPaths::new()));
         let (path_tx, path_rx) = mpsc::unbounded_channel::<PathBuf>();
-        let (handle_tx, handle_rx) = mpsc::unbounded_channel::<(PathBuf, fs::File)>();
         let (compressed_tx, compressed_rx) = mpsc::unbounded_channel::<(PathBuf, Box<[u8]>)>();
-        let (paired_tx, paired_rx) = mpsc::unbounded_channel::<(PathBuf, fs::File, Box<[u8]>)>();
+        let (paired_tx, paired_rx) = mpsc::unbounded_channel::<(PathBuf, Box<[u8]>, fs::File)>();
 
         /* (1) Before we even start reading from the file handle, we know what our output paths are
          *     going to be from the ZipFileData, so create any necessary subdirectory structures. */
@@ -525,21 +524,18 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             Ok::<_, ZipError>(())
         });
 
-        /* (2) We additionally know what the precise uncompressed output size should be in advance,
-         *     and use this to our advantage to pre-populate file handles truncated to the known
-         *     length. */
         let root2 = root.clone();
         let shared = self.shared.clone();
-        let allocate_handles_task = task::spawn(async move {
+        let matching_task = task::spawn(async move {
+            use futures_util::{select, FutureExt};
             use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 
-            let path_rx =
-                UnboundedReceiverStream::new(path_rx).filter(|name| !CompletedPaths::is_dir(name));
-            let handle_tx = &handle_tx;
-            path_rx
+            let compressed_rx = UnboundedReceiverStream::new(compressed_rx);
+            let paired_tx = &paired_tx;
+            let root2 = &root2;
+            compressed_rx
                 .map(Ok)
-                .try_for_each_concurrent(None, move |name| {
-                    let root2 = root2.clone();
+                .try_for_each_concurrent(None, move |(name, buf)| {
                     let shared = shared.clone();
                     async move {
                         /* dbg!(&name); */
@@ -554,80 +550,13 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                         let handle = fs::File::create(full_path).await?;
                         handle.set_len(*uncompressed_size).await?;
 
-                        handle_tx.send((name, handle)).unwrap();
+                        paired_tx.send((name, buf, handle)).unwrap();
 
                         Ok::<_, ZipError>(())
                     }
                 })
                 .await?;
 
-            Ok::<_, ZipError>(())
-        });
-
-        let shared = self.shared.clone();
-        let matching_task = task::spawn(async move {
-            use futures_util::{select, FutureExt};
-            use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
-
-            let mut handle_rx = UnboundedReceiverStream::new(handle_rx);
-
-            let mut compressed_rx = UnboundedReceiverStream::new(compressed_rx);
-
-            let mut remaining_unmatched_handles: IndexMap<
-                PathBuf,
-                (Option<fs::File>, Option<Box<[u8]>>),
-            > = shared
-                .files
-                .values()
-                .map(|data| {
-                    data.enclosed_name()
-                        .ok_or(ZipError::InvalidArchive("Invalid file path"))
-                        .map(|name| (name.to_path_buf(), (None, None)))
-                })
-                .collect::<ZipResult<IndexMap<PathBuf, _>>>()?;
-
-            let mut stopped_handle = false;
-            let mut stopped_compressed = false;
-            loop {
-                let (name, val) = select! {
-                    x = handle_rx.next().fuse() => match x {
-                        Some((name, handle)) => {
-                            let val = remaining_unmatched_handles.get_mut(&name).unwrap();
-                            let _ = val.0.insert(handle);
-                            (name, val)
-                        },
-                        None => {
-                            stopped_handle = true;
-                            continue;
-                        },
-                    },
-                    x = compressed_rx.next().fuse() => match x {
-                        Some((name, buf)) => {
-                            let val = remaining_unmatched_handles.get_mut(&name).unwrap();
-                            let _ = val.1.insert(buf);
-                            (name, val)
-                        },
-                        None => {
-                            stopped_compressed = true;
-                            continue;
-                        },
-                    },
-                    complete => break,
-                };
-                /* dbg!(&name); */
-                if val.0.is_some() && val.1.is_some() {
-                    let handle = mem::take(&mut val.0).unwrap();
-                    let buf = mem::take(&mut val.1).unwrap();
-                    remaining_unmatched_handles.remove(&name).unwrap();
-                    paired_tx.send((name, handle, buf)).unwrap();
-                }
-                if stopped_handle && stopped_compressed {
-                    break;
-                }
-                if remaining_unmatched_handles.is_empty() {
-                    break;
-                }
-            }
             Ok::<_, ZipError>(())
         });
 
@@ -639,7 +568,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             let paired_rx = UnboundedReceiverStream::new(paired_rx);
             paired_rx
                 .map(Ok)
-                .try_for_each_concurrent(None, move |(name, mut handle, buf)| {
+                .try_for_each_concurrent(None, move |(name, buf, mut handle)| {
                     let shared = shared.clone();
                     async move {
                         /* dbg!(&name); */
@@ -686,7 +615,6 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
         mem::drop(compressed_tx);
 
         dirs_task.await.expect("panic in subtask")?;
-        allocate_handles_task.await.expect("panic in subtask")?;
         matching_task.await.expect("panic in subtask")?;
         decompress_task.await.expect("panic in subtask")?;
 
