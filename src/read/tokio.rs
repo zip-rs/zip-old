@@ -3,6 +3,7 @@
 use crate::combinators::{AsyncIoAdapter, Limiter};
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
+use crate::extraction::CompletedPaths;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::stream_impls::deflate::Deflater;
@@ -26,6 +27,8 @@ use parking_lot::Mutex;
 use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncSeekExt},
+    sync::{self, mpsc},
+    task,
 };
 
 pub trait ReaderWrapper<S>: io::AsyncRead + Unpin {
@@ -195,6 +198,14 @@ impl<S: io::AsyncRead + Unpin> ops::Drop for ZipFile<S> {
     }
 }
 
+async fn create_dir_idempotent(dir: &Path) -> io::Result<()> {
+    match fs::create_dir(dir).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 impl<S: io::AsyncRead + Unpin> ZipFile<S> {
     #[inline]
     pub fn data(&self) -> &ZipFileData {
@@ -202,41 +213,42 @@ impl<S: io::AsyncRead + Unpin> ZipFile<S> {
         data
     }
 
+    #[inline]
+    pub fn name(&self) -> ZipResult<&Path> {
+        self.data()
+            .enclosed_name()
+            .ok_or(ZipError::InvalidArchive("Invalid file path"))
+    }
+
     pub async fn extract_single(
         mut self: Pin<&mut Self>,
-        target: Arc<PathBuf>,
-    ) -> ZipResult<PathBuf> {
-        let name = self
-            .data()
-            .enclosed_name()
-            .and_then(|s| s.to_str())
-            .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+        root: &Path,
+        name: &Path,
+        paths: &sync::RwLock<CompletedPaths>,
+    ) -> ZipResult<()> {
+        let target = root.join(name);
+        let mut outfile = match fs::File::create(&target).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                /* Somehow, the containing dir didn't exist. Let's make it ourself and enter it
+                 * into the registry. */
+                let new_dirs = paths.read().await.new_containing_dirs_needed(name);
 
-        let is_dir = name.ends_with('/');
-        let resulting_path = target.join(name);
-        if is_dir {
-            fs::create_dir_all(&resulting_path).await?;
-        } else {
-            match resulting_path.parent() {
-                None => (),
-                Some(ref p) if p == &Path::new("") => (),
-                Some(p) => {
-                    fs::create_dir_all(p).await?;
+                for dir in new_dirs.iter() {
+                    let full_dir = root.join(dir);
+                    create_dir_idempotent(&full_dir).await?;
                 }
-            }
-            let mut f = fs::File::create(&resulting_path).await?;
-            io::copy(&mut self.as_mut(), &mut f).await?;
-        }
-        // Get and Set permissions
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Some(mode) = self.data().unix_mode() {
-                fs::set_permissions(&resulting_path, std::fs::Permissions::from_mode(mode)).await?;
-            }
-        }
+                paths.write().await.write_dirs(new_dirs);
 
-        Ok(resulting_path)
+                fs::File::create(&target).await?
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
+        io::copy(&mut self.as_mut(), &mut outfile).await?;
+
+        Ok(())
     }
 }
 
@@ -504,13 +516,48 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
     /// # Ok(())
     /// # })}
     ///```
-    pub async fn extract(self: Pin<&mut Self>, target: Arc<PathBuf>) -> ZipResult<()> {
+    pub async fn extract(self: Pin<&mut Self>, root: Arc<PathBuf>) -> ZipResult<()> {
+        let paths = Arc::new(sync::RwLock::new(CompletedPaths::new()));
+        let (tx, rx) = mpsc::unbounded_channel::<Vec<PathBuf>>();
+
+        let root2 = root.clone();
+        let paths2 = paths.clone();
+        let dirs_task = task::spawn(async move {
+            use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
+
+            let mut rx = UnboundedReceiverStream::new(rx);
+
+            while let Some(new_dirs) = rx.next().await {
+                for dir in new_dirs.iter() {
+                    let full_dir = root2.join(dir);
+                    create_dir_idempotent(&full_dir).await?;
+                }
+                paths2.write().await.write_dirs(new_dirs);
+            }
+
+            Ok::<_, ZipError>(())
+        });
+
         let entries = self.entries_stream();
         pin_mut!(entries);
 
         while let Some(mut file) = entries.try_next().await? {
-            let _path = Pin::new(&mut file).extract_single(target.clone()).await?;
+            let name = file.name()?.to_path_buf();
+
+            let new_dirs = paths.read().await.new_containing_dirs_needed(&name);
+            if !new_dirs.is_empty() {
+                tx.send(new_dirs)
+                    .expect("receiver should not have been dropped!");
+            }
+
+            Pin::new(&mut file)
+                .extract_single(&root, &name, &paths)
+                .await?;
         }
+        mem::drop(tx);
+
+        dirs_task.await.expect("panic in subtask")?;
+
         Ok(())
     }
 }
