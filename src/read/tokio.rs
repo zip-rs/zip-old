@@ -20,6 +20,7 @@ use std::{
 };
 
 use async_stream::try_stream;
+use cfg_if::cfg_if;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
 use indexmap::IndexMap;
@@ -672,8 +673,20 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                             io::copy_buf(&mut wrapped, &mut handle).await?
                         );
 
-                        /* TODO: set permissions!!! */
-                        handle.sync_data().await?;
+                        cfg_if! {
+                            if #[cfg(unix)] {
+                                use std::os::unix::fs::PermissionsExt;
+
+                                if let Some(mode) = data.unix_mode() {
+                                    handle
+                                        .set_permissions(std::fs::Permissions::from_mode(mode))
+                                        .await?;
+                                }
+                                handle.sync_all().await?;
+                            } else {
+                                handle.sync_data().await?;
+                            }
+                        }
 
                         Ok::<_, ZipError>(())
                     }
