@@ -544,23 +544,32 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
             let path_rx =
                 UnboundedReceiverStream::new(path_rx).filter(|name| !CompletedPaths::is_dir(name));
-            pin_mut!(path_rx);
+            let handle_tx = &handle_tx;
+            path_rx
+                .map(Ok)
+                .try_for_each_concurrent(None, move |name| {
+                    let root2 = root2.clone();
+                    let shared = shared.clone();
+                    async move {
+                        /* dbg!(&name); */
+                        let ZipFileData {
+                            uncompressed_size, ..
+                        } = shared
+                            .files
+                            .get(name.to_str().unwrap())
+                            .expect("name should work");
 
-            while let Some(name) = path_rx.next().await {
-                /* dbg!(&name); */
-                let ZipFileData {
-                    uncompressed_size, ..
-                } = shared
-                    .files
-                    .get(name.to_str().unwrap())
-                    .expect("name should work");
+                        let full_path = root2.join(&name);
+                        let handle = fs::File::create(full_path).await?;
+                        handle.set_len(*uncompressed_size).await?;
 
-                let full_path = root2.join(&name);
-                let handle = fs::File::create(full_path).await?;
-                handle.set_len(*uncompressed_size).await?;
+                        handle_tx.send((name, handle)).unwrap();
 
-                handle_tx.send((name, handle)).unwrap();
-            }
+                        Ok::<_, ZipError>(())
+                    }
+                })
+                .await?;
+
             Ok::<_, ZipError>(())
         });
 
