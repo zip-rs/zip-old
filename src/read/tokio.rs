@@ -651,7 +651,12 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
                         /* Get the file to write to. */
                         let full_path = root2.join(&name);
-                        let mut handle = fs::File::create(full_path).await?;
+                        let mut handle = fs::OpenOptions::new()
+                            .create(true)
+                            .write(true)
+                            .truncate(true)
+                            .open(full_path)
+                            .await?;
                         /* Set the length, in case this improves performance writing to the handle
                          * just below. */
                         handle.set_len(data.uncompressed_size).await?;
@@ -663,7 +668,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                          * blocking on memory availability for the decompressor. */
                         let mut wrapped = io::BufReader::with_capacity(
                             uncompressed_size,
-                            ZipFileWrappedReader::construct(data, std::io::Cursor::new(buf)),
+                            ZipFileWrappedReader::construct(data, buf.as_ref()),
                         );
 
                         assert_eq!(
@@ -696,6 +701,8 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             Ok::<_, ZipError>(())
         });
 
+        /* (4) In order, scan off the raw memory for every file entry into a Box<[u8]> to avoid
+         *     interleaving decompression with read i/o. */
         let entries = self.entries_stream();
         pin_mut!(entries);
 
