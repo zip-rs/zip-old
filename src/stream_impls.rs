@@ -10,9 +10,7 @@ pub mod deflate {
     use tokio::io;
 
     use std::{
-        cell,
         pin::Pin,
-        sync::Arc,
         task::{ready, Context, Poll},
     };
 

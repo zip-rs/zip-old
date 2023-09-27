@@ -11,7 +11,7 @@ use crate::types::ZipFileData;
 
 use std::{
     marker::Unpin,
-    mem, ops,
+    mem,
     path::{Path, PathBuf},
     pin::Pin,
     str,
@@ -570,9 +570,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
         let shared = self.shared.clone();
         let matching_task = task::spawn(async move {
-            use futures_core::stream::{FusedStream, Stream};
             use futures_util::{select, FutureExt};
-            use indexmap::IndexMap;
             use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 
             let mut handle_rx = UnboundedReceiverStream::new(handle_rx);
@@ -639,7 +637,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
         let shared = self.shared.clone();
         let decompress_task = task::spawn(async move {
-            use futures_util::{StreamExt, TryStreamExt};
+            use futures_util::StreamExt;
             use tokio_stream::wrappers::UnboundedReceiverStream;
 
             let paired_rx = UnboundedReceiverStream::new(paired_rx);
