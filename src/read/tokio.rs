@@ -591,6 +591,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                     x = path_rx.next().fuse() => match x {
                         Some(name) => {
                             let val = remaining_unmatched_paths.get_mut(&name).unwrap();
+                            assert_eq!(val.0, false);
                             val.0 = true;
                             (name, val)
                         },
@@ -602,6 +603,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                     x = compressed_rx.next().fuse() => match x {
                         Some((name, buf)) => {
                             let val = remaining_unmatched_paths.get_mut(&name).unwrap();
+                            assert!(val.1.is_none());
                             let _ = val.1.insert(buf);
                             (name, val)
                         },
@@ -653,16 +655,22 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                          * just below. */
                         handle.set_len(data.uncompressed_size).await?;
 
+                        let uncompressed_size = data.uncompressed_size as usize;
                         /* We already know *exactly* how many bytes we will need to read out
                          * (because this info is recorded in the zip file entryu), so we can
                          * allocate exactly that much to minimize allocation as well as
                          * blocking on memory availability for the decompressor. */
                         let mut wrapped = io::BufReader::with_capacity(
-                            data.uncompressed_size as usize,
+                            uncompressed_size,
                             ZipFileWrappedReader::construct(data, std::io::Cursor::new(buf)),
                         );
 
-                        io::copy_buf(&mut wrapped, &mut handle).await?;
+                        assert_eq!(
+                            uncompressed_size as u64,
+                            /* NB: This appears to be faster than calling .read_to_end() and
+                             * .write_all() with an intermediate buffer for some reason! */
+                            io::copy_buf(&mut wrapped, &mut handle).await?
+                        );
 
                         /* TODO: set permissions!!! */
                         handle.sync_data().await?;
@@ -685,15 +693,16 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                 continue;
             }
             let compressed_size = file.data().compressed_size as usize;
-            let mut compressed_output = vec![0u8; compressed_size];
+
+            let mut compressed_contents: Vec<u8> = Vec::with_capacity(compressed_size);
             assert_eq!(
                 compressed_size,
                 file.coerce_into_raw()
-                    .read_exact(&mut compressed_output)
+                    .read_to_end(&mut compressed_contents)
                     .await?
             );
             compressed_tx
-                .send((name, compressed_output.into_boxed_slice()))
+                .send((name, compressed_contents.into_boxed_slice()))
                 .unwrap();
         }
         mem::drop(compressed_tx);
