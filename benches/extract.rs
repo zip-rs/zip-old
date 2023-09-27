@@ -114,7 +114,7 @@ pub fn bench_extract(c: &mut Criterion) {
     .unwrap();
 
     for (path, desc) in [
-        /* (&*BIG_ARCHIVE_PATH, "big archive"), */
+        (&*BIG_ARCHIVE_PATH, "big archive"),
         (&*SMALL_ARCHIVE_PATH, "small archive"),
         (&random_path, "random archive"),
     ] {

@@ -203,10 +203,10 @@ pub struct ZipFile<'a, S, R: io::AsyncRead + ReaderWrapper<S>> {
     parent: &'a mut ZipArchive<S>,
 }
 
-async fn create_dir_idempotent<P: AsRef<Path>>(dir: P) -> io::Result<()> {
+async fn create_dir_idempotent<P: AsRef<Path>>(dir: P) -> io::Result<Option<()>> {
     match fs::create_dir(dir).await {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Ok(()) => Ok(Some(())),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(None),
         Err(e) => Err(e),
     }
 }
@@ -541,11 +541,15 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                     async move {
                         /* dbg!(&name); */
                         let new_dirs = paths2.read().await.new_containing_dirs_needed(&name);
-                        for dir in new_dirs.iter() {
-                            let full_dir = root2.join(dir);
-                            create_dir_idempotent(full_dir).await?;
+                        for dir in new_dirs.into_iter() {
+                            if paths2.read().await.contains(&dir) {
+                                continue;
+                            }
+                            let full_dir = root2.join(&dir);
+                            if create_dir_idempotent(full_dir).await?.is_some() {
+                                paths2.write().await.confirm_dir(dir);
+                            }
                         }
-                        paths2.write().await.write_dirs(new_dirs);
 
                         path_tx.send(name).unwrap();
 
@@ -638,7 +642,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                     let root2 = root2.clone();
                     async move {
                         /* dbg!(&name); */
-                        let data = shared.files.get(name.to_str().unwrap()).unwrap();
+                        let data = shared.files.get(CompletedPaths::path_str(&name)).unwrap();
 
                         /* Get the file to write to. */
                         let full_path = root2.join(&name);
