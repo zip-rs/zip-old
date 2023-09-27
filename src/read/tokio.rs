@@ -5,6 +5,7 @@ use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
+use crate::stream_impls::deflate::Deflater;
 use crate::types::ZipFileData;
 
 use std::{
@@ -26,17 +27,6 @@ use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncSeekExt},
 };
-use tokio_util::io::SyncIoBridge;
-
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib"
-))]
-use flate2::read::DeflateDecoder;
-
-#[cfg(feature = "bzip2")]
-use bzip2::read::BzDecoder;
 
 pub trait ReaderWrapper<S>: io::AsyncRead + Unpin {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self
@@ -66,9 +56,9 @@ impl<S: io::AsyncRead + Unpin> ReaderWrapper<S> for StoredReader<S> {
     }
 }
 
-pub struct DeflateReader<S>(Crc32Reader<AsyncIoAdapter<DeflateDecoder<SyncIoBridge<Limiter<S>>>>>);
+pub struct DeflateReader<S>(Crc32Reader<Deflater<io::BufReader<Limiter<S>>>>);
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for DeflateReader<S> {
+impl<S: io::AsyncRead + Unpin> io::AsyncRead for DeflateReader<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -78,41 +68,16 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for DeflateReader<
     }
 }
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for DeflateReader<S> {
+impl<S: io::AsyncRead + Unpin> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
         Self(Crc32Reader::new(
-            AsyncIoAdapter::new(DeflateDecoder::new(SyncIoBridge::new(s))),
+            Deflater::new(io::BufReader::with_capacity(32 * 1024, s)),
             data.crc32,
             false,
         ))
     }
     fn into_inner(self) -> Limiter<S> {
-        self.0.into_inner().into_inner().into_inner().into_inner()
-    }
-}
-
-pub struct BzipReader<S>(Crc32Reader<AsyncIoAdapter<BzDecoder<SyncIoBridge<Limiter<S>>>>>);
-
-impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for BzipReader<S> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut io::ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
-    }
-}
-
-impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for BzipReader<S> {
-    fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
-        Self(Crc32Reader::new(
-            AsyncIoAdapter::new(BzDecoder::new(SyncIoBridge::new(s))),
-            data.crc32,
-            false,
-        ))
-    }
-    fn into_inner(self) -> Limiter<S> {
-        self.0.into_inner().into_inner().into_inner().into_inner()
+        self.0.into_inner().into_inner().into_inner()
     }
 }
 
@@ -120,7 +85,6 @@ pub enum ZipFileWrappedReader<S> {
     NoOp,
     Stored(StoredReader<S>),
     Deflated(DeflateReader<S>),
-    Bzip2(BzipReader<S>),
 }
 
 impl<S> Default for ZipFileWrappedReader<S> {
@@ -129,7 +93,7 @@ impl<S> Default for ZipFileWrappedReader<S> {
     }
 }
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for ZipFileWrappedReader<S> {
+impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFileWrappedReader<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -139,12 +103,11 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for ZipFileWrapped
             Self::NoOp => unreachable!(),
             Self::Stored(r) => Pin::new(r).poll_read(cx, buf),
             Self::Deflated(r) => Pin::new(r).poll_read(cx, buf),
-            Self::Bzip2(r) => Pin::new(r).poll_read(cx, buf),
         }
     }
 }
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for ZipFileWrappedReader<S> {
+impl<S: io::AsyncRead + Unpin> ReaderWrapper<S> for ZipFileWrappedReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
         match data.compression_method {
             CompressionMethod::Stored => Self::Stored(StoredReader::<S>::construct(data, s)),
@@ -154,8 +117,6 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for ZipFileWrap
                 feature = "deflate-zlib"
             ))]
             CompressionMethod::Deflated => Self::Deflated(DeflateReader::<S>::construct(data, s)),
-            #[cfg(feature = "bzip2")]
-            CompressionMethod::Bzip2 => Self::Bzip2(BzipReader::<S>::construct(data, s)),
             _ => todo!("other compression methods not supported yet!"),
         }
     }
@@ -164,7 +125,6 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ReaderWrapper<S> for ZipFileWrap
             Self::NoOp => unreachable!(),
             Self::Stored(r) => r.into_inner(),
             Self::Deflated(r) => r.into_inner(),
-            Self::Bzip2(r) => r.into_inner(),
         }
     }
 }
@@ -199,7 +159,7 @@ pub async fn find_content<S: io::AsyncRead + io::AsyncSeek + Unpin>(
     ))
 }
 
-pub async fn get_reader<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static>(
+pub async fn get_reader<S: io::AsyncRead + io::AsyncSeek + Unpin>(
     data: &ZipFileData,
     reader: S,
 ) -> ZipResult<ZipFileWrappedReader<S>> {
@@ -214,14 +174,14 @@ pub struct Shared {
     comment: Vec<u8>,
 }
 
-pub struct ZipFile<S: io::AsyncRead + Unpin + Send + 'static> {
+pub struct ZipFile<S: io::AsyncRead + Unpin> {
     shared: Arc<Shared>,
     index: usize,
     wrapped_reader: ZipFileWrappedReader<S>,
     parent_reader: Arc<Mutex<Option<S>>>,
 }
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> ops::Drop for ZipFile<S> {
+impl<S: io::AsyncRead + Unpin> ops::Drop for ZipFile<S> {
     fn drop(&mut self) {
         match mem::take(&mut self.wrapped_reader) {
             ZipFileWrappedReader::NoOp => (),
@@ -235,7 +195,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ops::Drop for ZipFile<S> {
     }
 }
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> ZipFile<S> {
+impl<S: io::AsyncRead + Unpin> ZipFile<S> {
     #[inline]
     pub fn data(&self) -> &ZipFileData {
         let (_, data) = self.shared.as_ref().files.get_index(self.index).unwrap();
@@ -269,7 +229,7 @@ impl<S: io::AsyncRead + Unpin + Send + 'static> ZipFile<S> {
     }
 }
 
-impl<S: io::AsyncRead + Unpin + Send + 'static> io::AsyncRead for ZipFile<S> {
+impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFile<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
