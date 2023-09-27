@@ -518,12 +518,15 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
     pub async fn extract(self: Pin<&mut Self>, root: Arc<PathBuf>) -> ZipResult<()> {
         fs::create_dir_all(&*root).await?;
 
-        let names: Vec<PathBuf> = self.file_names().map(PathBuf::from).collect();
+        let names: Vec<&Path> = self
+            .file_names()
+            .map(|name| Path::new::<str>(unsafe { mem::transmute(name) }))
+            .collect();
 
         let paths = Arc::new(sync::RwLock::new(CompletedPaths::new()));
-        let (path_tx, path_rx) = mpsc::unbounded_channel::<PathBuf>();
-        let (compressed_tx, compressed_rx) = mpsc::unbounded_channel::<(PathBuf, Box<[u8]>)>();
-        let (paired_tx, paired_rx) = mpsc::unbounded_channel::<(PathBuf, Box<[u8]>)>();
+        let (path_tx, path_rx) = mpsc::unbounded_channel::<&Path>();
+        let (compressed_tx, compressed_rx) = mpsc::unbounded_channel::<(&Path, Box<[u8]>)>();
+        let (paired_tx, paired_rx) = mpsc::unbounded_channel::<(&Path, Box<[u8]>)>();
 
         /* (1) Before we even start reading from the file handle, we know what our output paths are
          *     going to be from the ZipFileData, so create any necessary subdirectory structures. */
@@ -571,16 +574,15 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
             let mut compressed_rx = UnboundedReceiverStream::new(compressed_rx);
 
-            let mut remaining_unmatched_paths: IndexMap<PathBuf, (bool, Option<Box<[u8]>>)> =
-                shared
-                    .files
-                    .values()
-                    .map(|data| {
-                        data.enclosed_name()
-                            .ok_or(ZipError::InvalidArchive("Invalid file path"))
-                            .map(|name| (name.to_path_buf(), (false, None)))
-                    })
-                    .collect::<ZipResult<IndexMap<PathBuf, _>>>()?;
+            let mut remaining_unmatched_paths: IndexMap<&Path, (bool, Option<Box<[u8]>>)> = shared
+                .files
+                .values()
+                .map(|data| {
+                    data.enclosed_name()
+                        .ok_or(ZipError::InvalidArchive("Invalid file path"))
+                        .map(|name| (name, (false, None)))
+                })
+                .collect::<ZipResult<IndexMap<&Path, _>>>()?;
 
             let mut stopped_path = false;
             let mut stopped_compressed = false;
@@ -677,7 +679,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
         pin_mut!(entries);
 
         while let Some(mut file) = entries.try_next().await? {
-            let name = file.name()?.to_path_buf();
+            let name: &'static Path = unsafe { mem::transmute(file.name()?) };
             /* dbg!(&name); */
             if CompletedPaths::is_dir(&name) {
                 continue;
