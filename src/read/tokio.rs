@@ -640,12 +640,15 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                         /* dbg!(&name); */
                         let data = shared.files.get(name.to_str().unwrap()).unwrap();
 
+                        /* Get the file to write to. */
                         let full_path = root2.join(&name);
                         let mut handle = fs::File::create(full_path).await?;
+                        /* Set the length, in case this improves performance writing to the handle
+                         * just below. */
                         handle.set_len(data.uncompressed_size).await?;
 
-                        /* We already know exactly how many bytes we will need to read out (because
-                         * this info is recorded in the zip file entryu), so we can
+                        /* We already know *exactly* how many bytes we will need to read out
+                         * (because this info is recorded in the zip file entryu), so we can
                          * allocate exactly that much to minimize allocation as well as
                          * blocking on memory availability for the decompressor. */
                         let mut wrapped = io::BufReader::with_capacity(
@@ -654,6 +657,9 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                         );
 
                         io::copy_buf(&mut wrapped, &mut handle).await?;
+
+                        /* TODO: set permissions!!! */
+                        handle.sync_data().await?;
 
                         Ok::<_, ZipError>(())
                     }
