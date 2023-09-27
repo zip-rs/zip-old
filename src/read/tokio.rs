@@ -683,11 +683,11 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                 continue;
             }
             let compressed_size = file.data().compressed_size as usize;
-            let mut compressed_output = Vec::with_capacity(compressed_size);
+            let mut compressed_output = vec![0u8; compressed_size];
             assert_eq!(
                 compressed_size,
                 file.coerce_into_raw()
-                    .read_to_end(&mut compressed_output)
+                    .read_exact(&mut compressed_output)
                     .await?
             );
             compressed_tx
