@@ -179,7 +179,6 @@ pub mod stream_adaptors {
             }
 
             let s = self.get_mut();
-            let start = buf.filled().len();
             buf.initialize_unfilled_to(num_bytes_to_read);
             let mut unfilled_buf = buf.take(num_bytes_to_read);
             match Pin::new(&mut s.source_stream).poll_read(cx, &mut unfilled_buf) {

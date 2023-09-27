@@ -23,7 +23,6 @@ use async_stream::try_stream;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
 use indexmap::IndexMap;
-use parking_lot::Mutex;
 use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncSeekExt},
@@ -191,25 +190,10 @@ pub struct Shared {
     comment: Vec<u8>,
 }
 
-pub struct ZipFile<S: io::AsyncRead + Unpin> {
+pub struct ZipFile<'a, S> {
     shared: Arc<Shared>,
     index: usize,
-    wrapped_reader: ZipFileWrappedReader<S>,
-    parent_reader: Arc<Mutex<Option<S>>>,
-}
-
-impl<S: io::AsyncRead + Unpin> ops::Drop for ZipFile<S> {
-    fn drop(&mut self) {
-        match mem::take(&mut self.wrapped_reader) {
-            ZipFileWrappedReader::NoOp => (),
-            x => {
-                let _ = self
-                    .parent_reader
-                    .lock()
-                    .insert(x.into_inner().into_inner());
-            }
-        }
-    }
+    wrapped_reader: ZipFileWrappedReader<&'a mut S>,
 }
 
 async fn create_dir_idempotent<P: AsRef<Path>>(dir: P) -> io::Result<()> {
@@ -220,12 +204,7 @@ async fn create_dir_idempotent<P: AsRef<Path>>(dir: P) -> io::Result<()> {
     }
 }
 
-impl<S: io::AsyncRead + Unpin> ZipFile<S> {
-    pub fn coerce_into_raw(&mut self) -> &mut Self {
-        self.wrapped_reader = mem::take(&mut self.wrapped_reader).coerce_into_raw();
-        self
-    }
-
+impl<'a, S> ZipFile<'a, S> {
     #[inline]
     pub fn data(&self) -> &ZipFileData {
         let (_, data) = self.shared.as_ref().files.get_index(self.index).unwrap();
@@ -240,7 +219,14 @@ impl<S: io::AsyncRead + Unpin> ZipFile<S> {
     }
 }
 
-impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFile<S> {
+impl<'a, S: io::AsyncRead + Unpin> ZipFile<'a, S> {
+    pub fn coerce_into_raw(&mut self) -> &mut Self {
+        self.wrapped_reader = mem::take(&mut self.wrapped_reader).coerce_into_raw();
+        self
+    }
+}
+
+impl<'a, S: io::AsyncRead + Unpin> io::AsyncRead for ZipFile<'a, S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -252,7 +238,7 @@ impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFile<S> {
 
 #[derive(Clone, Debug)]
 pub struct ZipArchive<S> {
-    reader: Arc<Mutex<Option<S>>>,
+    reader: S,
     shared: Arc<Shared>,
 }
 
@@ -406,10 +392,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             comment: footer.zip_file_comment,
         });
 
-        Ok(ZipArchive {
-            reader: Arc::new(Mutex::new(Some(reader))),
-            shared,
-        })
+        Ok(ZipArchive { reader, shared })
     }
 }
 
@@ -435,12 +418,12 @@ impl<S> ZipArchive<S> {
     }
 
     pub fn into_inner(self) -> S {
-        self.reader.lock().take().unwrap()
+        self.reader
     }
 }
 
 impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
-    pub async fn by_name(self: Pin<&mut Self>, name: &str) -> ZipResult<ZipFile<S>> {
+    pub async fn by_name<'a>(self: Pin<&'a mut Self>, name: &str) -> ZipResult<ZipFile<'a, S>> {
         let index = match self.shared.files.get_index_of(name) {
             None => {
                 return Err(ZipError::FileNotFound);
@@ -450,7 +433,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
         self.by_index(index).await
     }
 
-    pub async fn by_index(self: Pin<&mut Self>, index: usize) -> ZipResult<ZipFile<S>> {
+    pub async fn by_index<'a>(self: Pin<&'a mut Self>, index: usize) -> ZipResult<ZipFile<'a, S>> {
         let s = self.get_mut();
         let data = match s.shared.as_ref().files.get_index(index) {
             None => {
@@ -459,23 +442,22 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             Some((_, data)) => data,
         };
         let shared = s.shared.clone();
-        let parent_reader = s.reader.clone();
-        let reader = s.reader.lock().take().unwrap();
-        let wrapped_reader = get_reader(data, reader).await?;
+        let wrapped_reader = get_reader(data, &mut s.reader).await?;
         Ok(ZipFile {
             shared,
             index,
             wrapped_reader,
-            parent_reader,
         })
     }
 
-    pub fn entries_stream(self: Pin<&mut Self>) -> impl Stream<Item = ZipResult<ZipFile<S>>> + '_ {
+    pub fn entries_stream<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> impl Stream<Item = ZipResult<ZipFile<'a, S>>> + '_ {
+        let len = self.len();
+        let s = std::cell::UnsafeCell::new(self.get_mut());
         try_stream! {
-            let s = self.get_mut();
-
-            for i in 0..s.len() {
-                let f = Pin::new(&mut *s).by_index(i).await?;
+            for i in 0..len {
+                let f = Pin::new(unsafe { &mut **s.get() }).by_index(i).await?;
                 yield f;
             }
         }
@@ -520,17 +502,30 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
         let root2 = root.clone();
         let paths2 = paths.clone();
         let dirs_task = task::spawn(async move {
-            for name in names.into_iter() {
-                /* dbg!(&name); */
-                let new_dirs = paths2.read().await.new_containing_dirs_needed(&name);
-                for dir in new_dirs.iter() {
-                    let full_dir = root2.join(dir);
-                    create_dir_idempotent(full_dir).await?;
-                }
-                paths2.write().await.write_dirs(new_dirs);
+            use futures_util::{stream, StreamExt};
 
-                path_tx.send(name).unwrap();
-            }
+            let path_tx = &path_tx;
+            stream::iter(names.into_iter())
+                .map(Ok)
+                .try_for_each_concurrent(None, move |name| {
+                    let root2 = root2.clone();
+                    let paths2 = paths2.clone();
+                    async move {
+                        /* dbg!(&name); */
+                        let new_dirs = paths2.read().await.new_containing_dirs_needed(&name);
+                        for dir in new_dirs.iter() {
+                            let full_dir = root2.join(dir);
+                            create_dir_idempotent(full_dir).await?;
+                        }
+                        paths2.write().await.write_dirs(new_dirs);
+
+                        path_tx.send(name).unwrap();
+
+                        Ok::<_, ZipError>(())
+                    }
+                })
+                .await?;
+
             Ok::<_, ZipError>(())
         });
 
