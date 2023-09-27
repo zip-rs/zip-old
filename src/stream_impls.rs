@@ -32,6 +32,12 @@ pub mod deflate {
         }
     }
 
+    impl<S: io::AsyncRead> Deflater<S> {
+        pub fn buffered(inner: S) -> Deflater<io::BufReader<S>> {
+            Deflater::new(io::BufReader::with_capacity(32 * 1024, inner))
+        }
+    }
+
     impl<S: io::AsyncBufRead + Unpin> io::AsyncRead for Deflater<S> {
         fn poll_read(
             self: Pin<&mut Self>,

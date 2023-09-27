@@ -2,7 +2,7 @@
 
 use std::marker::Unpin;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use crc32fast::Hasher;
 use tokio::io;
@@ -68,25 +68,19 @@ impl<R: io::AsyncRead + Unpin> io::AsyncRead for Crc32Reader<R> {
 
         let s = self.get_mut();
 
-        match Pin::new(&mut s.inner).poll_read(cx, buf) {
-            Poll::Pending => {
-                return Poll::Pending;
-            }
-            Poll::Ready(x) => match x {
-                Err(e) => return Poll::Ready(Err(e)),
-                Ok(()) => {
-                    let written: usize = buf.filled().len() - start;
-                    if written == 0 {
-                        if !s.ae2_encrypted && !s.check_matches() {
-                            return Poll::Ready(Err(io::Error::new(
-                                io::ErrorKind::Other,
-                                "Invalid checksum",
-                            )));
-                        }
-                    }
-                }
-            },
+        if let Err(e) = ready!(Pin::new(&mut s.inner).poll_read(cx, buf)) {
+            return Poll::Ready(Err(e));
         }
+
+        let written: usize = buf.filled().len() - start;
+        if written == 0 {
+            return Poll::Ready(if !s.ae2_encrypted && !s.check_matches() {
+                Err(io::Error::new(io::ErrorKind::Other, "Invalid checksum"))
+            } else {
+                Ok(())
+            });
+        }
+
         s.hasher.update(&buf.filled()[start..]);
         Poll::Ready(Ok(()))
     }

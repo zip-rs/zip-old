@@ -72,11 +72,7 @@ impl<S: io::AsyncRead + Unpin> io::AsyncRead for DeflateReader<S> {
 
 impl<S: io::AsyncRead + Unpin> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: Limiter<S>) -> Self {
-        Self(Crc32Reader::new(
-            Deflater::new(io::BufReader::with_capacity(32 * 1024, s)),
-            data.crc32,
-            false,
-        ))
+        Self(Crc32Reader::new(Deflater::buffered(s), data.crc32, false))
     }
     fn into_inner(self) -> Limiter<S> {
         self.0.into_inner().into_inner().into_inner()
