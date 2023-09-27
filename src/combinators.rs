@@ -14,7 +14,6 @@ pub mod stream_adaptors {
 
     use std::{cmp, future::Future, mem, sync::Arc, task::ready};
 
-    use bytes::BufMut;
     use tokio::{
         sync::{self, oneshot},
         task,
@@ -175,29 +174,24 @@ pub mod stream_adaptors {
             debug_assert!(buf.remaining() > 0);
 
             let num_bytes_to_read: usize = self.limit_length(buf.remaining());
-            /* dbg!(num_bytes_to_read); */
             if num_bytes_to_read == 0 {
                 return Poll::Ready(Ok(()));
             }
 
             let s = self.get_mut();
             let start = buf.filled().len();
-            debug_assert_eq!(start, 0);
             buf.initialize_unfilled_to(num_bytes_to_read);
             let mut unfilled_buf = buf.take(num_bytes_to_read);
             match Pin::new(&mut s.source_stream).poll_read(cx, &mut unfilled_buf) {
                 Poll::Pending => Poll::Pending,
                 Poll::Ready(x) => {
-                    let filled_len = unfilled_buf.filled().len();
+                    let bytes_read = unfilled_buf.filled().len();
                     Poll::Ready(x.map(|()| {
-                        let bytes_read = filled_len - start;
-                        /* dbg!(bytes_read); */
                         assert!(bytes_read <= num_bytes_to_read);
                         if bytes_read > 0 {
                             buf.advance(bytes_read);
                             s.push_cursor(bytes_read);
                         }
-                        /* dbg!(s.remaining_len()); */
                     }))
                 }
             }

@@ -21,14 +21,18 @@ impl CompletedPaths {
         self.seen.contains(path.as_ref())
     }
 
+    #[inline]
+    pub fn is_dir(path: impl AsRef<Path>) -> bool {
+        path.as_ref()
+            .to_str()
+            .expect("paths should be valid unicode")
+            .ends_with('/')
+    }
+
     pub fn containing_dirs<'a>(
         path: &'a (impl AsRef<Path> + ?Sized),
     ) -> impl Iterator<Item = &'a Path> {
-        let is_dir = path
-            .as_ref()
-            .to_str()
-            .expect("paths should be valid unicode")
-            .ends_with('/');
+        let is_dir = Self::is_dir(path);
         path.as_ref()
             .ancestors()
             .inspect(|p| {

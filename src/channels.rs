@@ -121,7 +121,10 @@ pub mod ring {
         }
 
         pub(crate) fn return_write_lease(&self, permit: &WritePermit<'_>) {
-            debug_assert!(self.write_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
+            debug_assert!(
+                self.write_state.load(Ordering::Relaxed)
+                    == <PermitState as Into<u8>>::into(PermitState::TakenOut)
+            );
 
             let truncated_length = permit.truncated_length();
             if truncated_length > 0 {
@@ -191,7 +194,10 @@ pub mod ring {
         }
 
         pub(crate) fn return_read_lease(&self, permit: &ReadPermit<'_>) {
-            debug_assert!(self.read_state.load(Ordering::Relaxed) == PermitState::TakenOut.into());
+            debug_assert!(
+                self.read_state.load(Ordering::Relaxed)
+                    == <PermitState as Into<u8>>::into(PermitState::TakenOut)
+            );
 
             let truncated_length = permit.truncated_length();
             if truncated_length > 0 {
@@ -557,7 +563,7 @@ pub mod futurized {
         }
 
         pub fn new() -> Self {
-            let ring = get_or_create_ring(|| Ring::with_capacity(32 * 1024));
+            let ring = get_or_create_ring(|| Ring::with_capacity(8 * 1024));
             Self {
                 buf: mem::ManuallyDrop::new(ring),
                 read_wakers: Pusher::<Waker>::new(),
