@@ -647,9 +647,12 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                         let len = buf.len();
                         let limited_reader =
                             Limiter::take(data.data_start.load(), std::io::Cursor::new(buf), len);
-                        let mut wrapped = ZipFileWrappedReader::construct(data, limited_reader);
+                        let mut wrapped = io::BufReader::with_capacity(
+                            32 * 1024,
+                            ZipFileWrappedReader::construct(data, limited_reader),
+                        );
 
-                        io::copy(&mut wrapped, &mut handle).await?;
+                        io::copy_buf(&mut wrapped, &mut handle).await?;
 
                         Ok::<_, ZipError>(())
                     }
