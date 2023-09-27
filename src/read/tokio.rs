@@ -202,30 +202,41 @@ impl<S: io::AsyncRead + Unpin> ZipFile<S> {
         data
     }
 
-    pub async fn extract_single(self: Pin<&mut Self>, target: Arc<PathBuf>) -> ZipResult<PathBuf> {
-        match self.data().enclosed_name().and_then(|s| s.to_str()) {
-            None => Err(ZipError::InvalidArchive(
-                "could not extract enclosed_name()",
-            )),
-            Some(name) => {
-                let is_dir = name.ends_with('/');
-                let resulting_path = target.join(name);
-                if is_dir {
-                    fs::create_dir_all(&resulting_path).await?;
-                } else {
-                    match resulting_path.parent() {
-                        None => (),
-                        Some(ref p) if p == &Path::new("") => (),
-                        Some(p) => {
-                            fs::create_dir_all(p).await?;
-                        }
-                    }
-                    let mut f = fs::File::create(&resulting_path).await?;
-                    io::copy(self.get_mut(), &mut f).await?;
+    pub async fn extract_single(
+        mut self: Pin<&mut Self>,
+        target: Arc<PathBuf>,
+    ) -> ZipResult<PathBuf> {
+        let name = self
+            .data()
+            .enclosed_name()
+            .and_then(|s| s.to_str())
+            .ok_or(ZipError::InvalidArchive("Invalid file path"))?;
+
+        let is_dir = name.ends_with('/');
+        let resulting_path = target.join(name);
+        if is_dir {
+            fs::create_dir_all(&resulting_path).await?;
+        } else {
+            match resulting_path.parent() {
+                None => (),
+                Some(ref p) if p == &Path::new("") => (),
+                Some(p) => {
+                    fs::create_dir_all(p).await?;
                 }
-                Ok(resulting_path)
+            }
+            let mut f = fs::File::create(&resulting_path).await?;
+            io::copy(&mut self.as_mut(), &mut f).await?;
+        }
+        // Get and Set permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Some(mode) = self.data().unix_mode() {
+                fs::set_permissions(&resulting_path, std::fs::Permissions::from_mode(mode)).await?;
             }
         }
+
+        Ok(resulting_path)
     }
 }
 
@@ -428,7 +439,7 @@ impl<S> ZipArchive<S> {
     }
 }
 
-impl<S: io::AsyncRead + io::AsyncSeek + Unpin + Send + 'static> ZipArchive<S> {
+impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
     pub async fn by_name(self: Pin<&mut Self>, name: &str) -> ZipResult<ZipFile<S>> {
         let index = match self.shared.files.get_index_of(name) {
             None => {
