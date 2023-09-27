@@ -635,20 +635,29 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
         let shared = self.shared.clone();
         let decompress_task = task::spawn(async move {
-            use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
+            use futures_util::{StreamExt, TryStreamExt};
+            use tokio_stream::wrappers::UnboundedReceiverStream;
 
             let paired_rx = UnboundedReceiverStream::new(paired_rx);
-            pin_mut!(paired_rx);
+            paired_rx
+                .map(Ok)
+                .try_for_each_concurrent(None, move |(name, mut handle, buf)| {
+                    let shared = shared.clone();
+                    async move {
+                        /* dbg!(&name); */
+                        let data = shared.files.get(name.to_str().unwrap()).unwrap();
+                        let len = buf.len();
+                        let limited_reader =
+                            Limiter::take(data.data_start.load(), std::io::Cursor::new(buf), len);
+                        let mut wrapped = ZipFileWrappedReader::construct(data, limited_reader);
 
-            while let Some((name, mut handle, buf)) = paired_rx.next().await {
-                /* dbg!(&name); */
-                let data = shared.files.get(name.to_str().unwrap()).unwrap();
-                let len = buf.len();
-                let limited_reader =
-                    Limiter::take(data.data_start.load(), std::io::Cursor::new(buf), len);
-                let mut wrapped = ZipFileWrappedReader::construct(data, limited_reader);
-                io::copy(&mut wrapped, &mut handle).await?;
-            }
+                        io::copy(&mut wrapped, &mut handle).await?;
+
+                        Ok::<_, ZipError>(())
+                    }
+                })
+                .await?;
+
             Ok::<_, ZipError>(())
         });
 
