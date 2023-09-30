@@ -179,7 +179,7 @@ pub(super) enum SeekState {
 /// seeks will be performed instead of one. If the second seek returns
 /// `Err`, the underlying reader will be left at the same position it would
 /// have if you called `seek` with `SeekFrom::Current(0)`.
-impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
+impl<R: AsyncSeek> AsyncSeek for BufReader<R> {
     fn start_seek(self: Pin<&mut Self>, pos: SeekFrom) -> io::Result<()> {
         // We needs to call seek operation multiple times.
         // And we should always call both start_seek and poll_complete,
@@ -264,7 +264,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
     }
 }
 
-impl<R: AsyncRead + AsyncWrite> AsyncWrite for BufReader<R> {
+impl<R: AsyncWrite> AsyncWrite for BufReader<R> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
