@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 use tokio::io;
 
 use std::{
@@ -15,12 +13,7 @@ pub trait IntoInner<S> {
 pub mod stream_adaptors {
     use super::*;
 
-    use std::{cmp, future::Future, mem, sync::Arc, task::ready};
-
-    use tokio::{
-        sync::{self, oneshot},
-        task,
-    };
+    use std::{cmp, task::ready};
 
     pub trait KnownExpanse {
         /* TODO: make this have a parameterized Self::Index type, used e.g. with RangeInclusive or
@@ -32,7 +25,7 @@ pub mod stream_adaptors {
     /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
     /// use std::io::{SeekFrom, Cursor, prelude::*};
     /// use tokio::io;
-    /// use zip::combinators::Limiter;
+    /// use zip::tokio::combinators::Limiter;
     ///
     /// let mut buf = Cursor::new(Vec::new());
     /// buf.write_all(b"hello\n")?;

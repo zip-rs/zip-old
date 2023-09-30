@@ -54,7 +54,5 @@ mod zipcrypto;
 /// ```
 pub mod unstable;
 
-pub(crate) mod buf_reader;
-pub mod combinators;
-pub(crate) mod extraction;
-pub mod stream_impls;
+#[cfg(feature = "tokio-async")]
+pub mod tokio;

@@ -1,13 +1,13 @@
-#![allow(missing_docs)]
-
-use crate::buf_reader::BufReader;
-use crate::combinators::{IntoInner, Limiter};
 use crate::compression::CompressionMethod;
 use crate::crc32::Crc32Reader;
-use crate::extraction::CompletedPaths;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
-use crate::stream_impls::deflate::Deflater;
+use crate::tokio::{
+    buf_reader::BufReader,
+    combinators::{IntoInner, Limiter},
+    extraction::CompletedPaths,
+    stream_impls::deflate::Deflater,
+};
 use crate::types::ZipFileData;
 
 use std::{
@@ -562,7 +562,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
     /// f.start_file("a/b.txt", options)?;
     /// f.write_all(b"hello\n")?;
     /// let buf = f.finish()?;
-    /// let mut f = zip::read::tokio::ZipArchive::new(buf).await?;
+    /// let mut f = zip::tokio::read::ZipArchive::new(buf).await?;
     ///
     /// let t = tempfile::tempdir()?;
     ///
@@ -1136,8 +1136,8 @@ async fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
 mod test {
     use super::*;
     use crate::{
-        combinators::KnownExpanse,
         compression::CompressionMethod,
+        tokio::combinators::KnownExpanse,
         write::{FileOptions, ZipWriter},
     };
 

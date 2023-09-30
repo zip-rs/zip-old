@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
@@ -7,7 +5,7 @@
 ))]
 pub mod deflate {
     /* Use the hacked BufReader from Tokio. */
-    use crate::buf_reader::BufReader;
+    use crate::tokio::buf_reader::BufReader;
 
     use flate2::{Decompress, FlushDecompress, Status};
     use tokio::io;
