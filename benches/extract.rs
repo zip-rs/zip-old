@@ -167,7 +167,7 @@ pub fn bench_extract(c: &mut Criterion) {
             b.to_async(&rt).iter(|| async {
                 let out_dir = Arc::new(td.path().to_path_buf());
                 let handle = fs::File::open(path).await.unwrap();
-                let mut zip = zip::read::tokio::ZipArchive::new(handle).await.unwrap();
+                let mut zip = zip::tokio::read::ZipArchive::new(handle).await.unwrap();
                 Pin::new(&mut zip).extract(out_dir).await.unwrap();
             })
         });
