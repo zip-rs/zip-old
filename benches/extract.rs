@@ -12,7 +12,7 @@ use tempfile::tempdir;
 use tokio::{fs, io, runtime::Runtime};
 use uuid::Uuid;
 
-use zip::{combinators::FixedLengthFile, result::ZipResult, write::FileOptions, ZipWriter};
+use zip::{result::ZipResult, write::FileOptions, ZipWriter};
 
 fn generate_random_archive(
     num_entries: usize,
@@ -78,17 +78,13 @@ pub fn bench_io(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new(&id, "<async copy_buf>"), |b| {
             let td = tempdir().unwrap();
             b.to_async(&rt).iter(|| async {
-                let handle = FixedLengthFile::<fs::File>::read_from_path(path, len)
-                    .await
-                    .unwrap();
+                let handle = fs::File::open(path).await.unwrap();
                 let mut buf_handle = io::BufReader::with_capacity(len, handle);
 
                 let cur_name = format!("{}.zip", Uuid::new_v4());
                 let tf = td.path().join(cur_name);
 
-                let mut out = FixedLengthFile::<fs::File>::create_at_path(tf, len)
-                    .await
-                    .unwrap();
+                let mut out = fs::File::create(tf).await.unwrap();
                 assert_eq!(
                     len as u64,
                     io::copy_buf(&mut buf_handle, &mut out).await.unwrap()
@@ -99,16 +95,12 @@ pub fn bench_io(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new(&id, "<async copy (no buf)>"), |b| {
             let td = tempdir().unwrap();
             b.to_async(&rt).iter(|| async {
-                let mut handle = FixedLengthFile::<fs::File>::read_from_path(path, len)
-                    .await
-                    .unwrap();
+                let mut handle = fs::File::open(path).await.unwrap();
 
                 let cur_name = format!("{}.zip", Uuid::new_v4());
                 let tf = td.path().join(cur_name);
 
-                let mut out = FixedLengthFile::<fs::File>::create_at_path(tf, len)
-                    .await
-                    .unwrap();
+                let mut out = fs::File::create(tf).await.unwrap();
                 assert_eq!(len as u64, io::copy(&mut handle, &mut out).await.unwrap());
             });
         });
@@ -116,13 +108,12 @@ pub fn bench_io(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new(&id, "<sync copy (no buf)>"), |b| {
             let td = tempdir().unwrap();
             b.iter(|| {
-                let mut sync_handle =
-                    FixedLengthFile::<std::fs::File>::read_from_path(path, len).unwrap();
+                let mut sync_handle = std::fs::File::open(path).unwrap();
 
                 let cur_name = format!("{}.zip", Uuid::new_v4());
                 let tf = td.path().join(cur_name);
 
-                let mut out = FixedLengthFile::<std::fs::File>::create_at_path(tf, len).unwrap();
+                let mut out = std::fs::File::create(tf).unwrap();
                 assert_eq!(
                     len as u64,
                     /* NB: this doesn't use copy_buf like the async case, because std::io has no
@@ -175,9 +166,7 @@ pub fn bench_extract(c: &mut Criterion) {
             let td = tempdir().unwrap();
             b.to_async(&rt).iter(|| async {
                 let out_dir = Arc::new(td.path().to_path_buf());
-                let handle = FixedLengthFile::<fs::File>::read_from_path(path, len)
-                    .await
-                    .unwrap();
+                let handle = fs::File::open(path).await.unwrap();
                 let mut zip = zip::read::tokio::ZipArchive::new(handle).await.unwrap();
                 Pin::new(&mut zip).extract(out_dir).await.unwrap();
             })
@@ -186,8 +175,7 @@ pub fn bench_extract(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new(&id, "<sync extraction>"), |b| {
             let td = tempdir().unwrap();
             b.iter(|| {
-                let sync_handle =
-                    FixedLengthFile::<std::fs::File>::read_from_path(path, len).unwrap();
+                let sync_handle = std::fs::File::open(path).unwrap();
                 let mut zip = zip::read::ZipArchive::new(sync_handle).unwrap();
                 zip.extract(td.path()).unwrap();
             })

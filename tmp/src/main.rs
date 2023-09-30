@@ -13,7 +13,6 @@ use once_cell::sync::Lazy;
 use tokio::{fs, io, task};
 
 use zip::{
-    combinators::FixedLengthFile,
     result::{ZipError, ZipResult},
     write::FileOptions,
     CompressionMethod, ZipWriter,
