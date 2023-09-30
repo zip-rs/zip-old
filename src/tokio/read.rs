@@ -6,7 +6,7 @@ use crate::tokio::{
     buf_reader::BufReader,
     combinators::{IntoInner, Limiter},
     extraction::CompletedPaths,
-    stream_impls::deflate::Deflater,
+    stream_impls::deflate::Inflater,
 };
 use crate::types::ZipFileData;
 
@@ -63,7 +63,7 @@ impl<S> ReaderWrapper<S> for StoredReader<S> {
     }
 }
 
-pub struct DeflateReader<S>(Crc32Reader<Deflater<BufReader<S>>>);
+pub struct DeflateReader<S>(Crc32Reader<Inflater<BufReader<S>>>);
 
 impl<S: io::AsyncRead + Unpin> io::AsyncRead for DeflateReader<S> {
     fn poll_read(
@@ -86,7 +86,7 @@ impl<S> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: S) -> Self {
         Self(Crc32Reader::new(
             /* TODO: remove S: io::AsyncRead! */
-            Deflater::buffered(s),
+            Inflater::buffered(s),
             data.crc32,
             false,
         ))
@@ -552,16 +552,19 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
 
     ///```
     /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
-    /// use std::{io::{Cursor, prelude::*}, pin::Pin, sync::Arc};
+    /// use std::{io::Cursor, pin::Pin, sync::Arc};
     /// use tokio::{io, fs};
     ///
-    /// let buf = Cursor::new(Vec::new());
-    /// let mut f = zip::ZipWriter::new(buf);
-    /// let options = zip::write::FileOptions::default()
-    ///   .compression_method(zip::CompressionMethod::Deflated);
-    /// f.start_file("a/b.txt", options)?;
-    /// f.write_all(b"hello\n")?;
-    /// let buf = f.finish()?;
+    /// let buf = {
+    ///   use std::io::prelude::*;
+    ///   let buf = Cursor::new(Vec::new());
+    ///   let mut f = zip::ZipWriter::new(buf);
+    ///   let options = zip::write::FileOptions::default()
+    ///     .compression_method(zip::CompressionMethod::Deflated);
+    ///   f.start_file("a/b.txt", options)?;
+    ///   f.write_all(b"hello\n")?;
+    ///   f.finish()?
+    /// };
     /// let mut f = zip::tokio::read::ZipArchive::new(buf).await?;
     ///
     /// let t = tempfile::tempdir()?;
