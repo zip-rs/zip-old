@@ -1154,7 +1154,7 @@ mod test {
             f.write_all(b"hello\n")?;
             f.finish()?
         };
-        let mut f = ZipArchive::new(buf).await?;
+        let f = ZipArchive::new(buf).await?;
 
         assert_eq!(1, f.shared.len());
         let data = f
@@ -1191,7 +1191,7 @@ mod test {
             f.write_all(b"hello\n")?;
             f.finish()?
         };
-        let mut f = ZipArchive::new(buf).await?;
+        let f = ZipArchive::new(buf).await?;
 
         assert_eq!(1, f.shared.len());
         let data = f
