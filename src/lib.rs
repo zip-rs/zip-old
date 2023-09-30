@@ -55,7 +55,6 @@ mod zipcrypto;
 pub mod unstable;
 
 pub(crate) mod buf_reader;
-pub mod channels;
 pub mod combinators;
 pub(crate) mod extraction;
 pub mod stream_impls;
