@@ -14,8 +14,19 @@ pub mod deflate {
 
     use std::{
         pin::Pin,
-        task::{ready, Context, Poll},
+        task::{Context, Poll},
     };
+
+    macro_rules! try_ready {
+        ($e:expr $(,)?) => {
+            match ::std::task::ready!($e) {
+                Ok(x) => x,
+                Err(e) => {
+                    return ::std::task::Poll::Ready(Err(e));
+                }
+            }
+        };
+    }
 
     pub struct Deflater<S> {
         inner: S,
@@ -51,12 +62,7 @@ pub mod deflate {
 
             let s = self.get_mut();
 
-            let input = match ready!(Pin::new(&mut s.inner).poll_fill_buf(cx)) {
-                Ok(input) => input,
-                Err(e) => {
-                    return Poll::Ready(Err(e));
-                }
-            };
+            let input = try_ready!(Pin::new(&mut s.inner).poll_fill_buf(cx));
 
             let eof = input.is_empty();
             let before_out = s.transformer.total_out();
