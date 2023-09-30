@@ -1,30 +1,36 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
+use std::env;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
-use tempfile::tempdir;
 use tokio::{fs, io, task};
 
 use zip::{
     combinators::FixedLengthFile,
     result::{ZipError, ZipResult},
     write::FileOptions,
-    ZipWriter,
+    CompressionMethod, ZipWriter,
 };
 
 fn generate_random_archive(
     num_entries: usize,
     entry_size: usize,
-    options: FileOptions,
-) -> ZipResult<Vec<u8>> {
-    let buf = Cursor::new(Vec::new());
-    let mut zip = ZipWriter::new(buf);
+    out_path: &Path,
+) -> ZipResult<()> {
+    eprintln!("num_entries = {}", num_entries);
+    eprintln!("entry_size = {}", entry_size);
+
+    let out_handle = std::fs::File::create(out_path)?;
+    let mut zip = ZipWriter::new(out_handle);
+    /* No point compressing random entries. */
+    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     let mut bytes = vec![0u8; entry_size];
     for i in 0..num_entries {
@@ -34,9 +40,14 @@ fn generate_random_archive(
         zip.write_all(&bytes)?;
     }
 
-    let buf = zip.finish()?.into_inner();
+    let out_handle = zip.finish()?;
+    out_handle.sync_all()?;
 
-    Ok(buf)
+    Ok(())
+}
+
+async fn get_len(p: &Path) -> io::Result<u64> {
+    Ok(fs::metadata(p).await?.len())
 }
 
 static BIG_ARCHIVE_PATH: Lazy<PathBuf> =
@@ -45,54 +56,98 @@ static BIG_ARCHIVE_PATH: Lazy<PathBuf> =
 static SMALL_ARCHIVE_PATH: Lazy<PathBuf> =
     Lazy::new(|| Path::new("../benches/small-target.zip").to_path_buf());
 
+fn flag_var(var_name: &str) -> bool {
+    env::var(var_name)
+        .ok()
+        .filter(|v| v.starts_with('y'))
+        .is_some()
+}
+
+fn num_var(var_name: &str) -> Option<usize> {
+    let var = env::var(var_name).ok()?;
+    let n = usize::from_str(&var).ok()?;
+    Some(n)
+}
+
+fn path_var(var_name: &str) -> Option<PathBuf> {
+    let var = env::var(var_name).ok()?;
+    Some(var.into())
+}
+
 #[tokio::main]
 async fn main() -> ZipResult<()> {
-    /* let len = fs::metadata(&*BIG_ARCHIVE_PATH).await?.len() as usize; */
+    let n = num_var("N").or(num_var("n")).unwrap_or(5);
+    eprintln!("n = {}", n);
 
-    /* let tf = Path::new("out.zip"); */
-    /* if let Some(_) = std::env::var("ASYNC").ok() { */
-    /*     eprintln!("async!"); */
-    /*     for _ in 0..50 { */
-    /*         let mut handle = handle.try_clone().await?; */
-    /*         let mut out = IntermediateFile::create_at_path(&tf, len).await?; */
-    /*         io::copy(&mut handle, &mut out).await?; */
-    /*     } */
-    /* } else { */
-    /*     eprintln!("no async!"); */
-    /*     let sync_handle = handle.try_into_sync().await?; */
-    /*     for _ in 0..50 { */
-    /*         let mut sync_handle = sync_handle.try_clone()?; */
-    /*         let mut out = SyncIntermediateFile::create_at_path(&tf, len)?; */
-    /*         std::io::copy(&mut sync_handle, &mut out)?; */
-    /*     } */
-    /* } */
+    let td = task::spawn_blocking(move || tempfile::tempdir())
+        .await
+        .unwrap()?;
 
-    if let Some(_) = std::env::var("ASYNC").ok() {
+    let test_archive_path = if flag_var("RANDOM") || flag_var("random") {
+        let zip_out_path = td.path().join("random.zip");
+        let num_entries: usize = num_var("RANDOM_N").or(num_var("random_n")).unwrap_or(1_000);
+        let entry_size: usize = num_var("RANDOM_SIZE")
+            .or(num_var("random_size"))
+            .unwrap_or(10_000);
+        {
+            let z2 = zip_out_path.clone();
+            task::spawn_blocking(move || generate_random_archive(num_entries, entry_size, &z2))
+                .await
+                .unwrap()?;
+        }
+        eprintln!(
+            "random({}) = {}",
+            get_len(&zip_out_path).await?,
+            zip_out_path.display()
+        );
+        zip_out_path
+    } else if flag_var("SMALL") || flag_var("small") {
+        eprintln!(
+            "small({}) = {}",
+            get_len(&*SMALL_ARCHIVE_PATH).await?,
+            SMALL_ARCHIVE_PATH.display()
+        );
+        SMALL_ARCHIVE_PATH.to_path_buf()
+    } else {
+        eprintln!(
+            "big({}) = {}",
+            get_len(&*BIG_ARCHIVE_PATH).await?,
+            BIG_ARCHIVE_PATH.display()
+        );
+        BIG_ARCHIVE_PATH.to_path_buf()
+    };
+
+    let out_path = path_var("OUT")
+        .or(path_var("out"))
+        .unwrap_or_else(|| PathBuf::from("./tmp-out"));
+    eprintln!("out = {}", out_path.display());
+
+    if flag_var("SYNC") || flag_var("sync") {
+        eprintln!("synchronous!");
+        task::spawn_blocking(move || {
+            for _ in 0..n {
+                let handle = std::fs::OpenOptions::new()
+                    .read(true)
+                    .open(&test_archive_path)?;
+                let mut src = zip::read::ZipArchive::new(handle)?;
+                src.extract(&out_path)?;
+            }
+
+            Ok::<_, ZipError>(())
+        })
+        .await
+        .unwrap()?;
+    } else {
         eprintln!("async!");
-        let out = Arc::new(Path::new("./tmp-out").to_path_buf());
-        for _ in 0..5 {
+        let out = Arc::new(out_path);
+        for _ in 0..n {
             let handle = fs::OpenOptions::new()
                 .read(true)
-                .custom_flags(libc::O_NONBLOCK)
-                .open(&*BIG_ARCHIVE_PATH)
+                /* .custom_flags(libc::O_NONBLOCK) */
+                .open(&test_archive_path)
                 .await?;
             let mut src = zip::read::tokio::ZipArchive::new(handle).await?;
             Pin::new(&mut src).extract(out.clone()).await?;
-        }
-    } else {
-        eprintln!("no async!");
-        let out = Path::new("./tmp-out2");
-        for _ in 0..5 {
-            task::spawn_blocking(move || {
-                let handle = std::fs::OpenOptions::new()
-                    .read(true)
-                    .open(&*BIG_ARCHIVE_PATH)?;
-                let mut src = zip::read::ZipArchive::new(handle)?;
-                src.extract(out)?;
-                Ok::<_, ZipError>(())
-            })
-            .await
-            .unwrap()?;
         }
     }
 

@@ -35,7 +35,6 @@ pub mod deflate {
         }
     }
 
-    /* TODO: remove S: io::AsyncRead! */
     impl<S> Deflater<S> {
         pub fn buffered(inner: S) -> Deflater<BufReader<S>> {
             Deflater::new(BufReader::with_capacity(32 * 1024, inner))
