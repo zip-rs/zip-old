@@ -8,6 +8,10 @@ use std::{
     task::{Context, Poll},
 };
 
+pub trait IntoInner<S> {
+    fn into_inner(self) -> S;
+}
+
 pub mod stream_adaptors {
     use super::*;
     use crate::channels::{futurized::*, *};
@@ -81,10 +85,6 @@ pub mod stream_adaptors {
             self.internal_pos += len;
         }
 
-        pub fn into_inner(self) -> S {
-            self.source_stream
-        }
-
         #[inline]
         fn convert_seek_request_to_relative(&self, op: io::SeekFrom) -> i64 {
             let cur = self.internal_pos as u64;
@@ -107,6 +107,12 @@ pub mod stream_adaptors {
             assert!(new_pos >= self.start_pos);
             assert!(new_pos <= self.start_pos + self.max_len as u64);
             self.internal_pos = (new_pos - self.start_pos) as usize;
+        }
+    }
+
+    impl<S> IntoInner<S> for Limiter<S> {
+        fn into_inner(self) -> S {
+            self.source_stream
         }
     }
 
@@ -538,13 +544,22 @@ pub mod file_adaptors {
 
     impl FixedLengthFile<fs::File> {
         pub async fn create_at_path<P: AsRef<Path>>(p: P, len: usize) -> io::Result<Self> {
-            let f = fs::File::create(p).await?;
+            let f = fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                /* .custom_flags(libc::O_NONBLOCK) */
+                .open(p)
+                .await?;
             f.set_len(len as u64).await?;
             Ok(Self::Paging(f, len))
         }
 
         pub async fn read_from_path<P: AsRef<Path>>(p: P, len: usize) -> io::Result<Self> {
-            let f = fs::File::open(p).await?;
+            let f = fs::OpenOptions::new()
+                .read(true)
+                /* .custom_flags(libc::O_NONBLOCK) */
+                .open(p)
+                .await?;
             assert_eq!(len, f.metadata().await?.len() as usize);
             Ok(Self::Paging(f, len))
         }

@@ -6,6 +6,9 @@
     feature = "deflate-zlib"
 ))]
 pub mod deflate {
+    /* Use the hacked BufReader from Tokio. */
+    use crate::buf_reader::BufReader;
+
     use flate2::{Decompress, FlushDecompress, Status};
     use tokio::io;
 
@@ -32,9 +35,10 @@ pub mod deflate {
         }
     }
 
-    impl<S: io::AsyncRead> Deflater<S> {
-        pub fn buffered(inner: S) -> Deflater<io::BufReader<S>> {
-            Deflater::new(io::BufReader::with_capacity(32 * 1024, inner))
+    /* TODO: remove S: io::AsyncRead! */
+    impl<S> Deflater<S> {
+        pub fn buffered(inner: S) -> Deflater<BufReader<S>> {
+            Deflater::new(BufReader::with_capacity(32 * 1024, inner))
         }
     }
 
