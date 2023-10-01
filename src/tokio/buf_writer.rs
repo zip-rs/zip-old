@@ -117,6 +117,7 @@ pin_project! {
     ///
     /// buf_reader.write_all(msg.as_bytes()).await?;
     /// buf_reader.flush().await?;
+    /// buf_reader.shutdown().await?;
     /// let buf: Vec<u8> = buf_reader.into_inner().into_inner();
     /// let s = std::str::from_utf8(&buf).unwrap();
     /// assert_eq!(&s, &msg);
@@ -149,7 +150,7 @@ impl<W> BufWriter<W> {
 
     #[inline]
     pub fn capacity(&self) -> NonZeroUsize {
-        NonZeroUsize::new(self.buf.len()).unwrap()
+        unsafe { NonZeroUsize::new_unchecked(self.buf.len()) }
     }
 
     #[inline]
@@ -175,6 +176,7 @@ impl<W> BufWriter<W> {
 impl<W: io::AsyncWrite> BufWriter<W> {
     fn flush_one_readable(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         assert!(!self.readable_data().is_empty());
+        dbg!(self.readable_data());
 
         let me = self.as_mut().project();
         let read_buf: &[u8] = &me.buf[*me.read_end..*me.write_end];
@@ -262,7 +264,6 @@ impl<W: io::AsyncWrite> io::AsyncWrite for BufWriter<W> {
     ) -> Poll<io::Result<usize>> {
         let buf = NonEmptyReadSlice::new(buf).unwrap();
         let mut rem: NonEmptyWriteSlice<'_, u8> = ready!(self.as_mut().poll_writable(cx))?;
-        todo!("ok!!");
 
         let amt = unsafe { Pin::new_unchecked(&mut rem) }.copy_from_slice(buf);
         dbg!(amt);
