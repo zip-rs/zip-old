@@ -2,19 +2,27 @@
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
 /// use zip::tokio::stream_impls::deflate::*;
 /// use flate2::Compression;
-/// use tokio::io::{self, AsyncReadExt};
+/// use tokio::io::{self, AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
 /// use std::{io::Cursor, pin::Pin};
 ///
 /// let msg = "hello";
 /// let buf = Cursor::new(msg.as_bytes());
-/// let buf: Pin<Box<dyn io::AsyncRead>> = Box::pin(buf);
 /// let c = Compression::default();
-/// let def = Deflater::buffered(buf, c);
-/// let mut inf = Inflater::buffered(def);
+/// let def = Deflater::new(buf, c);
+/// let mut inf = Inflater::new(def);
 ///
+/// let out_buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+/// let out_def = Deflater::new(out_buf, c);
+/// let mut out_inf = Inflater::new(out_def);
+///
+/// io::copy(&mut inf, &mut out_inf).await?;
+///
+/// let mut final_buf: Cursor<Vec<u8>> =
+///   out_inf.into_inner().into_inner();
+/// final_buf.rewind().await?;
 /// let mut s = String::new();
-/// inf.read_to_string(&mut s).await?;
-/// assert_eq!(&s, "hello");
+/// final_buf.read_to_string(&mut s).await?;
+/// assert_eq!(&s, &"hello");
 /// # Ok(())
 /// # })}
 ///```
@@ -24,8 +32,10 @@
     feature = "deflate-zlib"
 ))]
 pub mod deflate {
-    /* Use the hacked BufReader from Tokio. */
-    use crate::tokio::buf_reader::BufReader;
+    use crate::tokio::{
+        buf_reader::BufReader,
+        buf_writer::{AsyncBufWrite, BufWriter},
+    };
 
     use flate2::{Compress, Compression, Decompress, FlushCompress, FlushDecompress, Status};
     use pin_project_lite::pin_project;
@@ -38,20 +48,41 @@ pub mod deflate {
     };
 
     pin_project! {
+        /// Read:
         ///```
         /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
         /// use zip::tokio::{stream_impls::deflate::Inflater};
         /// use tokio::io::{self, AsyncReadExt};
-        /// use std::{io::Cursor, pin::Pin};
+        /// use std::io::Cursor;
         ///
         /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
         /// let buf = Cursor::new(msg);
-        /// let buf: Pin<Box<dyn io::AsyncRead>> = Box::pin(buf);
-        /// let mut def = Inflater::buffered(buf);
+        /// let mut inf = Inflater::new(buf);
         ///
         /// let mut s = String::new();
-        /// def.read_to_string(&mut s).await?;
+        /// inf.read_to_string(&mut s).await?;
         /// assert_eq!(&s, "hello");
+        /// # Ok(())
+        /// # })}
+        ///```
+        ///
+        /// Write:
+        ///```
+        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+        /// use zip::tokio::{stream_impls::deflate::Inflater};
+        /// use tokio::io::{self, AsyncWriteExt};
+        /// use std::io::Cursor;
+        ///
+        /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
+        /// let buf = Cursor::new(Vec::<u8>::new());
+        /// let mut inf = Inflater::new(buf);
+        ///
+        /// inf.write_all(msg).await?;
+        /// inf.flush().await?;
+        /// let buf: Vec<u8> = inf.into_inner().into_inner();
+        /// assert_eq!(&buf, &[]);
+        /// let s = std::str::from_utf8(&buf).unwrap();
+        /// assert_eq!(&s, &"hello");
         /// # Ok(())
         /// # })}
         ///```
@@ -76,8 +107,12 @@ pub mod deflate {
     }
 
     impl<S> Inflater<S> {
-        pub fn buffered(inner: S) -> Inflater<BufReader<S>> {
+        pub fn buffered_read(inner: S) -> Inflater<BufReader<S>> {
             Inflater::new(BufReader::with_capacity(32 * 1024, inner))
+        }
+
+        pub fn buffered_write(inner: S) -> Inflater<BufWriter<S>> {
+            Inflater::new(BufWriter::with_capacity(32 * 1024, inner))
         }
     }
 
@@ -129,49 +164,55 @@ pub mod deflate {
         }
     }
 
-    /* impl<S: io::AsyncWrite + Unpin> io::AsyncWrite for Inflater<S> { */
+    impl<S: io::AsyncBufRead + Unpin> io::AsyncBufRead for Inflater<S> {
+        fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+            Pin::new(&mut *self.project().inner).poll_fill_buf(cx)
+        }
+
+        fn consume(self: Pin<&mut Self>, len: usize) {
+            Pin::new(&mut *self.project().inner).consume(len)
+        }
+    }
+
+    /* impl<S: AsyncBufWrite + Unpin> io::AsyncWrite for Inflater<S> { */
     /*     fn poll_write( */
     /*         self: Pin<&mut Self>, */
     /*         cx: &mut Context<'_>, */
     /*         buf: &[u8], */
     /*     ) -> Poll<io::Result<usize>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_write(cx, buf) */
-    /*     } */
+    /*         debug_assert!(buf.len() > 0); */
 
-    /*     fn poll_write_vectored( */
-    /*         self: Pin<&mut Self>, */
-    /*         cx: &mut Context<'_>, */
-    /*         bufs: &[IoSlice<'_>], */
-    /*     ) -> Poll<io::Result<usize>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_write_vectored(cx, bufs) */
-    /*     } */
+    /*         let mut me = self.project(); */
 
-    /*     fn is_write_vectored(&self) -> bool { */
-    /*         self.inner.is_write_vectored() */
+    /*         loop { */
+    /*             let output = Pin::new(&mut *me.inner).remaining_buffer_mut(); */
+    /*         } */
+
+    /*         Pin::new(&mut self.project().inner).poll_write(cx, buf) */
     /*     } */
 
     /*     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_flush(cx) */
+    /*         Pin::new(&mut self.project().inner).poll_flush(cx) */
     /*     } */
 
     /*     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_shutdown(cx) */
+    /*         Pin::new(&mut self.project().inner).poll_shutdown(cx) */
     /*     } */
     /* } */
 
     pin_project! {
+        /// Read:
         ///```
         /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
         /// use zip::tokio::{stream_impls::deflate::Deflater};
         /// use flate2::Compression;
-        /// use tokio::io::{self, AsyncReadExt};
-        /// use std::{io::Cursor, pin::Pin};
+        /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+        /// use std::io::Cursor;
         ///
         /// let msg = "hello";
         /// let buf = Cursor::new(msg.as_bytes());
-        /// let buf: Pin<Box<dyn io::AsyncRead>> = Box::pin(buf);
         /// let c = Compression::default();
-        /// let mut def = Deflater::buffered(buf, c);
+        /// let mut def = Deflater::new(buf, c);
         ///
         /// let mut b = Vec::new();
         /// def.read_to_end(&mut b).await?;
@@ -259,13 +300,23 @@ pub mod deflate {
         }
     }
 
-    /* impl<S: io::AsyncWrite> io::AsyncWrite for Deflater<S> { */
+    impl<S: io::AsyncBufRead + Unpin> io::AsyncBufRead for Deflater<S> {
+        fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+            Pin::new(&mut *self.project().inner).poll_fill_buf(cx)
+        }
+
+        fn consume(self: Pin<&mut Self>, len: usize) {
+            Pin::new(&mut *self.project().inner).consume(len)
+        }
+    }
+
+    /* impl<S: io::AsyncWrite + Unpin> io::AsyncWrite for Deflater<S> { */
     /*     fn poll_write( */
     /*         self: Pin<&mut Self>, */
     /*         cx: &mut Context<'_>, */
     /*         buf: &[u8], */
     /*     ) -> Poll<io::Result<usize>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_write(cx, buf) */
+    /*         Pin::new(&mut self.project().inner).poll_write(cx, buf) */
     /*     } */
 
     /*     fn poll_write_vectored( */
@@ -273,7 +324,7 @@ pub mod deflate {
     /*         cx: &mut Context<'_>, */
     /*         bufs: &[IoSlice<'_>], */
     /*     ) -> Poll<io::Result<usize>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_write_vectored(cx, bufs) */
+    /*         Pin::new(&mut self.project().inner).poll_write_vectored(cx, bufs) */
     /*     } */
 
     /*     fn is_write_vectored(&self) -> bool { */
@@ -281,11 +332,11 @@ pub mod deflate {
     /*     } */
 
     /*     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_flush(cx) */
+    /*         Pin::new(&mut self.project().inner).poll_flush(cx) */
     /*     } */
 
     /*     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-    /*         Pin::new(&mut self.get_mut().inner).poll_shutdown(cx) */
+    /*         Pin::new(&mut self.project().inner).poll_shutdown(cx) */
     /*     } */
     /* } */
 }

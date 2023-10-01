@@ -75,7 +75,6 @@ impl<S: io::AsyncRead + Unpin> io::AsyncRead for DeflateReader<S> {
     }
 }
 
-/* TODO: remove S: io::AsyncRead! */
 impl<S> IntoInner<S> for DeflateReader<S> {
     fn into_inner(self) -> S {
         self.0.into_inner().into_inner().into_inner()
@@ -85,8 +84,7 @@ impl<S> IntoInner<S> for DeflateReader<S> {
 impl<S> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: S) -> Self {
         Self(Crc32Reader::new(
-            /* TODO: remove S: io::AsyncRead! */
-            Inflater::buffered(s),
+            Inflater::buffered_read(s),
             data.crc32,
             false,
         ))

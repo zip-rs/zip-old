@@ -1,17 +1,20 @@
 /* Taken from https://docs.rs/tokio/latest/src/tokio/io/util/buf_reader.rs.html to fix a few
  * issues. */
 
+use pin_project_lite::pin_project;
+#[cfg(doc)]
+use tokio::io::AsyncRead;
+use tokio::io::{self, AsyncBufRead};
+
+use std::{
+    cmp, fmt,
+    pin::Pin,
+    task::{ready, Context, Poll},
+};
+
 // used by `BufReader` and `BufWriter`
 // https://github.com/rust-lang/rust/blob/master/library/std/src/sys_common/io.rs#L1
 const DEFAULT_BUF_SIZE: usize = 8 * 1024;
-
-use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
-
-use pin_project_lite::pin_project;
-use std::io::{self, IoSlice, SeekFrom};
-use std::pin::Pin;
-use std::task::{ready, Context, Poll};
-use std::{cmp, fmt, mem};
 
 pin_project! {
     /// The `BufReader` struct adds buffering to any reader.
@@ -29,14 +32,29 @@ pin_project! {
     /// When the `BufReader` is dropped, the contents of its buffer will be
     /// discarded. Creating multiple instances of a `BufReader` on the same
     /// stream can cause data loss.
-    #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
+    ///
+    ///```
+    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+    /// use zip::tokio::buf_reader::BufReader;
+    /// use tokio::io::AsyncReadExt;
+    /// use std::io::Cursor;
+    ///
+    /// let msg = "hello";
+    /// let buf = Cursor::new(msg.as_bytes());
+    /// let mut buf_reader = BufReader::new(buf);
+    ///
+    /// let mut s = String::new();
+    /// buf_reader.read_to_string(&mut s).await?;
+    /// assert_eq!(&s, &msg);
+    /// # Ok(())
+    /// # })}
+    ///```
     pub struct BufReader<R> {
         #[pin]
         pub(super) inner: R,
         pub(super) buf: Box<[u8]>,
         pub(super) pos: usize,
         pub(super) cap: usize,
-        pub(super) seek_state: SeekState,
     }
 }
 
@@ -55,13 +73,18 @@ impl<R> BufReader<R> {
             buf: buffer.into_boxed_slice(),
             pos: 0,
             cap: 0,
-            seek_state: SeekState::Init,
         }
+    }
+
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.buf.len()
     }
 
     /// Gets a reference to the underlying reader.
     ///
     /// It is inadvisable to directly read from the underlying reader.
+    #[inline]
     pub fn get_ref(&self) -> &R {
         &self.inner
     }
@@ -69,6 +92,7 @@ impl<R> BufReader<R> {
     /// Gets a mutable reference to the underlying reader.
     ///
     /// It is inadvisable to directly read from the underlying reader.
+    #[inline]
     pub fn get_mut(&mut self) -> &mut R {
         &mut self.inner
     }
@@ -76,6 +100,7 @@ impl<R> BufReader<R> {
     /// Gets a pinned mutable reference to the underlying reader.
     ///
     /// It is inadvisable to directly read from the underlying reader.
+    #[inline]
     pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut R> {
         self.project().inner
     }
@@ -87,11 +112,32 @@ impl<R> BufReader<R> {
         self.inner
     }
 
+    #[inline]
+    fn cur_len(&self) -> usize {
+        debug_assert!(self.cap >= self.pos);
+        self.cap - self.pos
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.cur_len() == 0
+    }
+
     /// Returns a reference to the internally buffered data.
     ///
     /// Unlike `fill_buf`, this will not attempt to fill the buffer if it is empty.
+    #[inline]
     pub fn buffer(&self) -> &[u8] {
         &self.buf[self.pos..self.cap]
+    }
+
+    #[inline]
+    fn buffer_pin<'a>(self: Pin<&'a mut Self>) -> &'a [u8] {
+        let me = self.project();
+        let pos: usize = *me.pos;
+        let cap: usize = *me.cap;
+        debug_assert!(pos <= cap);
+        &me.buf[pos..cap]
     }
 
     /// Invalidates all data in the internal buffer.
@@ -101,196 +147,73 @@ impl<R> BufReader<R> {
         *me.pos = 0;
         *me.cap = 0;
     }
+
+    #[inline]
+    fn request_is_larger_than_buffer(&self, buf: &io::ReadBuf<'_>) -> bool {
+        buf.remaining() >= self.capacity()
+    }
+
+    #[inline]
+    fn should_bypass_buffer(&self, buf: &io::ReadBuf<'_>) -> bool {
+        self.is_empty() && self.request_is_larger_than_buffer(buf)
+    }
 }
 
-impl<R: AsyncRead> AsyncRead for BufReader<R> {
+impl<R: io::AsyncRead> BufReader<R> {
+    fn bypass_buffer(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let res = ready!(self.as_mut().get_pin_mut().poll_read(cx, buf));
+        self.discard_buffer();
+        Poll::Ready(res)
+    }
+
+    #[inline]
+    fn reset_to_single_read(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let me = self.project();
+        let mut buf = io::ReadBuf::new(me.buf);
+        ready!(me.inner.poll_read(cx, &mut buf))?;
+        /* debug_assert!(buf.filled().len() > 0); */
+        *me.cap = buf.filled().len();
+        *me.pos = 0;
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl<R: io::AsyncRead> io::AsyncRead for BufReader<R> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
+        buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         // If we don't have any buffered data and we're doing a massive read
         // (larger than our internal buffer), bypass our internal buffer
         // entirely.
-        if self.pos == self.cap && buf.remaining() >= self.buf.len() {
-            let res = ready!(self.as_mut().get_pin_mut().poll_read(cx, buf));
-            self.discard_buffer();
-            return Poll::Ready(res);
+        if self.should_bypass_buffer(buf) {
+            return self.bypass_buffer(cx, buf);
         }
         let rem = ready!(self.as_mut().poll_fill_buf(cx))?;
-        let amt = std::cmp::min(rem.len(), buf.remaining());
+        let amt = cmp::min(rem.len(), buf.remaining());
         buf.put_slice(&rem[..amt]);
         self.consume(amt);
         Poll::Ready(Ok(()))
     }
 }
 
-impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
-    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
-        let me = self.project();
-
-        // If we've reached the end of our internal buffer then we need to fetch
-        // some more data from the underlying reader.
-        // Branch using `>=` instead of the more correct `==`
-        // to tell the compiler that the pos..cap slice is always valid.
-        if *me.pos >= *me.cap {
-            debug_assert!(*me.pos == *me.cap);
-            let mut buf = ReadBuf::new(me.buf);
-            ready!(me.inner.poll_read(cx, &mut buf))?;
-            *me.cap = buf.filled().len();
-            *me.pos = 0;
+impl<R: io::AsyncRead> io::AsyncBufRead for BufReader<R> {
+    fn poll_fill_buf(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        if self.is_empty() {
+            ready!(self.as_mut().reset_to_single_read(cx))?;
         }
-        Poll::Ready(Ok(&me.buf[*me.pos..*me.cap]))
+        let buf: &[u8] = self.buffer_pin();
+        Poll::Ready(Ok(buf))
     }
 
     fn consume(self: Pin<&mut Self>, amt: usize) {
         let me = self.project();
         *me.pos = cmp::min(*me.pos + amt, *me.cap);
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) enum SeekState {
-    /// start_seek has not been called.
-    Init,
-    /// start_seek has been called, but poll_complete has not yet been called.
-    Start(SeekFrom),
-    /// Waiting for completion of the first poll_complete in the `n.checked_sub(remainder).is_none()` branch.
-    PendingOverflowed(i64),
-    /// Waiting for completion of poll_complete.
-    Pending,
-}
-
-/// Seeks to an offset, in bytes, in the underlying reader.
-///
-/// The position used for seeking with `SeekFrom::Current(_)` is the
-/// position the underlying reader would be at if the `BufReader` had no
-/// internal buffer.
-///
-/// Seeking always discards the internal buffer, even if the seek position
-/// would otherwise fall within it. This guarantees that calling
-/// `.into_inner()` immediately after a seek yields the underlying reader
-/// at the same position.
-///
-/// See [`AsyncSeek`] for more details.
-///
-/// Note: In the edge case where you're seeking with `SeekFrom::Current(n)`
-/// where `n` minus the internal buffer length overflows an `i64`, two
-/// seeks will be performed instead of one. If the second seek returns
-/// `Err`, the underlying reader will be left at the same position it would
-/// have if you called `seek` with `SeekFrom::Current(0)`.
-impl<R: AsyncSeek> AsyncSeek for BufReader<R> {
-    fn start_seek(self: Pin<&mut Self>, pos: SeekFrom) -> io::Result<()> {
-        // We needs to call seek operation multiple times.
-        // And we should always call both start_seek and poll_complete,
-        // as start_seek alone cannot guarantee that the operation will be completed.
-        // poll_complete receives a Context and returns a Poll, so it cannot be called
-        // inside start_seek.
-        *self.project().seek_state = SeekState::Start(pos);
-        Ok(())
-    }
-
-    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
-        let res = match mem::replace(self.as_mut().project().seek_state, SeekState::Init) {
-            SeekState::Init => {
-                // 1.x AsyncSeek recommends calling poll_complete before start_seek.
-                // We don't have to guarantee that the value returned by
-                // poll_complete called without start_seek is correct,
-                // so we'll return 0.
-                return Poll::Ready(Ok(0));
-            }
-            SeekState::Start(SeekFrom::Current(n)) => {
-                let remainder = (self.cap - self.pos) as i64;
-                // it should be safe to assume that remainder fits within an i64 as the alternative
-                // means we managed to allocate 8 exbibytes and that's absurd.
-                // But it's not out of the realm of possibility for some weird underlying reader to
-                // support seeking by i64::MIN so we need to handle underflow when subtracting
-                // remainder.
-                if let Some(offset) = n.checked_sub(remainder) {
-                    self.as_mut()
-                        .get_pin_mut()
-                        .start_seek(SeekFrom::Current(offset))?;
-                } else {
-                    // seek backwards by our remainder, and then by the offset
-                    self.as_mut()
-                        .get_pin_mut()
-                        .start_seek(SeekFrom::Current(-remainder))?;
-                    if self.as_mut().get_pin_mut().poll_complete(cx)?.is_pending() {
-                        *self.as_mut().project().seek_state = SeekState::PendingOverflowed(n);
-                        return Poll::Pending;
-                    }
-
-                    // https://github.com/rust-lang/rust/pull/61157#issuecomment-495932676
-                    self.as_mut().discard_buffer();
-
-                    self.as_mut()
-                        .get_pin_mut()
-                        .start_seek(SeekFrom::Current(n))?;
-                }
-                self.as_mut().get_pin_mut().poll_complete(cx)?
-            }
-            SeekState::PendingOverflowed(n) => {
-                if self.as_mut().get_pin_mut().poll_complete(cx)?.is_pending() {
-                    *self.as_mut().project().seek_state = SeekState::PendingOverflowed(n);
-                    return Poll::Pending;
-                }
-
-                // https://github.com/rust-lang/rust/pull/61157#issuecomment-495932676
-                self.as_mut().discard_buffer();
-
-                self.as_mut()
-                    .get_pin_mut()
-                    .start_seek(SeekFrom::Current(n))?;
-                self.as_mut().get_pin_mut().poll_complete(cx)?
-            }
-            SeekState::Start(pos) => {
-                // Seeking with Start/End doesn't care about our buffer length.
-                self.as_mut().get_pin_mut().start_seek(pos)?;
-                self.as_mut().get_pin_mut().poll_complete(cx)?
-            }
-            SeekState::Pending => self.as_mut().get_pin_mut().poll_complete(cx)?,
-        };
-
-        match res {
-            Poll::Ready(res) => {
-                self.discard_buffer();
-                Poll::Ready(Ok(res))
-            }
-            Poll::Pending => {
-                *self.as_mut().project().seek_state = SeekState::Pending;
-                Poll::Pending
-            }
-        }
-    }
-}
-
-impl<R: AsyncWrite> AsyncWrite for BufReader<R> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        self.get_pin_mut().poll_write(cx, buf)
-    }
-
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bufs: &[IoSlice<'_>],
-    ) -> Poll<io::Result<usize>> {
-        self.get_pin_mut().poll_write_vectored(cx, bufs)
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        self.get_ref().is_write_vectored()
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.get_pin_mut().poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.get_pin_mut().poll_shutdown(cx)
     }
 }
 
