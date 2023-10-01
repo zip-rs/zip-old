@@ -6,10 +6,10 @@ use std::{
     num::NonZeroUsize,
     ops,
     pin::Pin,
-    slice,
     task::{ready, Context, Poll},
 };
 
+#[derive(Debug, Copy, Clone)]
 pub struct NonEmptyReadSlice<'a, T> {
     data: &'a [T],
 }
@@ -39,6 +39,7 @@ impl<'a, T> ops::Deref for NonEmptyReadSlice<'a, T> {
     }
 }
 
+#[derive(Debug)]
 pub struct NonEmptyWriteSlice<'a, T> {
     data: &'a mut [T],
 }
@@ -90,6 +91,7 @@ pub trait AsyncBufWrite: io::AsyncWrite {
     fn readable_data(&self) -> &[u8];
 
     fn consume_write(self: Pin<&mut Self>, amt: NonZeroUsize);
+    fn try_writable(self: Pin<&mut Self>) -> Option<NonEmptyWriteSlice<'_, u8>>;
     fn poll_writable(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -168,30 +170,29 @@ impl<W> BufWriter<W> {
     pub fn into_inner(self) -> W {
         self.inner
     }
-
-    #[inline]
-    fn write_buffer<'a>(self: Pin<&'a mut Self>) -> Option<NonEmptyWriteSlice<'a, u8>> {
-        if self.write_end == self.buf.len() {
-            return None;
-        }
-        let write_end = self.write_end;
-        NonEmptyWriteSlice::new(&mut self.project().buf[write_end..])
-    }
 }
 
 impl<W: io::AsyncWrite> BufWriter<W> {
+    fn flush_one_readable(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        assert!(!self.readable_data().is_empty());
+
+        let me = self.as_mut().project();
+        let read_buf: &[u8] = &me.buf[*me.read_end..*me.write_end];
+        match NonZeroUsize::new(ready!(me.inner.poll_write(cx, read_buf))?) {
+            None => {
+                return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
+            }
+            Some(read) => {
+                self.as_mut().consume_read(read);
+            }
+        }
+
+        Poll::Ready(Ok(()))
+    }
+
     fn flush_readable(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         while !self.readable_data().is_empty() {
-            let me = self.as_mut().project();
-            let read_buf: &[u8] = &me.buf[*me.read_end..*me.write_end];
-            match NonZeroUsize::new(ready!(me.inner.poll_write(cx, read_buf))?) {
-                None => {
-                    return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
-                }
-                Some(read) => {
-                    self.as_mut().consume_read(read);
-                }
-            }
+            ready!(self.as_mut().flush_one_readable(cx))?;
         }
         Poll::Ready(Ok(()))
     }
@@ -209,6 +210,7 @@ impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
     fn readable_data(&self) -> &[u8] {
         debug_assert!(self.read_end <= self.write_end);
         debug_assert!(self.write_end <= self.buf.len());
+        dbg!(self.write_end - self.read_end);
         &self.buf[self.read_end..self.write_end]
     }
 
@@ -219,25 +221,29 @@ impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
         *me.write_end += amt.get();
     }
 
+    #[inline]
+    fn try_writable(self: Pin<&mut Self>) -> Option<NonEmptyWriteSlice<'_, u8>> {
+        if self.write_end == self.buf.len() {
+            return None;
+        }
+        let write_end = self.write_end;
+        NonEmptyWriteSlice::new(&mut self.project().buf[write_end..])
+    }
+
     fn poll_writable(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<NonEmptyWriteSlice<'_, u8>>> {
-        let mut s = cell::UnsafeCell::new(self);
-        if let Some(write_buf) = unsafe { &mut *s.get() }.as_mut().write_buffer() {
+        let s = cell::UnsafeCell::new(self);
+        if let Some(write_buf) = unsafe { &mut *s.get() }.as_mut().try_writable() {
             return Poll::Ready(Ok(write_buf));
         }
 
         ready!(unsafe { &mut *s.get() }.as_mut().flush_readable(cx))?;
 
-        unsafe {
-            let s: &Self = &*s.get();
-            debug_assert_eq!(s.read_end, s.write_end);
-            debug_assert_eq!(s.write_end, s.capacity().get());
-        }
         unsafe { &mut *s.get() }.as_mut().reset();
 
-        Poll::Ready(Ok(s.into_inner().write_buffer().unwrap()))
+        Poll::Ready(Ok(s.into_inner().try_writable().unwrap()))
     }
 
     #[inline]
@@ -256,8 +262,10 @@ impl<W: io::AsyncWrite> io::AsyncWrite for BufWriter<W> {
     ) -> Poll<io::Result<usize>> {
         let buf = NonEmptyReadSlice::new(buf).unwrap();
         let mut rem: NonEmptyWriteSlice<'_, u8> = ready!(self.as_mut().poll_writable(cx))?;
+        todo!("ok!!");
 
         let amt = unsafe { Pin::new_unchecked(&mut rem) }.copy_from_slice(buf);
+        dbg!(amt);
         self.as_mut().consume_write(amt);
 
         Poll::Ready(Ok(amt.get()))
