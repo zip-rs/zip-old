@@ -2,21 +2,105 @@ use pin_project_lite::pin_project;
 use tokio::io;
 
 use std::{
-    cmp,
+    cell, cmp, mem,
+    num::NonZeroUsize,
+    ops,
     pin::Pin,
     slice,
     task::{ready, Context, Poll},
 };
 
-pub trait AsyncBufWrite: io::AsyncWrite {
-    fn consume_mut(self: Pin<&mut Self>, amt: usize);
+pub struct NonEmptyReadSlice<'a, T> {
+    data: &'a [T],
+}
 
-    fn poll_dump(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&mut [u8]>>;
+impl<'a, T> NonEmptyReadSlice<'a, T> {
+    pub fn new(data: &'a [T]) -> Option<Self> {
+        NonZeroUsize::new(data.len()).map(|_| Self { data })
+    }
+
+    #[inline]
+    pub fn len(&self) -> NonZeroUsize {
+        unsafe { NonZeroUsize::new_unchecked(self.data.len()) }
+    }
+
+    #[inline]
+    pub fn maybe_uninit(&self) -> &'a [mem::MaybeUninit<T>] {
+        unsafe { mem::transmute(&*self.data) }
+    }
+}
+
+impl<'a, T> ops::Deref for NonEmptyReadSlice<'a, T> {
+    type Target = [T];
+
+    #[inline]
+    fn deref(&self) -> &[T] {
+        &self.data
+    }
+}
+
+pub struct NonEmptyWriteSlice<'a, T> {
+    data: &'a mut [T],
+}
+
+impl<'a, T> ops::Deref for NonEmptyWriteSlice<'a, T> {
+    type Target = [T];
+
+    #[inline]
+    fn deref(&self) -> &[T] {
+        &self.data
+    }
+}
+
+impl<'a, T> ops::DerefMut for NonEmptyWriteSlice<'a, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.data
+    }
+}
+
+impl<'a, T> NonEmptyWriteSlice<'a, T> {
+    pub fn new(data: &'a mut [T]) -> Option<Self> {
+        NonZeroUsize::new(data.len()).map(|_| Self { data })
+    }
+
+    #[inline]
+    pub fn len(&self) -> NonZeroUsize {
+        unsafe { NonZeroUsize::new_unchecked(self.data.len()) }
+    }
+
+    #[inline]
+    pub fn maybe_uninit(self: Pin<&'a mut Self>) -> Pin<&'a mut [mem::MaybeUninit<T>]> {
+        unsafe { self.map_unchecked_mut(|s| mem::transmute(&mut *s.data)) }
+    }
+}
+
+impl<'a, T: Copy> NonEmptyWriteSlice<'a, T> {
+    pub fn copy_from_slice(self: Pin<&'a mut Self>, src: NonEmptyReadSlice<'a, T>) -> NonZeroUsize {
+        let amt = cmp::min(self.len(), src.len());
+        let dst: &'a mut [mem::MaybeUninit<T>] = unsafe { self.maybe_uninit().get_unchecked_mut() };
+        let src: &'a [mem::MaybeUninit<T>] = src.maybe_uninit();
+        dst[..amt.get()].copy_from_slice(&src[..amt.get()]);
+        amt
+    }
+}
+
+pub trait AsyncBufWrite: io::AsyncWrite {
+    fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize);
+    fn readable_data(&self) -> &[u8];
+
+    fn consume_write(self: Pin<&mut Self>, amt: NonZeroUsize);
+    fn poll_writable(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<NonEmptyWriteSlice<'_, u8>>>;
+
+    fn reset(self: Pin<&mut Self>);
 }
 
 // used by `BufReader` and `BufWriter`
 // https://github.com/rust-lang/rust/blob/master/library/std/src/sys_common/io.rs#L1
-const DEFAULT_BUF_SIZE: usize = 8 * 1024;
+const DEFAULT_BUF_SIZE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8 * 1024) };
 
 pin_project! {
     ///```
@@ -30,6 +114,7 @@ pin_project! {
     /// let mut buf_reader = BufWriter::new(buf);
     ///
     /// buf_reader.write_all(msg.as_bytes()).await?;
+    /// buf_reader.flush().await?;
     /// let buf: Vec<u8> = buf_reader.into_inner().into_inner();
     /// let s = std::str::from_utf8(&buf).unwrap();
     /// assert_eq!(&s, &msg);
@@ -38,10 +123,10 @@ pin_project! {
     ///```
     pub struct BufWriter<W> {
         #[pin]
-        pub(super) inner: W,
-        pub(super) buf: Box<[u8]>,
-        pub(super) pos: usize,
-        pub(super) cap: usize,
+        inner: W,
+        buf: Box<[u8]>,
+        read_end: usize,
+        write_end: usize,
     }
 }
 
@@ -50,19 +135,19 @@ impl<W> BufWriter<W> {
         Self::with_capacity(DEFAULT_BUF_SIZE, inner)
     }
 
-    pub fn with_capacity(capacity: usize, inner: W) -> Self {
-        let buffer = vec![0; capacity];
+    pub fn with_capacity(capacity: NonZeroUsize, inner: W) -> Self {
+        let buffer = vec![0; capacity.get()];
         Self {
             inner,
             buf: buffer.into_boxed_slice(),
-            pos: 0,
-            cap: capacity,
+            read_end: 0,
+            write_end: 0,
         }
     }
 
     #[inline]
-    pub fn capacity(&self) -> usize {
-        self.buf.len()
+    pub fn capacity(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.buf.len()).unwrap()
     }
 
     #[inline]
@@ -85,68 +170,81 @@ impl<W> BufWriter<W> {
     }
 
     #[inline]
-    fn cur_len(&self) -> usize {
-        debug_assert!(self.cap >= self.pos);
-        self.cap - self.pos
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.cur_len() == 0
-    }
-
-    #[inline]
-    pub fn buffer_mut(self: Pin<&mut Self>) -> &mut [u8] {
-        let me = self.project();
-        let pos = *me.pos;
-        let cap = *me.cap;
-        debug_assert!(pos <= cap);
-        &mut me.buf[pos..cap]
-    }
-
-    #[inline]
-    fn discard_buffer(self: Pin<&mut Self>) {
-        let cap = self.capacity();
-        let me = self.project();
-        *me.pos = 0;
-        *me.cap = cap;
-    }
-
-    #[inline]
-    fn request_is_larger_than_buffer(&self, buf: &[u8]) -> bool {
-        buf.len() >= self.capacity()
-    }
-
-    #[inline]
-    fn should_bypass_buffer(&self, buf: &[u8]) -> bool {
-        self.is_empty() && self.request_is_larger_than_buffer(buf)
+    fn write_buffer<'a>(self: Pin<&'a mut Self>) -> Option<NonEmptyWriteSlice<'a, u8>> {
+        if self.write_end == self.buf.len() {
+            return None;
+        }
+        let write_end = self.write_end;
+        NonEmptyWriteSlice::new(&mut self.project().buf[write_end..])
     }
 }
 
 impl<W: io::AsyncWrite> BufWriter<W> {
-    fn bypass_buffer(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let res = ready!(self.as_mut().get_pin_mut().poll_write(cx, buf));
-        self.discard_buffer();
-        Poll::Ready(res)
+    fn flush_readable(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        while !self.readable_data().is_empty() {
+            let me = self.as_mut().project();
+            let read_buf: &[u8] = &me.buf[*me.read_end..*me.write_end];
+            match NonZeroUsize::new(ready!(me.inner.poll_write(cx, read_buf))?) {
+                None => {
+                    return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
+                }
+                Some(read) => {
+                    self.as_mut().consume_read(read);
+                }
+            }
+        }
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
+    #[inline]
+    fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize) {
+        debug_assert!(self.readable_data().len() >= amt.get());
+        let me = self.project();
+        *me.read_end += amt.get();
     }
 
     #[inline]
-    fn reset_to_single_write(
+    fn readable_data(&self) -> &[u8] {
+        debug_assert!(self.read_end <= self.write_end);
+        debug_assert!(self.write_end <= self.buf.len());
+        &self.buf[self.read_end..self.write_end]
+    }
+
+    #[inline]
+    fn consume_write(self: Pin<&mut Self>, amt: NonZeroUsize) {
+        debug_assert!(self.capacity().get() - self.write_end >= amt.get());
+        let me = self.project();
+        *me.write_end += amt.get();
+    }
+
+    fn poll_writable(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<io::Result<usize>> {
-        let cap = self.capacity();
+    ) -> Poll<io::Result<NonEmptyWriteSlice<'_, u8>>> {
+        let mut s = cell::UnsafeCell::new(self);
+        if let Some(write_buf) = unsafe { &mut *s.get() }.as_mut().write_buffer() {
+            return Poll::Ready(Ok(write_buf));
+        }
+
+        ready!(unsafe { &mut *s.get() }.as_mut().flush_readable(cx))?;
+
+        unsafe {
+            let s: &Self = &*s.get();
+            debug_assert_eq!(s.read_end, s.write_end);
+            debug_assert_eq!(s.write_end, s.capacity().get());
+        }
+        unsafe { &mut *s.get() }.as_mut().reset();
+
+        Poll::Ready(Ok(s.into_inner().write_buffer().unwrap()))
+    }
+
+    #[inline]
+    fn reset(self: Pin<&mut Self>) {
         let me = self.project();
-        let buf: &[u8] = &me.buf;
-        let len = ready!(me.inner.poll_write(cx, buf))?;
-        *me.cap = cap;
-        debug_assert!(cap >= len);
-        *me.pos = cap - len;
-        Poll::Ready(Ok(len))
+        *me.read_end = 0;
+        *me.write_end = 0;
     }
 }
 
@@ -156,48 +254,22 @@ impl<W: io::AsyncWrite> io::AsyncWrite for BufWriter<W> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        if self.should_bypass_buffer(buf) {
-            return self.bypass_buffer(cx, buf);
-        }
+        let buf = NonEmptyReadSlice::new(buf).unwrap();
+        let mut rem: NonEmptyWriteSlice<'_, u8> = ready!(self.as_mut().poll_writable(cx))?;
 
-        let rem = ready!(self.as_mut().poll_dump(cx))?;
-        let amt = cmp::min(rem.len(), buf.len());
-        rem[..amt].copy_from_slice(&buf[..amt]);
-        self.consume_mut(amt);
+        let amt = unsafe { Pin::new_unchecked(&mut rem) }.copy_from_slice(buf);
+        self.as_mut().consume_write(amt);
 
-        Poll::Ready(Ok(amt))
+        Poll::Ready(Ok(amt.get()))
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if !self.is_empty() {
-            let flushed = ready!(self.as_mut().reset_to_single_write(cx))?;
-            if flushed != 0 {
-                return Poll::Pending;
-            }
-        }
+        ready!(self.as_mut().flush_readable(cx))?;
         self.get_pin_mut().poll_flush(cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         ready!(self.as_mut().poll_flush(cx))?;
         self.get_pin_mut().poll_shutdown(cx)
-    }
-}
-
-impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
-    fn consume_mut(self: Pin<&mut Self>, amt: usize) {
-        let me = self.project();
-        *me.pos = cmp::min(*me.pos + amt, *me.cap);
-    }
-
-    fn poll_dump(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&mut [u8]>> {
-        if self.is_empty() {
-            let len = ready!(self.as_mut().reset_to_single_write(cx))?;
-            if len == 0 {
-                return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
-            }
-            debug_assert!(!self.is_empty());
-        }
-        Poll::Ready(Ok(self.buffer_mut()))
     }
 }

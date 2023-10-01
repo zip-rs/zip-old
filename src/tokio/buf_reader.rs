@@ -51,10 +51,10 @@ pin_project! {
     ///```
     pub struct BufReader<R> {
         #[pin]
-        pub(super) inner: R,
-        pub(super) buf: Box<[u8]>,
-        pub(super) pos: usize,
-        pub(super) cap: usize,
+        inner: R,
+        buf: Box<[u8]>,
+        pos: usize,
+        cap: usize,
     }
 }
 
@@ -212,6 +212,9 @@ impl<R: io::AsyncRead> io::AsyncBufRead for BufReader<R> {
     }
 
     fn consume(self: Pin<&mut Self>, amt: usize) {
+        if amt == 0 {
+            return;
+        }
         let me = self.project();
         *me.pos = cmp::min(*me.pos + amt, *me.cap);
     }

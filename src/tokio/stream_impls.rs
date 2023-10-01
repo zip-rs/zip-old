@@ -43,6 +43,7 @@ pub mod deflate {
 
     use std::{
         io::IoSlice,
+        num::NonZeroUsize,
         pin::Pin,
         task::{ready, Context, Poll},
     };
@@ -112,7 +113,10 @@ pub mod deflate {
         }
 
         pub fn buffered_write(inner: S) -> Inflater<BufWriter<S>> {
-            Inflater::new(BufWriter::with_capacity(32 * 1024, inner))
+            Inflater::new(BufWriter::with_capacity(
+                NonZeroUsize::new(32 * 1024).unwrap(),
+                inner,
+            ))
         }
     }
 
@@ -176,7 +180,7 @@ pub mod deflate {
 
     /* impl<S: AsyncBufWrite + Unpin> io::AsyncWrite for Inflater<S> { */
     /*     fn poll_write( */
-    /*         self: Pin<&mut Self>, */
+    /*         mut self: Pin<&mut Self>, */
     /*         cx: &mut Context<'_>, */
     /*         buf: &[u8], */
     /*     ) -> Poll<io::Result<usize>> { */
@@ -185,18 +189,66 @@ pub mod deflate {
     /*         let mut me = self.project(); */
 
     /*         loop { */
-    /*             let output = Pin::new(&mut *me.inner).remaining_buffer_mut(); */
-    /*         } */
+    /*             let rem = ready!(Pin::new(&mut *me.inner).poll_dump(cx))?; */
 
-    /*         Pin::new(&mut self.project().inner).poll_write(cx, buf) */
+    /*             let before_in = me.transformer.total_in(); */
+    /*             let ret = me.transformer.decompress(buf, rem, FlushDecompress::None); */
+    /*             let written = (me.transformer.total_in() - before_in) as usize; */
+    /*             let is_stream_end = matches![ret, Ok(Status::StreamEnd)]; */
+
+    /*             if written > 0 { */
+    /*                 Pin::new(&mut *me.inner).consume_mut(written); */
+    /*             } */
+
+    /*             match ret { */
+    /*                 Ok(_) if written == 0 && !is_stream_end => (), */
+    /*                 Ok(st) => { */
+    /*                     return Poll::Ready(Ok(written)); */
+    /*                 } */
+    /*                 Err(_) => { */
+    /*                     return Poll::Ready(Err(io::Error::new( */
+    /*                         io::ErrorKind::InvalidInput, */
+    /*                         "corrupt inflate stream", */
+    /*                     ))) */
+    /*                 } */
+    /*             } */
+    /*         } */
     /*     } */
 
-    /*     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-    /*         Pin::new(&mut self.project().inner).poll_flush(cx) */
+    /*     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
+    /*         let mut me = self.project(); */
+
+    /*         let rem = ready!(Pin::new(&mut *me.inner).poll_dump(cx))?; */
+    /*         let before = me.transformer.total_out(); */
+    /*         me.transformer */
+    /*             .decompress(&[], rem, FlushDecompress::Sync) */
+    /*             .unwrap(); */
+
+    /*         let len = (me.transformer.total_out() - before) as usize; */
+    /*         if len > 0 { */
+    /*             Pin::new(&mut *me.inner).consume_mut(len); */
+    /*             Poll::Pending */
+    /*         } else { */
+    /*             Pin::new(&mut *me.inner).poll_flush(cx) */
+    /*         } */
     /*     } */
 
     /*     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-    /*         Pin::new(&mut self.project().inner).poll_shutdown(cx) */
+    /*         let mut me = self.project(); */
+
+    /*         let rem = ready!(Pin::new(&mut *me.inner).poll_dump(cx))?; */
+    /*         let before = me.transformer.total_out(); */
+    /*         me.transformer */
+    /*             .decompress(&[], rem, FlushDecompress::Finish) */
+    /*             .unwrap(); */
+
+    /*         let len = (me.transformer.total_out() - before) as usize; */
+    /*         if len > 0 { */
+    /*             Pin::new(&mut *me.inner).consume_mut(len); */
+    /*             Poll::Pending */
+    /*         } else { */
+    /*             Pin::new(&mut *me.inner).poll_shutdown(cx) */
+    /*         } */
     /*     } */
     /* } */
 
