@@ -36,20 +36,17 @@
     feature = "deflate-zlib"
 ))]
 pub mod deflate {
-    use crate::tokio::{
-        buf_reader::BufReader,
-        buf_writer::{AsyncBufWrite, BufWriter, NonEmptyReadSlice, NonEmptyWriteSlice},
-    };
+    use crate::tokio::buf_writer::{AsyncBufWrite, NonEmptyWriteSlice};
 
     use flate2::{
-        Compress, CompressError, Compression, Decompress, DecompressError, FlushCompress,
-        FlushDecompress, Status,
+        Compress, CompressError, Decompress, DecompressError, FlushCompress, FlushDecompress,
+        Status,
     };
     use pin_project_lite::pin_project;
     use tokio::io;
 
     use std::{
-        cell, mem,
+        mem,
         num::NonZeroUsize,
         pin::Pin,
         task::{ready, Context, Poll},
@@ -313,7 +310,7 @@ pub mod deflate {
 
     impl<O: Ops, S: AsyncBufWrite> io::AsyncWrite for Writer<O, S> {
         fn poll_write(
-            mut self: Pin<&mut Self>,
+            self: Pin<&mut Self>,
             cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<io::Result<usize>> {
@@ -376,7 +373,7 @@ pub mod deflate {
             self.pin_stream().poll_flush(cx)
         }
 
-        fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
             loop {
                 let mut write_buf = ready!(self.pin_new_stream().poll_writable(cx))?;
 

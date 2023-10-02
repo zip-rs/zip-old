@@ -26,7 +26,7 @@ use std::{
     feature = "deflate-miniz",
     feature = "deflate-zlib"
 ))]
-use flate2::{Compress, Compression, Decompress};
+use flate2::Decompress;
 
 use async_stream::try_stream;
 use cfg_if::cfg_if;
