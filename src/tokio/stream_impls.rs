@@ -7,22 +7,36 @@
 ///
 /// let msg = "hello";
 /// let c = Compression::default();
-/// let mut buf = BufReader::new(Cursor::new(msg.as_bytes()));
+/// let buf_reader = BufReader::new(Cursor::new(msg.as_bytes()));
+/// let mut def = Reader::with_state(Compress::new(c, false), buf_reader);
 ///
-/// let mut def = Reader::with_state(Compress::new(c, false), buf);
+/// let mut buf = Vec::new();
+/// {
+///   use tokio::io::{AsyncReadExt, AsyncSeekExt};
+///   def.read_to_end(&mut buf).await?;
+///   assert_eq!(&buf, &[203, 72, 205, 201, 201, 7, 0]);
+/// }
 ///
 /// let mut out_inf = Writer::with_state(
 ///   Decompress::new(false),
 ///   BufWriter::new(Cursor::new(Vec::new())),
 /// );
+/// {
+///   use tokio::io::{AsyncReadExt, AsyncSeekExt};
+///   out_inf.write_all(&buf).await?;
+///   out_inf.flush().await?;
+///   out_inf.shutdown().await?;
+///   let buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
+///   assert_eq!(&buf, b"hello");
+/// }
 ///
-/// io::copy_buf(&mut def, &mut out_inf).await?;
-/// out_inf.flush().await?;
-/// out_inf.shutdown().await?;
+/// // io::copy_buf(&mut def, &mut out_inf).await?;
+/// // out_inf.flush().await?;
+/// // out_inf.shutdown().await?;
 ///
-/// let mut final_buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
-/// let s = std::str::from_utf8(&final_buf).unwrap();
-/// assert_eq!(&s, &msg);
+/// // let mut final_buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
+/// // let s = std::str::from_utf8(&final_buf).unwrap();
+/// // assert_eq!(&s, &msg);
 /// # Ok(())
 /// # })}
 ///```
