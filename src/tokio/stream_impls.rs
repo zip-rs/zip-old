@@ -73,6 +73,8 @@ pub mod deflate {
         let before_in = o.total_in();
         let before_out = o.total_out();
 
+        dbg!(input.len());
+
         let status = match o.as_mut().encode_frame(input, output, flush) {
             Ok(status) => status,
             Err(_) => {
@@ -90,6 +92,9 @@ pub mod deflate {
             s.as_mut().consume_write(num_consumed);
         }
         if let Some(num_read) = NonZeroUsize::new(num_read) {
+            let u_num_read: usize = num_read.into();
+            debug_assert!(u_num_read <= input.len());
+            /* todo!("?"); */
             s.as_mut().consume_read(num_read);
         }
 
@@ -97,6 +102,44 @@ pub mod deflate {
     }
 
     pin_project! {
+        /// Compress:
+        ///```
+        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+        /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
+        /// use flate2::{Compress, Compression};
+        /// use tokio::io::{self, AsyncReadExt, AsyncBufRead};
+        /// use std::io::Cursor;
+        ///
+        /// let msg = "hello";
+        /// let buf = BufReader::new(Cursor::new(msg.as_bytes()));
+        /// let c = Compression::default();
+        /// let mut def = Reader::with_state(Compress::new(c, false), buf);
+        ///
+        /// let mut b = Vec::new();
+        /// def.read_to_end(&mut b).await?;
+        /// assert_eq!(&b, &[203, 72, 205, 201, 201, 7, 0]);
+        /// # Ok(())
+        /// # })}
+        ///```
+        ///
+        /// Decompress:
+        ///```
+        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+        /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
+        /// use flate2::Decompress;
+        /// use tokio::io::{self, AsyncReadExt};
+        /// use std::io::Cursor;
+        ///
+        /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
+        /// let buf = BufReader::new(Cursor::new(msg));
+        /// let mut inf = Reader::with_state(Decompress::new(false), buf);
+        ///
+        /// let mut s = String::new();
+        /// inf.read_to_string(&mut s).await?;
+        /// assert_eq!(&s, "hello");
+        /// # Ok(())
+        /// # })}
+        ///```
         pub struct Reader<O, S> {
             #[pin]
             state: O,
@@ -170,6 +213,29 @@ pub mod deflate {
     }
 
     pin_project! {
+        ///```
+        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+        /// use zip::tokio::{buf_writer::{AsyncBufWrite, BufWriter}, stream_impls::deflate::Writer};
+        /// use flate2::Decompress;
+        /// use tokio::io::{self, AsyncWriteExt};
+        /// use std::io::Cursor;
+        ///
+        /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
+        /// let buf = BufWriter::new(Cursor::new(Vec::new()));
+        /// let mut inf = Writer::with_state(Decompress::new(false), buf);
+        ///
+        /// inf.write_all(msg).await?;
+        /// inf.flush().await?;
+        /// inf.shutdown().await?;
+        /// let buf: Vec<u8> = inf.into_inner().into_inner().into_inner();
+        /// let s = std::str::from_utf8(&buf).unwrap();
+        /// let expected = "hello";
+        /// // FIXME: we should not be needing to truncate the output like this!! This is probably
+        /// // a bug!!!
+        /// assert_eq!(&s[..expected.len()], expected);
+        /// # Ok(())
+        /// # })}
+        ///```
         pub struct Writer<O, S> {
             #[pin]
             state: O,
@@ -204,6 +270,10 @@ pub mod deflate {
         pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut S> {
             self.project().inner
         }
+
+        pub fn into_inner(self) -> S {
+            self.inner
+        }
     }
 
     impl<O: Ops, S: AsyncBufWrite> io::AsyncWrite for Writer<O, S> {
@@ -219,8 +289,12 @@ pub mod deflate {
                     ready!(self.pin_new_stream().poll_writable(cx))?;
 
                 /* let mut me = self.as_mut().project(); */
+                let readable_len: usize = self.inner.readable_data().len();
+                dbg!(readable_len);
+
                 let (status, num_read, _) = encode_frame_consume_inputs(
                     self.pin_new_state(),
+                    /* &buf[..readable_len], */
                     buf,
                     &mut *write_buf,
                     O::Flush::none(),

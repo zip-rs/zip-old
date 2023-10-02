@@ -9,82 +9,91 @@ use std::{
     task::{ready, Context, Poll},
 };
 
-#[derive(Debug, Copy, Clone)]
-pub struct NonEmptyReadSlice<'a, T> {
-    data: &'a [T],
+pub mod slices {
+    use std::{cmp, mem, num::NonZeroUsize, ops, pin::Pin};
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct NonEmptyReadSlice<'a, T> {
+        data: &'a [T],
+    }
+
+    impl<'a, T> NonEmptyReadSlice<'a, T> {
+        pub fn new(data: &'a [T]) -> Option<Self> {
+            NonZeroUsize::new(data.len()).map(|_| Self { data })
+        }
+
+        #[inline]
+        pub fn len(&self) -> NonZeroUsize {
+            unsafe { NonZeroUsize::new_unchecked(self.data.len()) }
+        }
+
+        #[inline]
+        pub fn maybe_uninit(&self) -> &'a [mem::MaybeUninit<T>] {
+            unsafe { mem::transmute(&*self.data) }
+        }
+    }
+
+    impl<'a, T> ops::Deref for NonEmptyReadSlice<'a, T> {
+        type Target = [T];
+
+        #[inline]
+        fn deref(&self) -> &[T] {
+            &self.data
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct NonEmptyWriteSlice<'a, T> {
+        data: &'a mut [T],
+    }
+
+    impl<'a, T> ops::Deref for NonEmptyWriteSlice<'a, T> {
+        type Target = [T];
+
+        #[inline]
+        fn deref(&self) -> &[T] {
+            &self.data
+        }
+    }
+
+    impl<'a, T> ops::DerefMut for NonEmptyWriteSlice<'a, T> {
+        #[inline]
+        fn deref_mut(&mut self) -> &mut [T] {
+            &mut self.data
+        }
+    }
+
+    impl<'a, T> NonEmptyWriteSlice<'a, T> {
+        pub fn new(data: &'a mut [T]) -> Option<Self> {
+            NonZeroUsize::new(data.len()).map(|_| Self { data })
+        }
+
+        #[inline]
+        pub fn len(&self) -> NonZeroUsize {
+            unsafe { NonZeroUsize::new_unchecked(self.data.len()) }
+        }
+
+        #[inline]
+        pub fn maybe_uninit(self: Pin<&'a mut Self>) -> Pin<&'a mut [mem::MaybeUninit<T>]> {
+            unsafe { self.map_unchecked_mut(|s| mem::transmute(&mut *s.data)) }
+        }
+    }
+
+    impl<'a, T: Copy> NonEmptyWriteSlice<'a, T> {
+        pub fn copy_from_slice(
+            self: Pin<&'a mut Self>,
+            src: NonEmptyReadSlice<'a, T>,
+        ) -> NonZeroUsize {
+            let amt = cmp::min(self.len(), src.len());
+            let dst: &'a mut [mem::MaybeUninit<T>] =
+                unsafe { self.maybe_uninit().get_unchecked_mut() };
+            let src: &'a [mem::MaybeUninit<T>] = src.maybe_uninit();
+            dst[..amt.get()].copy_from_slice(&src[..amt.get()]);
+            amt
+        }
+    }
 }
-
-impl<'a, T> NonEmptyReadSlice<'a, T> {
-    pub fn new(data: &'a [T]) -> Option<Self> {
-        NonZeroUsize::new(data.len()).map(|_| Self { data })
-    }
-
-    #[inline]
-    pub fn len(&self) -> NonZeroUsize {
-        unsafe { NonZeroUsize::new_unchecked(self.data.len()) }
-    }
-
-    #[inline]
-    pub fn maybe_uninit(&self) -> &'a [mem::MaybeUninit<T>] {
-        unsafe { mem::transmute(&*self.data) }
-    }
-}
-
-impl<'a, T> ops::Deref for NonEmptyReadSlice<'a, T> {
-    type Target = [T];
-
-    #[inline]
-    fn deref(&self) -> &[T] {
-        &self.data
-    }
-}
-
-#[derive(Debug)]
-pub struct NonEmptyWriteSlice<'a, T> {
-    data: &'a mut [T],
-}
-
-impl<'a, T> ops::Deref for NonEmptyWriteSlice<'a, T> {
-    type Target = [T];
-
-    #[inline]
-    fn deref(&self) -> &[T] {
-        &self.data
-    }
-}
-
-impl<'a, T> ops::DerefMut for NonEmptyWriteSlice<'a, T> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut [T] {
-        &mut self.data
-    }
-}
-
-impl<'a, T> NonEmptyWriteSlice<'a, T> {
-    pub fn new(data: &'a mut [T]) -> Option<Self> {
-        NonZeroUsize::new(data.len()).map(|_| Self { data })
-    }
-
-    #[inline]
-    pub fn len(&self) -> NonZeroUsize {
-        unsafe { NonZeroUsize::new_unchecked(self.data.len()) }
-    }
-
-    #[inline]
-    pub fn maybe_uninit(self: Pin<&'a mut Self>) -> Pin<&'a mut [mem::MaybeUninit<T>]> {
-        unsafe { self.map_unchecked_mut(|s| mem::transmute(&mut *s.data)) }
-    }
-}
-
-impl<'a, T: Copy> NonEmptyWriteSlice<'a, T> {
-    pub fn copy_from_slice(self: Pin<&'a mut Self>, src: NonEmptyReadSlice<'a, T>) -> NonZeroUsize {
-        let amt = cmp::min(self.len(), src.len());
-        let dst: &'a mut [mem::MaybeUninit<T>] = unsafe { self.maybe_uninit().get_unchecked_mut() };
-        let src: &'a [mem::MaybeUninit<T>] = src.maybe_uninit();
-        dst[..amt.get()].copy_from_slice(&src[..amt.get()]);
-        amt
-    }
-}
+pub use slices::{NonEmptyReadSlice, NonEmptyWriteSlice};
 
 pub trait AsyncBufWrite: io::AsyncWrite {
     fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize);
@@ -178,14 +187,15 @@ impl<W: io::AsyncWrite> BufWriter<W> {
         assert!(!self.readable_data().is_empty());
         dbg!(self.readable_data());
 
-        let me = self.as_mut().project();
+        let mut me = self.as_mut().project();
         let read_buf: &[u8] = &me.buf[*me.read_end..*me.write_end];
         match NonZeroUsize::new(ready!(me.inner.poll_write(cx, read_buf))?) {
             None => {
                 return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
             }
             Some(read) => {
-                self.as_mut().consume_read(read);
+                eprintln!("read = {}", read);
+                self.consume_read(read);
             }
         }
 
@@ -203,9 +213,11 @@ impl<W: io::AsyncWrite> BufWriter<W> {
 impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
     #[inline]
     fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize) {
-        debug_assert!(self.readable_data().len() >= amt.get());
+        let n = dbg!(self.readable_data().len());
+        dbg!(amt.get());
+        /* debug_assert!(self.readable_data().len() >= amt.get()); */
         let me = self.project();
-        *me.read_end += amt.get();
+        *me.read_end += cmp::min(amt.get(), n);
     }
 
     #[inline]
