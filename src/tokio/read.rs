@@ -6,7 +6,7 @@ use crate::tokio::{
     buf_reader::BufReader,
     combinators::{IntoInner, Limiter},
     extraction::CompletedPaths,
-    stream_impls::deflate::Inflater,
+    stream_impls::deflate,
 };
 use crate::types::ZipFileData;
 
@@ -20,6 +20,13 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+
+#[cfg(any(
+    feature = "deflate",
+    feature = "deflate-miniz",
+    feature = "deflate-zlib"
+))]
+use flate2::{Compress, Compression, Decompress};
 
 use async_stream::try_stream;
 use cfg_if::cfg_if;
@@ -63,7 +70,7 @@ impl<S> ReaderWrapper<S> for StoredReader<S> {
     }
 }
 
-pub struct DeflateReader<S>(Crc32Reader<Inflater<BufReader<S>>>);
+pub struct DeflateReader<S>(Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>);
 
 impl<S: io::AsyncRead + Unpin> io::AsyncRead for DeflateReader<S> {
     fn poll_read(
@@ -84,7 +91,10 @@ impl<S> IntoInner<S> for DeflateReader<S> {
 impl<S> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: S) -> Self {
         Self(Crc32Reader::new(
-            Inflater::buffered_read(s),
+            deflate::Reader::with_state(
+                Decompress::new(false),
+                BufReader::with_capacity(32 * 1024, s),
+            ),
             data.crc32,
             false,
         ))
