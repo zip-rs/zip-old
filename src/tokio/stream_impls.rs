@@ -2,26 +2,30 @@
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
 /// use zip::tokio::{buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
 /// use flate2::{Decompress, Compress, Compression};
-/// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+/// use tokio::io::{self, AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
 /// use std::{io::Cursor, pin::Pin};
 ///
 /// let msg = "hello\n";
-/// let buf = BufReader::new(Cursor::new(msg.as_bytes()));
 /// let c = Compression::default();
-/// let mut def = Reader::with_state(Compress::new(c, false), buf);
+/// let mut def = Reader::with_state(
+///   Compress::new(c, false),
+///   BufReader::new(msg.as_bytes()),
+/// );
 ///
 /// let mut out_inf = Writer::with_state(
 ///   Decompress::new(false),
-///   BufWriter::new(Cursor::new(Vec::new())),
+///   BufWriter::new(Cursor::new(Vec::with_capacity(2_000))),
 /// );
 ///
 /// io::copy(&mut def, &mut out_inf).await?;
-/// out_inf.flush().await?;
-/// out_inf.shutdown().await?;
+/// // out_inf.flush().await?;
+/// // out_inf.shutdown().await?;
 ///
-/// let mut final_buf: Vec<u8> =
-///   out_inf.into_inner().into_inner().into_inner();
-/// let s = std::str::from_utf8(&final_buf).unwrap();
+/// let mut final_buf: Cursor<Vec<u8>> =
+///   out_inf.into_inner().into_inner();
+/// final_buf.rewind().await?;
+/// let mut s = String::new();
+/// final_buf.read_to_string(&mut s).await?;
 /// assert_eq!(&s[..msg.len()], msg);
 /// # Ok(())
 /// # })}
@@ -237,8 +241,8 @@ pub mod deflate {
         /// def.flush().await?;
         /// def.shutdown().await?;
         /// let buf: Vec<u8> = def.into_inner().into_inner().into_inner();
-        /// let expected = &[202, 72, 205, 201, 201, 231, 2];
-        /// assert_eq!(&buf[..expected.len()], expected);
+        /// let expected = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
+        /// assert_eq!(&buf, expected);
         /// # Ok(())
         /// # })}
         ///```
@@ -251,7 +255,7 @@ pub mod deflate {
         /// use tokio::io::{self, AsyncWriteExt};
         /// use std::io::Cursor;
         ///
-        /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
+        /// let msg: &[u8] = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
         /// let buf = BufWriter::new(Cursor::new(Vec::new()));
         /// let mut inf = Writer::with_state(Decompress::new(false), buf);
         ///

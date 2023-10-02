@@ -215,9 +215,10 @@ impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
     fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize) {
         let n = dbg!(self.readable_data().len());
         dbg!(amt.get());
-        /* debug_assert!(self.readable_data().len() >= amt.get()); */
+        debug_assert!(self.readable_data().len() >= amt.get());
         let me = self.project();
-        *me.read_end += cmp::min(amt.get(), n);
+        /* *me.read_end += cmp::min(amt.get(), n); */
+        *me.read_end += amt.get();
     }
 
     #[inline]
