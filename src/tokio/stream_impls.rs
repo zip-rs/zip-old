@@ -1,3 +1,4 @@
+/// As 2 separate read calls:
 ///```
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
 /// use zip::tokio::{buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
@@ -29,14 +30,35 @@
 ///   let buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
 ///   assert_eq!(&buf, b"hello");
 /// }
+/// # Ok(())
+/// # })}
+///```
 ///
-/// // io::copy_buf(&mut def, &mut out_inf).await?;
-/// // out_inf.flush().await?;
-/// // out_inf.shutdown().await?;
+/// Or, within a single `tokio::io::copy{,_buf}()`:
+///```
+/// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+/// use zip::tokio::{buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
+/// use flate2::{Decompress, Compress, Compression};
+/// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+/// use std::{io::Cursor, pin::Pin, num::NonZeroUsize};
 ///
-/// // let mut final_buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
-/// // let s = std::str::from_utf8(&final_buf).unwrap();
-/// // assert_eq!(&s, &msg);
+/// let msg = "hello";
+/// let c = Compression::default();
+/// let buf_reader = BufReader::new(Cursor::new(msg.as_bytes()));
+/// let mut def = Reader::with_state(Compress::new(c, false), buf_reader);
+///
+/// let mut out_inf = Writer::with_state(
+///   Decompress::new(false),
+///   BufWriter::new(Cursor::new(Vec::new())),
+/// );
+///
+/// io::copy(&mut def, &mut out_inf).await?;
+/// out_inf.flush().await?;
+/// out_inf.shutdown().await?;
+///
+/// let mut final_buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
+/// let s = std::str::from_utf8(&final_buf).unwrap();
+/// assert_eq!(&s, &msg);
 /// # Ok(())
 /// # })}
 ///```
