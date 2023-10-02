@@ -78,7 +78,7 @@ pub mod deflate {
     use tokio::io;
 
     use std::{
-        mem,
+        fmt, mem,
         num::NonZeroUsize,
         pin::Pin,
         task::{ready, Context, Poll},
@@ -86,7 +86,7 @@ pub mod deflate {
 
     pub trait Ops {
         type Flush: Flush;
-        type E;
+        type E: fmt::Display;
         fn total_in(&self) -> u64;
         fn total_out(&self) -> u64;
         fn encode_frame(
@@ -212,10 +212,10 @@ pub mod deflate {
                     Ok(Status::Ok | Status::BufError | Status::StreamEnd) => {
                         return Poll::Ready(Ok(()));
                     }
-                    Err(_) => {
+                    Err(e) => {
                         return Poll::Ready(Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            "corrupt read stream",
+                            format!("corrupt read stream({})", e),
                         )))
                     }
                 }
@@ -327,19 +327,15 @@ pub mod deflate {
                 let before_in = self.state.total_in();
                 let before_out = self.state.total_out();
 
-                let status =
-                    match self
-                        .pin_new_state()
-                        .encode_frame(buf, &mut *write_buf, O::Flush::none())
-                    {
-                        Ok(status) => status,
-                        Err(_) => {
-                            return Poll::Ready(Err(io::Error::new(
-                                io::ErrorKind::InvalidInput,
-                                "corrupt write stream(1)",
-                            )));
-                        }
-                    };
+                let status = self
+                    .pin_new_state()
+                    .encode_frame(buf, &mut *write_buf, O::Flush::none())
+                    .map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("corrupt write stream({})/1", e),
+                        )
+                    })?;
 
                 let num_read = (self.state.total_in() - before_in) as usize;
                 let num_consumed = (self.state.total_out() - before_out) as usize;
@@ -366,15 +362,14 @@ pub mod deflate {
 
                 let before_out = self.state.total_out();
 
-                if let Err(_) =
-                    self.pin_new_state()
-                        .encode_frame(&[], &mut *write_buf, O::Flush::sync())
-                {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "corrupt write stream(2)",
-                    )));
-                };
+                self.pin_new_state()
+                    .encode_frame(&[], &mut *write_buf, O::Flush::sync())
+                    .map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("corrupt write stream({})/2", e),
+                        )
+                    })?;
 
                 let num_consumed = (self.state.total_out() - before_out) as usize;
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
@@ -387,15 +382,14 @@ pub mod deflate {
 
                 let before_out = self.state.total_out();
 
-                if let Err(_) =
-                    self.pin_new_state()
-                        .encode_frame(&[], &mut *write_buf, O::Flush::none())
-                {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "corrupt write stream(3)",
-                    )));
-                };
+                self.pin_new_state()
+                    .encode_frame(&[], &mut *write_buf, O::Flush::none())
+                    .map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("corrupt write stream({})/3", e),
+                        )
+                    })?;
 
                 let num_consumed = (self.state.total_out() - before_out) as usize;
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
@@ -414,15 +408,14 @@ pub mod deflate {
 
                 let before_out = self.state.total_out();
 
-                if let Err(_) =
-                    self.pin_new_state()
-                        .encode_frame(&[], &mut *write_buf, O::Flush::finish())
-                {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "corrupt write stream(4)",
-                    )));
-                };
+                self.pin_new_state()
+                    .encode_frame(&[], &mut *write_buf, O::Flush::finish())
+                    .map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("corrupt write stream({})/4", e),
+                        )
+                    })?;
 
                 let num_consumed = (self.state.total_out() - before_out) as usize;
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
