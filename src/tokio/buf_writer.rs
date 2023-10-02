@@ -2,7 +2,7 @@ use pin_project_lite::pin_project;
 use tokio::io;
 
 use std::{
-    cell,
+    cell, cmp,
     num::NonZeroUsize,
     pin::Pin,
     task::{ready, Context, Poll},
@@ -212,12 +212,13 @@ impl<W: io::AsyncWrite> BufWriter<W> {
 impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
     #[inline]
     fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize) {
-        let _n = dbg!(self.readable_data().len());
+        let n = dbg!(self.readable_data().len());
         dbg!(amt.get());
-        debug_assert!(self.readable_data().len() >= amt.get());
+        /* debug_assert!(self.readable_data().len() >= amt.get()); */
         let me = self.project();
-        /* *me.read_end += cmp::min(amt.get(), n); */
-        *me.read_end += amt.get();
+        *me.read_end += cmp::min(amt.get(), n);
+        dbg!(n);
+        /* *me.read_end += amt.get(); */
     }
 
     #[inline]

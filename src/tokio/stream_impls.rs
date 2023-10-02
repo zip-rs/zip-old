@@ -2,31 +2,31 @@
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
 /// use zip::tokio::{buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
 /// use flate2::{Decompress, Compress, Compression};
-/// use tokio::io::{self, AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
-/// use std::{io::Cursor, pin::Pin};
+/// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+/// use std::{io::Cursor, pin::Pin, num::NonZeroUsize};
 ///
 /// let msg = "hello\n";
 /// let c = Compression::default();
+/// const CAP: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(200) };
 /// let mut def = Reader::with_state(
 ///   Compress::new(c, false),
-///   BufReader::new(msg.as_bytes()),
+///   // BufReader::with_capacity(msg.as_bytes()),
+///   BufReader::with_capacity(CAP, msg.as_bytes()),
 /// );
 ///
 /// let mut out_inf = Writer::with_state(
 ///   Decompress::new(false),
-///   BufWriter::new(Cursor::new(Vec::with_capacity(2_000))),
+///   BufWriter::with_capacity(CAP, Cursor::new(Vec::new())),
 /// );
 ///
 /// io::copy(&mut def, &mut out_inf).await?;
-/// // out_inf.flush().await?;
-/// // out_inf.shutdown().await?;
+/// out_inf.flush().await?;
+/// out_inf.shutdown().await?;
 ///
-/// let mut final_buf: Cursor<Vec<u8>> =
-///   out_inf.into_inner().into_inner();
-/// final_buf.rewind().await?;
-/// let mut s = String::new();
-/// final_buf.read_to_string(&mut s).await?;
-/// assert_eq!(&s[..msg.len()], msg);
+/// let mut final_buf: Vec<u8> =
+///   out_inf.into_inner().into_inner().into_inner();
+/// let s = std::str::from_utf8(&final_buf).unwrap();
+/// assert_eq!(&s, &msg);
 /// # Ok(())
 /// # })}
 ///```
@@ -320,13 +320,8 @@ pub mod deflate {
                 let mut write_buf: NonEmptyWriteSlice<'_, u8> =
                     ready!(self.pin_new_stream().poll_writable(cx))?;
 
-                /* let mut me = self.as_mut().project(); */
-                let readable_len: usize = self.inner.readable_data().len();
-                dbg!(readable_len);
-
                 let (status, num_read, _) = encode_frame_consume_inputs(
                     self.pin_new_state(),
-                    /* &buf[..readable_len], */
                     buf,
                     &mut *write_buf,
                     O::Flush::none(),

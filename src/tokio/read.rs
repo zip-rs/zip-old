@@ -13,7 +13,7 @@ use crate::types::ZipFileData;
 use std::{
     cell,
     marker::Unpin,
-    mem, ops,
+    mem, num, ops,
     path::{Path, PathBuf},
     pin::Pin,
     str,
@@ -93,7 +93,7 @@ impl<S> ReaderWrapper<S> for DeflateReader<S> {
         Self(Crc32Reader::new(
             deflate::Reader::with_state(
                 Decompress::new(false),
-                BufReader::with_capacity(32 * 1024, s),
+                BufReader::with_capacity(unsafe { num::NonZeroUsize::new_unchecked(32 * 1024) }, s),
             ),
             data.crc32,
             false,
@@ -736,7 +736,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                          * allocate exactly that much to minimize allocation as well as
                          * blocking on memory availability for the decompressor. */
                         let mut wrapped = BufReader::with_capacity(
-                            uncompressed_size,
+                            num::NonZeroUsize::new(uncompressed_size).unwrap(),
                             ZipFileWrappedReader::construct(data, buf.as_ref()),
                         );
 

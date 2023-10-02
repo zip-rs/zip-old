@@ -7,14 +7,14 @@ use tokio::io::AsyncRead;
 use tokio::io::{self, AsyncBufRead};
 
 use std::{
-    cmp, fmt,
+    cmp, fmt, num,
     pin::Pin,
     task::{ready, Context, Poll},
 };
 
 // used by `BufReader` and `BufWriter`
 // https://github.com/rust-lang/rust/blob/master/library/std/src/sys_common/io.rs#L1
-const DEFAULT_BUF_SIZE: usize = 8 * 1024;
+const DEFAULT_BUF_SIZE: num::NonZeroUsize = unsafe { num::NonZeroUsize::new_unchecked(8 * 1024) };
 
 pin_project! {
     /// The `BufReader` struct adds buffering to any reader.
@@ -66,8 +66,8 @@ impl<R> BufReader<R> {
     }
 
     /// Creates a new `BufReader` with the specified buffer capacity.
-    pub fn with_capacity(capacity: usize, inner: R) -> Self {
-        let buffer = vec![0; capacity];
+    pub fn with_capacity(capacity: num::NonZeroUsize, inner: R) -> Self {
+        let buffer = vec![0; capacity.into()];
         Self {
             inner,
             buf: buffer.into_boxed_slice(),
