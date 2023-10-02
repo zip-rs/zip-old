@@ -33,6 +33,7 @@ use cfg_if::cfg_if;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
 use indexmap::IndexMap;
+use pin_project::pin_project;
 use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncSeekExt},
@@ -46,15 +47,23 @@ pub trait ReaderWrapper<S> {
         Self: Sized;
 }
 
-pub struct StoredReader<S>(Crc32Reader<S>);
+#[pin_project]
+pub struct StoredReader<S>(#[pin] Crc32Reader<S>);
 
-impl<S: io::AsyncRead + Unpin> io::AsyncRead for StoredReader<S> {
+impl<S> StoredReader<S> {
+    #[inline]
+    pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut Crc32Reader<S>> {
+        self.project().0
+    }
+}
+
+impl<S: io::AsyncRead> io::AsyncRead for StoredReader<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
+        self.pin_stream().poll_read(cx, buf)
     }
 }
 
@@ -70,15 +79,25 @@ impl<S> ReaderWrapper<S> for StoredReader<S> {
     }
 }
 
-pub struct DeflateReader<S>(Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>);
+#[pin_project]
+pub struct DeflateReader<S>(#[pin] Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>);
 
-impl<S: io::AsyncRead + Unpin> io::AsyncRead for DeflateReader<S> {
+impl<S> DeflateReader<S> {
+    #[inline]
+    pub fn pin_stream(
+        self: Pin<&mut Self>,
+    ) -> Pin<&mut Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>> {
+        self.project().0
+    }
+}
+
+impl<S: io::AsyncRead> io::AsyncRead for DeflateReader<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
+        self.pin_stream().poll_read(cx, buf)
     }
 }
 
@@ -101,9 +120,10 @@ impl<S: io::AsyncRead> ReaderWrapper<S> for DeflateReader<S> {
     }
 }
 
+#[pin_project(project = WrappedProj)]
 pub enum ZipFileWrappedReader<S> {
-    Stored(StoredReader<S>),
-    Deflated(DeflateReader<S>),
+    Stored(#[pin] StoredReader<S>),
+    Deflated(#[pin] DeflateReader<S>),
 }
 
 impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFileWrappedReader<S> {
@@ -112,9 +132,9 @@ impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFileWrappedReader<S> {
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        match self.get_mut() {
-            Self::Stored(r) => Pin::new(r).poll_read(cx, buf),
-            Self::Deflated(r) => Pin::new(r).poll_read(cx, buf),
+        match self.project() {
+            WrappedProj::Stored(r) => r.poll_read(cx, buf),
+            WrappedProj::Deflated(r) => r.poll_read(cx, buf),
         }
     }
 }

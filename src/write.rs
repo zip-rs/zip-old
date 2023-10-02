@@ -106,13 +106,14 @@ pub(crate) mod zip_writer {
 pub use zip_writer::ZipWriter;
 
 #[derive(Default)]
-struct ZipWriterStats {
+pub struct ZipWriterStats {
     hasher: Hasher,
     start: u64,
     bytes_written: u64,
 }
 
-struct ZipRawValues {
+/* TODO: give this a Default impl too!! */
+pub struct ZipRawValues {
     crc32: u32,
     compressed_size: u64,
     uncompressed_size: u64,

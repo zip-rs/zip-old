@@ -1,4 +1,4 @@
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 use tokio::io;
 
 use std::{
@@ -26,33 +26,32 @@ pub trait AsyncBufWrite: io::AsyncWrite {
 // https://github.com/rust-lang/rust/blob/master/library/std/src/sys_common/io.rs#L1
 const DEFAULT_BUF_SIZE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8 * 1024) };
 
-pin_project! {
-    ///```
-    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-    /// use zip::tokio::buf_writer::{AsyncBufWrite, BufWriter};
-    /// use tokio::io::AsyncWriteExt;
-    /// use std::io::Cursor;
-    ///
-    /// let msg = "hello\n";
-    /// let buf = Cursor::new(Vec::new());
-    /// let mut buf_writer = BufWriter::new(buf);
-    ///
-    /// buf_writer.write_all(msg.as_bytes()).await?;
-    /// buf_writer.flush().await?;
-    /// buf_writer.shutdown().await?;
-    /// let buf: Vec<u8> = buf_writer.into_inner().into_inner();
-    /// let s = std::str::from_utf8(&buf).unwrap();
-    /// assert_eq!(&s, &msg);
-    /// # Ok(())
-    /// # })}
-    ///```
-    pub struct BufWriter<W> {
-        #[pin]
-        inner: W,
-        buf: Box<[u8]>,
-        read_end: usize,
-        write_end: usize,
-    }
+///```
+/// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+/// use zip::tokio::buf_writer::{AsyncBufWrite, BufWriter};
+/// use tokio::io::AsyncWriteExt;
+/// use std::io::Cursor;
+///
+/// let msg = "hello\n";
+/// let buf = Cursor::new(Vec::new());
+/// let mut buf_writer = BufWriter::new(buf);
+///
+/// buf_writer.write_all(msg.as_bytes()).await?;
+/// buf_writer.flush().await?;
+/// buf_writer.shutdown().await?;
+/// let buf: Vec<u8> = buf_writer.into_inner().into_inner();
+/// let s = std::str::from_utf8(&buf).unwrap();
+/// assert_eq!(&s, &msg);
+/// # Ok(())
+/// # })}
+///```
+#[pin_project]
+pub struct BufWriter<W> {
+    #[pin]
+    inner: W,
+    buf: Box<[u8]>,
+    read_end: usize,
+    write_end: usize,
 }
 
 impl<W> BufWriter<W> {
@@ -127,12 +126,8 @@ impl<W: io::AsyncWrite> BufWriter<W> {
 impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
     #[inline]
     fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize) {
-        let n = dbg!(self.readable_data().len());
-        dbg!(amt.get());
         debug_assert!(self.readable_data().len() >= amt.get());
         let me = self.project();
-        /* *me.read_end += cmp::min(amt.get(), n); */
-        dbg!(n);
         *me.read_end += amt.get();
     }
 

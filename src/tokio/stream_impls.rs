@@ -74,7 +74,7 @@ pub mod deflate {
         Compress, CompressError, Decompress, DecompressError, FlushCompress, FlushDecompress,
         Status,
     };
-    use pin_project_lite::pin_project;
+    use pin_project::pin_project;
     use tokio::io;
 
     use std::{
@@ -97,51 +97,50 @@ pub mod deflate {
         ) -> Result<Status, Self::E>;
     }
 
-    pin_project! {
-        /// Compress:
-        ///```
-        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-        /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
-        /// use flate2::{Compress, Compression};
-        /// use tokio::io::{self, AsyncReadExt, AsyncBufRead};
-        /// use std::io::Cursor;
-        ///
-        /// let msg = "hello";
-        /// let buf = BufReader::new(Cursor::new(msg.as_bytes()));
-        /// let c = Compression::default();
-        /// let mut def = Reader::with_state(Compress::new(c, false), buf);
-        ///
-        /// let mut b = Vec::new();
-        /// def.read_to_end(&mut b).await?;
-        /// assert_eq!(&b, &[203, 72, 205, 201, 201, 7, 0]);
-        /// # Ok(())
-        /// # })}
-        ///```
-        ///
-        /// Decompress:
-        ///```
-        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-        /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
-        /// use flate2::Decompress;
-        /// use tokio::io::{self, AsyncReadExt};
-        /// use std::io::Cursor;
-        ///
-        /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
-        /// let buf = BufReader::new(Cursor::new(msg));
-        /// let mut inf = Reader::with_state(Decompress::new(false), buf);
-        ///
-        /// let mut s = String::new();
-        /// inf.read_to_string(&mut s).await?;
-        /// assert_eq!(&s, "hello");
-        /// # Ok(())
-        /// # })}
-        ///```
-        pub struct Reader<O, S> {
-            #[pin]
-            state: O,
-            #[pin]
-            inner: S,
-        }
+    /// Compress:
+    ///```
+    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+    /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
+    /// use flate2::{Compress, Compression};
+    /// use tokio::io::{self, AsyncReadExt, AsyncBufRead};
+    /// use std::io::Cursor;
+    ///
+    /// let msg = "hello";
+    /// let buf = BufReader::new(Cursor::new(msg.as_bytes()));
+    /// let c = Compression::default();
+    /// let mut def = Reader::with_state(Compress::new(c, false), buf);
+    ///
+    /// let mut b = Vec::new();
+    /// def.read_to_end(&mut b).await?;
+    /// assert_eq!(&b, &[203, 72, 205, 201, 201, 7, 0]);
+    /// # Ok(())
+    /// # })}
+    ///```
+    ///
+    /// Decompress:
+    ///```
+    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+    /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
+    /// use flate2::Decompress;
+    /// use tokio::io::{self, AsyncReadExt};
+    /// use std::io::Cursor;
+    ///
+    /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
+    /// let buf = BufReader::new(Cursor::new(msg));
+    /// let mut inf = Reader::with_state(Decompress::new(false), buf);
+    ///
+    /// let mut s = String::new();
+    /// inf.read_to_string(&mut s).await?;
+    /// assert_eq!(&s, "hello");
+    /// # Ok(())
+    /// # })}
+    ///```
+    #[pin_project]
+    pub struct Reader<O, S> {
+        #[pin]
+        state: O,
+        #[pin]
+        inner: S,
     }
 
     impl<O, S> Reader<O, S> {
@@ -223,59 +222,58 @@ pub mod deflate {
         }
     }
 
-    pin_project! {
-        /// Compress:
-        ///```
-        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-        /// use zip::tokio::{stream_impls::deflate::Writer, buf_writer::BufWriter};
-        /// use flate2::{Compress, Compression};
-        /// use tokio::io::{self, AsyncWriteExt};
-        /// use std::io::Cursor;
-        ///
-        /// let msg = "hello";
-        /// let c = Compression::default();
-        /// let mut def = Writer::with_state(
-        ///   Compress::new(c, false),
-        ///   BufWriter::new(Cursor::new(Vec::new())),
-        /// );
-        ///
-        /// def.write_all(msg.as_bytes()).await?;
-        /// def.flush().await?;
-        /// def.shutdown().await?;
-        /// let buf: Vec<u8> = def.into_inner().into_inner().into_inner();
-        /// let expected = &[202, 72, 205, 201, 201, 7, 0, 0, 0, 255, 255, 3, 0];
-        /// assert_eq!(&buf, expected);
-        /// # Ok(())
-        /// # })}
-        ///```
-        ///
-        /// Decompress:
-        ///```
-        /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-        /// use zip::tokio::{buf_writer::BufWriter, stream_impls::deflate::Writer};
-        /// use flate2::Decompress;
-        /// use tokio::io::{self, AsyncWriteExt};
-        /// use std::{cmp, io::Cursor};
-        ///
-        /// let msg: &[u8] = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
-        /// let buf = BufWriter::new(Cursor::new(Vec::new()));
-        /// let mut inf = Writer::with_state(Decompress::new(false), buf);
-        ///
-        /// inf.write_all(msg).await?;
-        /// inf.flush().await?;
-        /// inf.shutdown().await?;
-        /// let buf: Vec<u8> = inf.into_inner().into_inner().into_inner();
-        /// let expected = b"hello\n";
-        /// assert_eq!(&buf, &expected);
-        /// # Ok(())
-        /// # })}
-        ///```
-        pub struct Writer<O, S> {
-            #[pin]
-            state: O,
-            #[pin]
-            inner: S,
-        }
+    /// Compress:
+    ///```
+    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+    /// use zip::tokio::{stream_impls::deflate::Writer, buf_writer::BufWriter};
+    /// use flate2::{Compress, Compression};
+    /// use tokio::io::{self, AsyncWriteExt};
+    /// use std::io::Cursor;
+    ///
+    /// let msg = "hello";
+    /// let c = Compression::default();
+    /// let mut def = Writer::with_state(
+    ///   Compress::new(c, false),
+    ///   BufWriter::new(Cursor::new(Vec::new())),
+    /// );
+    ///
+    /// def.write_all(msg.as_bytes()).await?;
+    /// def.flush().await?;
+    /// def.shutdown().await?;
+    /// let buf: Vec<u8> = def.into_inner().into_inner().into_inner();
+    /// let expected = &[202, 72, 205, 201, 201, 7, 0, 0, 0, 255, 255, 3, 0];
+    /// assert_eq!(&buf, expected);
+    /// # Ok(())
+    /// # })}
+    ///```
+    ///
+    /// Decompress:
+    ///```
+    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+    /// use zip::tokio::{buf_writer::BufWriter, stream_impls::deflate::Writer};
+    /// use flate2::Decompress;
+    /// use tokio::io::{self, AsyncWriteExt};
+    /// use std::{cmp, io::Cursor};
+    ///
+    /// let msg: &[u8] = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
+    /// let buf = BufWriter::new(Cursor::new(Vec::new()));
+    /// let mut inf = Writer::with_state(Decompress::new(false), buf);
+    ///
+    /// inf.write_all(msg).await?;
+    /// inf.flush().await?;
+    /// inf.shutdown().await?;
+    /// let buf: Vec<u8> = inf.into_inner().into_inner().into_inner();
+    /// let expected = b"hello\n";
+    /// assert_eq!(&buf, &expected);
+    /// # Ok(())
+    /// # })}
+    ///```
+    #[pin_project]
+    pub struct Writer<O, S> {
+        #[pin]
+        state: O,
+        #[pin]
+        inner: S,
     }
 
     impl<O, S> Writer<O, S> {

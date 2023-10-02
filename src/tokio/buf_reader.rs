@@ -1,7 +1,7 @@
 /* Taken from https://docs.rs/tokio/latest/src/tokio/io/util/buf_reader.rs.html to fix a few
  * issues. */
 
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 #[cfg(doc)]
 use tokio::io::AsyncRead;
 use tokio::io::{self, AsyncBufRead};
@@ -16,46 +16,45 @@ use std::{
 // https://github.com/rust-lang/rust/blob/master/library/std/src/sys_common/io.rs#L1
 const DEFAULT_BUF_SIZE: num::NonZeroUsize = unsafe { num::NonZeroUsize::new_unchecked(8 * 1024) };
 
-pin_project! {
-    /// The `BufReader` struct adds buffering to any reader.
-    ///
-    /// It can be excessively inefficient to work directly with a [`AsyncRead`]
-    /// instance. A `BufReader` performs large, infrequent reads on the underlying
-    /// [`AsyncRead`] and maintains an in-memory buffer of the results.
-    ///
-    /// `BufReader` can improve the speed of programs that make *small* and
-    /// *repeated* read calls to the same file or network socket. It does not
-    /// help when reading very large amounts at once, or reading just one or a few
-    /// times. It also provides no advantage when reading from a source that is
-    /// already in memory, like a `Vec<u8>`.
-    ///
-    /// When the `BufReader` is dropped, the contents of its buffer will be
-    /// discarded. Creating multiple instances of a `BufReader` on the same
-    /// stream can cause data loss.
-    ///
-    ///```
-    /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-    /// use zip::tokio::buf_reader::BufReader;
-    /// use tokio::io::AsyncReadExt;
-    /// use std::io::Cursor;
-    ///
-    /// let msg = "hello";
-    /// let buf = Cursor::new(msg.as_bytes());
-    /// let mut buf_reader = BufReader::new(buf);
-    ///
-    /// let mut s = String::new();
-    /// buf_reader.read_to_string(&mut s).await?;
-    /// assert_eq!(&s, &msg);
-    /// # Ok(())
-    /// # })}
-    ///```
-    pub struct BufReader<R> {
-        #[pin]
-        inner: R,
-        buf: Box<[u8]>,
-        pos: usize,
-        cap: usize,
-    }
+/// The `BufReader` struct adds buffering to any reader.
+///
+/// It can be excessively inefficient to work directly with a [`AsyncRead`]
+/// instance. A `BufReader` performs large, infrequent reads on the underlying
+/// [`AsyncRead`] and maintains an in-memory buffer of the results.
+///
+/// `BufReader` can improve the speed of programs that make *small* and
+/// *repeated* read calls to the same file or network socket. It does not
+/// help when reading very large amounts at once, or reading just one or a few
+/// times. It also provides no advantage when reading from a source that is
+/// already in memory, like a `Vec<u8>`.
+///
+/// When the `BufReader` is dropped, the contents of its buffer will be
+/// discarded. Creating multiple instances of a `BufReader` on the same
+/// stream can cause data loss.
+///
+///```
+/// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
+/// use zip::tokio::buf_reader::BufReader;
+/// use tokio::io::AsyncReadExt;
+/// use std::io::Cursor;
+///
+/// let msg = "hello";
+/// let buf = Cursor::new(msg.as_bytes());
+/// let mut buf_reader = BufReader::new(buf);
+///
+/// let mut s = String::new();
+/// buf_reader.read_to_string(&mut s).await?;
+/// assert_eq!(&s, &msg);
+/// # Ok(())
+/// # })}
+///```
+#[pin_project]
+pub struct BufReader<R> {
+    #[pin]
+    inner: R,
+    buf: Box<[u8]>,
+    pos: usize,
+    cap: usize,
 }
 
 impl<R> BufReader<R> {

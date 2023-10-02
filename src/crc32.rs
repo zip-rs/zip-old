@@ -1,15 +1,18 @@
 //! Helper module to compute a CRC32 checksum
 
-use std::marker::Unpin;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
 use crc32fast::Hasher;
+use pin_project::pin_project;
 use tokio::io;
 
 /// Reader that validates the CRC32 when it reaches the EOF.
+#[pin_project]
 pub struct Crc32Reader<R> {
+    #[pin]
     inner: R,
+    #[pin]
     hasher: Hasher,
     check: u32,
     /// Signals if `inner` stores aes encrypted data.
@@ -27,6 +30,16 @@ impl<R> Crc32Reader<R> {
             check: checksum,
             ae2_encrypted,
         }
+    }
+
+    #[inline]
+    pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut R> {
+        self.project().inner
+    }
+
+    #[inline]
+    pub fn pin_hasher(self: Pin<&mut Self>) -> Pin<&mut Hasher> {
+        self.project().hasher
     }
 
     #[inline]
@@ -55,7 +68,7 @@ impl<R: std::io::Read> std::io::Read for Crc32Reader<R> {
     }
 }
 
-impl<R: io::AsyncRead + Unpin> io::AsyncRead for Crc32Reader<R> {
+impl<R: io::AsyncRead> io::AsyncRead for Crc32Reader<R> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -66,22 +79,24 @@ impl<R: io::AsyncRead + Unpin> io::AsyncRead for Crc32Reader<R> {
         }
         let start = buf.filled().len();
 
-        let s = self.get_mut();
+        let mut me = self.project();
 
-        if let Err(e) = ready!(Pin::new(&mut s.inner).poll_read(cx, buf)) {
+        if let Err(e) = ready!(me.inner.poll_read(cx, buf)) {
             return Poll::Ready(Err(e));
         }
 
         let written: usize = buf.filled().len() - start;
         if written == 0 {
-            return Poll::Ready(if !s.ae2_encrypted && !s.check_matches() {
-                Err(io::Error::new(io::ErrorKind::Other, "Invalid checksum"))
-            } else {
-                Ok(())
-            });
+            return Poll::Ready(
+                if !*me.ae2_encrypted && (*me.check != me.hasher.clone().finalize()) {
+                    Err(io::Error::new(io::ErrorKind::Other, "Invalid checksum"))
+                } else {
+                    Ok(())
+                },
+            );
         }
 
-        s.hasher.update(&buf.filled()[start..]);
+        me.hasher.update(&buf.filled()[start..]);
         Poll::Ready(Ok(()))
     }
 }
