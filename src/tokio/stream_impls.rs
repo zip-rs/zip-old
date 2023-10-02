@@ -5,26 +5,22 @@
 /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 /// use std::{io::Cursor, pin::Pin, num::NonZeroUsize};
 ///
-/// let msg = "hello\n";
+/// let msg = "hello";
 /// let c = Compression::default();
-/// const CAP: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(200) };
-/// let mut def = Reader::with_state(
-///   Compress::new(c, false),
-///   // BufReader::with_capacity(msg.as_bytes()),
-///   BufReader::with_capacity(CAP, msg.as_bytes()),
-/// );
+/// let mut buf = BufReader::new(Cursor::new(msg.as_bytes()));
+///
+/// let mut def = Reader::with_state(Compress::new(c, false), buf);
 ///
 /// let mut out_inf = Writer::with_state(
 ///   Decompress::new(false),
-///   BufWriter::with_capacity(CAP, Cursor::new(Vec::new())),
+///   BufWriter::new(Cursor::new(Vec::new())),
 /// );
 ///
-/// io::copy(&mut def, &mut out_inf).await?;
+/// io::copy_buf(&mut def, &mut out_inf).await?;
 /// out_inf.flush().await?;
 /// out_inf.shutdown().await?;
 ///
-/// let mut final_buf: Vec<u8> =
-///   out_inf.into_inner().into_inner().into_inner();
+/// let mut final_buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
 /// let s = std::str::from_utf8(&final_buf).unwrap();
 /// assert_eq!(&s, &msg);
 /// # Ok(())
@@ -63,44 +59,6 @@ pub mod deflate {
             output: &mut [u8],
             flush: Self::Flush,
         ) -> Result<Status, Self::E>;
-    }
-
-    fn encode_frame_consume_inputs<O: Ops, S: AsyncBufWrite>(
-        mut o: Pin<&mut O>,
-        input: &[u8],
-        output: &mut [u8],
-        flush: O::Flush,
-        mut s: Pin<&mut S>,
-    ) -> io::Result<(Status, usize, usize)> {
-        let before_in = o.total_in();
-        let before_out = o.total_out();
-
-        dbg!(input.len());
-
-        let status = match o.as_mut().encode_frame(input, output, flush) {
-            Ok(status) => status,
-            Err(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "corrupt write stream",
-                ));
-            }
-        };
-
-        let num_read = (o.total_in() - before_in) as usize;
-        let num_consumed = (o.total_out() - before_out) as usize;
-
-        if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
-            s.as_mut().consume_write(num_consumed);
-        }
-        if let Some(num_read) = NonZeroUsize::new(num_read) {
-            let u_num_read: usize = num_read.into();
-            debug_assert!(u_num_read <= input.len());
-            /* todo!("?"); */
-            s.as_mut().consume_read(num_read);
-        }
-
-        Ok((status, num_read, num_consumed))
     }
 
     pin_project! {
@@ -151,10 +109,6 @@ pub mod deflate {
     }
 
     impl<O, S> Reader<O, S> {
-        pub fn with_state(state: O, inner: S) -> Self {
-            Self { state, inner }
-        }
-
         pub fn pin_state(self: Pin<&mut Self>) -> Pin<&mut O> {
             self.project().state
         }
@@ -165,6 +119,21 @@ pub mod deflate {
 
         pub fn into_inner(self) -> S {
             self.inner
+        }
+    }
+
+    impl<O: Ops, S: io::AsyncBufRead> Reader<O, S> {
+        pub fn with_state(state: O, inner: S) -> Self {
+            Self { state, inner }
+        }
+    }
+
+    impl<O: Ops, S: io::AsyncBufRead> io::AsyncBufRead for Reader<O, S> {
+        fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+            self.pin_stream().poll_fill_buf(cx)
+        }
+        fn consume(self: Pin<&mut Self>, amt: usize) {
+            self.pin_stream().consume(amt);
         }
     }
 
@@ -227,7 +196,7 @@ pub mod deflate {
         /// use tokio::io::{self, AsyncWriteExt};
         /// use std::io::Cursor;
         ///
-        /// let msg = "hello\n";
+        /// let msg = "hello";
         /// let c = Compression::default();
         /// let mut def = Writer::with_state(
         ///   Compress::new(c, false),
@@ -238,7 +207,7 @@ pub mod deflate {
         /// def.flush().await?;
         /// def.shutdown().await?;
         /// let buf: Vec<u8> = def.into_inner().into_inner().into_inner();
-        /// let expected = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
+        /// let expected = &[202, 72, 205, 201, 201, 7, 0, 0, 0, 255, 255, 3, 0];
         /// assert_eq!(&buf, expected);
         /// # Ok(())
         /// # })}
@@ -247,10 +216,10 @@ pub mod deflate {
         /// Decompress:
         ///```
         /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-        /// use zip::tokio::{buf_writer::{AsyncBufWrite, BufWriter}, stream_impls::deflate::Writer};
+        /// use zip::tokio::{buf_writer::BufWriter, stream_impls::deflate::Writer};
         /// use flate2::Decompress;
         /// use tokio::io::{self, AsyncWriteExt};
-        /// use std::io::Cursor;
+        /// use std::{cmp, io::Cursor};
         ///
         /// let msg: &[u8] = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
         /// let buf = BufWriter::new(Cursor::new(Vec::new()));
@@ -260,11 +229,8 @@ pub mod deflate {
         /// inf.flush().await?;
         /// inf.shutdown().await?;
         /// let buf: Vec<u8> = inf.into_inner().into_inner().into_inner();
-        /// let s = std::str::from_utf8(&buf).unwrap();
-        /// let expected = "hello";
-        /// // FIXME: we should not be needing to truncate the output like this!! This is probably
-        /// // a bug!!!
-        /// assert_eq!(&s[..expected.len()], expected);
+        /// let expected = b"hello\n";
+        /// assert_eq!(&buf, &expected);
         /// # Ok(())
         /// # })}
         ///```
@@ -277,10 +243,6 @@ pub mod deflate {
     }
 
     impl<O, S> Writer<O, S> {
-        pub fn with_state(state: O, inner: S) -> Self {
-            Self { state, inner }
-        }
-
         fn pin_new_state(&self) -> Pin<&mut O> {
             unsafe {
                 let state: *mut O = mem::transmute(&self.state);
@@ -308,6 +270,12 @@ pub mod deflate {
         }
     }
 
+    impl<O: Ops, S: AsyncBufWrite> Writer<O, S> {
+        pub fn with_state(state: O, inner: S) -> Self {
+            Self { state, inner }
+        }
+    }
+
     impl<O: Ops, S: AsyncBufWrite> io::AsyncWrite for Writer<O, S> {
         fn poll_write(
             self: Pin<&mut Self>,
@@ -320,13 +288,29 @@ pub mod deflate {
                 let mut write_buf: NonEmptyWriteSlice<'_, u8> =
                     ready!(self.pin_new_stream().poll_writable(cx))?;
 
-                let (status, num_read, _) = encode_frame_consume_inputs(
-                    self.pin_new_state(),
-                    buf,
-                    &mut *write_buf,
-                    O::Flush::none(),
-                    self.pin_new_stream(),
-                )?;
+                let before_in = self.state.total_in();
+                let before_out = self.state.total_out();
+
+                let status =
+                    match self
+                        .pin_new_state()
+                        .encode_frame(buf, &mut *write_buf, O::Flush::none())
+                    {
+                        Ok(status) => status,
+                        Err(_) => {
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::InvalidInput,
+                                "corrupt write stream(1)",
+                            )));
+                        }
+                    };
+
+                let num_read = (self.state.total_in() - before_in) as usize;
+                let num_consumed = (self.state.total_out() - before_out) as usize;
+
+                if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
+                    self.pin_new_stream().consume_write(num_consumed);
+                }
 
                 match (num_read, status) {
                     (0, Status::Ok | Status::BufError) => {
@@ -340,27 +324,47 @@ pub mod deflate {
         }
 
         fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            if let Some(ref mut write_buf) = self.pin_new_stream().try_writable() {
-                let (_, _, _) = encode_frame_consume_inputs(
-                    self.pin_new_state(),
-                    &[],
-                    &mut *write_buf,
-                    O::Flush::sync(),
-                    self.pin_new_stream(),
-                )?;
+            {
+                let mut write_buf: NonEmptyWriteSlice<'_, u8> =
+                    ready!(self.pin_new_stream().poll_writable(cx))?;
+
+                let before_out = self.state.total_out();
+
+                if let Err(_) =
+                    self.pin_new_state()
+                        .encode_frame(&[], &mut *write_buf, O::Flush::sync())
+                {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "corrupt write stream(2)",
+                    )));
+                };
+
+                let num_consumed = (self.state.total_out() - before_out) as usize;
+                if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
+                    self.pin_new_stream().consume_write(num_consumed);
+                }
             }
 
             loop {
                 let mut write_buf = ready!(self.pin_new_stream().poll_writable(cx))?;
 
-                let (_, _, num_consumed) = encode_frame_consume_inputs(
-                    self.pin_new_state(),
-                    &[],
-                    &mut *write_buf,
-                    O::Flush::none(),
-                    self.pin_new_stream(),
-                )?;
-                if num_consumed == 0 {
+                let before_out = self.state.total_out();
+
+                if let Err(_) =
+                    self.pin_new_state()
+                        .encode_frame(&[], &mut *write_buf, O::Flush::none())
+                {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "corrupt write stream(3)",
+                    )));
+                };
+
+                let num_consumed = (self.state.total_out() - before_out) as usize;
+                if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
+                    self.pin_new_stream().consume_write(num_consumed);
+                } else {
                     break;
                 }
             }
@@ -372,19 +376,59 @@ pub mod deflate {
             loop {
                 let mut write_buf = ready!(self.pin_new_stream().poll_writable(cx))?;
 
-                let (_, _, num_consumed) = encode_frame_consume_inputs(
-                    self.pin_new_state(),
-                    &[],
-                    &mut *write_buf,
-                    O::Flush::finish(),
-                    self.pin_new_stream(),
-                )?;
-                if num_consumed == 0 {
+                let before_out = self.state.total_out();
+
+                if let Err(_) =
+                    self.pin_new_state()
+                        .encode_frame(&[], &mut *write_buf, O::Flush::finish())
+                {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "corrupt write stream(4)",
+                    )));
+                };
+
+                let num_consumed = (self.state.total_out() - before_out) as usize;
+                if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
+                    self.pin_new_stream().consume_write(num_consumed);
+                } else {
                     break;
                 }
             }
 
             self.pin_stream().poll_shutdown(cx)
+        }
+    }
+
+    impl<O: Ops, S: AsyncBufWrite> AsyncBufWrite for Writer<O, S> {
+        #[inline]
+        fn consume_read(self: Pin<&mut Self>, amt: NonZeroUsize) {
+            self.pin_stream().consume_read(amt);
+        }
+        #[inline]
+        fn readable_data(&self) -> &[u8] {
+            self.inner.readable_data()
+        }
+
+        #[inline]
+        fn consume_write(self: Pin<&mut Self>, amt: NonZeroUsize) {
+            self.pin_stream().consume_write(amt);
+        }
+        #[inline]
+        fn try_writable(self: Pin<&mut Self>) -> Option<NonEmptyWriteSlice<'_, u8>> {
+            self.pin_stream().try_writable()
+        }
+        #[inline]
+        fn poll_writable(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<io::Result<NonEmptyWriteSlice<'_, u8>>> {
+            self.pin_stream().poll_writable(cx)
+        }
+
+        #[inline]
+        fn reset(self: Pin<&mut Self>) {
+            self.pin_stream().reset();
         }
     }
 

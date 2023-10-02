@@ -88,7 +88,7 @@ impl<S> IntoInner<S> for DeflateReader<S> {
     }
 }
 
-impl<S> ReaderWrapper<S> for DeflateReader<S> {
+impl<S: io::AsyncRead> ReaderWrapper<S> for DeflateReader<S> {
     fn construct(data: &ZipFileData, s: S) -> Self {
         Self(Crc32Reader::new(
             deflate::Reader::with_state(
@@ -137,7 +137,7 @@ impl<S> IntoInner<S> for ZipFileWrappedReader<Limiter<S>> {
     }
 }
 
-impl<S> ReaderWrapper<S> for ZipFileWrappedReader<S> {
+impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
     fn construct(data: &ZipFileData, s: S) -> Self {
         match data.compression_method {
             CompressionMethod::Stored => Self::Stored(StoredReader::<S>::construct(data, s)),
