@@ -688,19 +688,19 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
             self.as_mut().end_extra_data().await?;
         }
 
-        assert!(!self.writing_raw);
-
         let mut me = self.project();
 
-        let file = match me.files.last_mut() {
-            None => return Ok(()),
-            Some(f) => f,
-        };
+        if !*me.writing_raw {
+            let file = match me.files.last_mut() {
+                None => return Ok(()),
+                Some(f) => f,
+            };
 
-        me.inner
-            .as_mut()
-            .update_header_and_unwrap_stream(me.stats, file)
-            .await?;
+            me.inner
+                .as_mut()
+                .update_header_and_unwrap_stream(me.stats, file)
+                .await?;
+        }
 
         *me.writing_to_file = false;
         *me.writing_raw = false;
@@ -750,6 +750,79 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
 
         let me = self.project();
         me.inner.finalize(me.files, me.comment).await
+    }
+
+    /// Copy over the entire contents of another archive verbatim.
+    ///
+    /// This method extracts file metadata from the `source` archive, then simply performs a single
+    /// big [`io::copy()`](io::copy) to transfer all the actual file contents without any
+    /// decompression or decryption. This is more performant than the equivalent operation of
+    /// calling [`Self::raw_copy_file()`] for each entry from the `source` archive in sequence.
+    ///
+    ///```
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use zip::{tokio::{read::ZipArchive, write::ZipWriter}, write::FileOptions};
+    /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
+    /// use std::{io::Cursor, pin::Pin};
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(Box::pin(buf));
+    /// let mut zp = Pin::new(&mut zip);
+    /// zp.as_mut().start_file("a.txt", FileOptions::default()).await?;
+    /// zp.write_all(b"hello\n").await?;
+    /// let mut src = zip.finish_into_readable().await?;
+    /// let src = Pin::new(&mut src);
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(Box::pin(buf));
+    /// let mut zp = Pin::new(&mut zip);
+    /// zp.as_mut().start_file("b.txt", FileOptions::default()).await?;
+    /// zp.write_all(b"hey\n").await?;
+    /// let mut src2 = zip.finish_into_readable().await?;
+    /// let src2 = Pin::new(&mut src2);
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(Box::pin(buf));
+    /// let mut zp = Pin::new(&mut zip);
+    /// zp.as_mut().merge_archive(src).await?;
+    /// zp.merge_archive(src2).await?;
+    /// let mut result = zip.finish_into_readable().await?;
+    /// let mut zp = Pin::new(&mut result);
+    ///
+    /// let mut s: String = String::new();
+    /// zp.as_mut().by_name("a.txt").await?.read_to_string(&mut s).await?;
+    /// assert_eq!(s, "hello\n");
+    /// s.clear();
+    /// zp.by_name("b.txt").await?.read_to_string(&mut s).await?;
+    /// assert_eq!(s, "hey\n");
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub async fn merge_archive<R>(
+        mut self: Pin<&mut Self>,
+        source: Pin<&mut ZipArchive<R>>,
+    ) -> ZipResult<()>
+    where
+        R: io::AsyncRead + io::AsyncSeek,
+    {
+        self.as_mut().finish_file().await?;
+
+        /* Ensure we accept the file contents on faith (and avoid overwriting the data).
+         * See raw_copy_file_rename(). */
+        self.writing_to_file = true;
+        self.writing_raw = true;
+
+        let mut me = self.project();
+
+        /* Get the file entries from the source archive. */
+        let new_files = match me.inner.as_mut().project() {
+            InnerProj::FileWriter(_) => unreachable!("should never merge with unfinished file!"),
+            InnerProj::NoActiveFile(writer) => source.merge_contents(writer).await?,
+        };
+        /* These file entries are now ours! */
+        me.files.extend(new_files);
+
+        Ok(())
     }
 }
 

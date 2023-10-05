@@ -516,8 +516,16 @@ pub struct ZipArchive<S> {
 
 impl<S> ZipArchive<S> {
     #[inline]
-    fn pin_reader(self: Pin<&mut Self>) -> &mut Option<Pin<Box<S>>> {
+    fn pin_reader_mut_option(self: Pin<&mut Self>) -> &mut Option<Pin<Box<S>>> {
         &mut self.get_mut().reader
+    }
+
+    #[inline]
+    fn pin_reader_assert(self: Pin<&mut Self>) -> Pin<&mut S> {
+        unsafe {
+            let s = self.get_unchecked_mut();
+            s.reader.as_mut().unwrap().as_mut()
+        }
     }
 }
 
@@ -577,7 +585,7 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
             data,
             unsafe { &mut *s.get() }
                 .as_mut()
-                .pin_reader()
+                .pin_reader_mut_option()
                 .take()
                 .unwrap(),
         )
@@ -612,6 +620,86 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
 
         self.raw_entries_stream()
             .map(|result| result.map(|entry| Box::pin(Pin::into_inner(entry).decode_stream())))
+    }
+
+    pub(crate) async fn merge_contents<W: io::AsyncWrite + io::AsyncSeek>(
+        mut self: Pin<&mut Self>,
+        mut w: Pin<&mut W>,
+    ) -> ZipResult<Vec<ZipFileData>> {
+        let mut new_files: Vec<ZipFileData> = self.shared.files.values().cloned().collect();
+        if new_files.is_empty() {
+            return Ok(Vec::new());
+        }
+        /* The first file header will probably start at the beginning of the file, but zip doesn't
+         * enforce that, and executable zips like PEX files will have a shebang line so will
+         * definitely be greater than 0.
+         *
+         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         */
+
+        let new_initial_header_start = w.stream_position().await?;
+        /* Push back file header starts for all entries in the covered files. */
+        new_files
+            .iter_mut()
+            .map(|f| {
+                /* This is probably the only really important thing to change. */
+                f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
+                    ZipError::InvalidArchive(
+                        "new header start from merge would have been too large",
+                    ),
+                )?;
+                /* This is only ever used internally to cache metadata lookups (i
+                t's not part of the
+                 * zip spec), and 0 is the sentinel value. */
+                f.central_header_start = 0;
+                /* This is an atomic variable so it can be updated from another thread in the
+                 * implementation (which is good!). */
+                let new_data_start = f
+                    .data_start
+                    /* NB: it's annoying there's no .checked_fetch_add(), but we don't need it here
+                     * because nothing else has any reference to this data. */
+                    .load()
+                    .checked_add(new_initial_header_start)
+                    .ok_or(ZipError::InvalidArchive(
+                        "new data start from merge would have been too large",
+                    ))?;
+                f.data_start.store(new_data_start);
+                Ok(())
+            })
+            .collect::<Result<(), ZipError>>()?;
+
+        let shared = Arc::clone(&self.shared);
+
+        /* Rewind to the beginning of the file.
+         *
+         * NB: we *could* decide to start copying from new_files[0].header_start instead, which
+         * would avoid copying over e.g. any pex shebangs or other file contents that start before
+         * the first zip file entry. However, zip files actually shouldn't care about garbage data
+         * in *between* real entries, since the central directory header records the correct start
+         * location of each, and keeping track of that math is more complicated logic that will only
+         * rarely be used, since most zips that get merged together are likely to be produced
+         * specifically for that purpose (and therefore are unlikely to have a shebang or other
+         * preface). Finally, this preserves any data that might actually be useful.
+         */
+        self.as_mut()
+            .pin_reader_assert()
+            .seek(io::SeekFrom::Start(shared.offset))
+            .await?;
+        /* Find the end of the file data. */
+        let length_to_read = (shared.directory_start - shared.offset) as usize;
+
+        let inner = self.as_mut().pin_reader_mut_option().take().unwrap();
+        /* Produce an AsyncRead that reads bytes up until the start of the central directory
+         * header. */
+        let mut limited_raw = Limiter::take(shared.offset, inner, length_to_read);
+        io::copy(&mut limited_raw, &mut w).await?;
+
+        let _ = self
+            .pin_reader_mut_option()
+            .insert(limited_raw.unwrap_inner_pin());
+
+        /* Return the files we've just written to the data stream. */
+        Ok(new_files)
     }
 
     ///```
