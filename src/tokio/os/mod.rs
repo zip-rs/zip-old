@@ -4,6 +4,8 @@ use crate::{
     types::ZipFileData,
 };
 
+pub mod linux;
+
 use tokio::{
     fs,
     io::{self, unix::AsyncFd},
@@ -95,24 +97,24 @@ impl SharedSubset {
     }
 }
 
-#[derive(Debug)]
-pub struct MappedZipArchive<S> {
-    shared: Arc<SharedSubset>,
-    reader: Option<S>,
-}
+/* #[derive(Debug)] */
+/* pub struct MappedZipArchive<S> { */
+/*     shared: Arc<SharedSubset>, */
+/*     reader: Option<Pin<Box<S>>>, */
+/* } */
 
 /* #[derive(Debug)] */
 /* pub struct ZipFdArchive<S: AsRawFd> { */
 /*     shared: Arc<Shared>, */
-/*     fd: AsyncFd<S>, */
+/*     fd: Pin<Box<AsyncFd<S>>>, */
 /* } */
 
-/* impl<S: AsRawFd + io::AsyncRead + io::AsyncSeek + Unpin> ZipFdArchive<S> { */
-/*     pub async fn new(reader: S) -> ZipResult<Self> { */
+/* impl<S: AsRawFd + io::AsyncRead + io::AsyncSeek> ZipFdArchive<S> { */
+/*     pub async fn new(reader: Pin<Box<S>>) -> ZipResult<Self> { */
 /*         let (shared, reader) = Shared::parse(reader).await?; */
 /*         Ok(Self { */
 /*             fd: AsyncFd::with_interest( */
-/*                 reader, */
+/*                 Pin::into_inner(reader), */
 /*                 io::Interest::READABLE | io::Interest::WRITABLE | io::Interest::ERROR, */
 /*             )?, */
 /*             shared: Arc::new(shared), */
@@ -120,7 +122,7 @@ pub struct MappedZipArchive<S> {
 /*     } */
 /* } */
 
-/* impl<S: AsRawFd + Unpin> ZipFdArchive<S> { */
+/* impl<S: AsRawFd> ZipFdArchive<S> { */
 /*     const NUM_PIPES: usize = 8; */
 
 /*     pub async fn splicing_extract(self: Pin<&mut Self>, root: Arc<PathBuf>) -> ZipResult<()> { */
