@@ -74,6 +74,10 @@ harness = false
 name = "extract"
 harness = false
 
+# [[bench]]
+# name = "merge_archive"
+# harness = false
+
 [profile.release]
 strip                   = false
 debug                   = true
