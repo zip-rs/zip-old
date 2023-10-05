@@ -1,14 +1,11 @@
+use crate::tokio::WrappedPin;
+
 use tokio::io;
 
 use std::{
-    marker::Unpin,
     pin::Pin,
     task::{Context, Poll},
 };
-
-pub trait IntoInner<S> {
-    fn into_inner(self) -> S;
-}
 
 pub mod stream_adaptors {
     use super::*;
@@ -23,36 +20,36 @@ pub mod stream_adaptors {
 
     ///```
     /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
-    /// use std::io::{SeekFrom, Cursor, prelude::*};
-    /// use tokio::io;
+    /// use std::{io::{SeekFrom, Cursor}, pin::Pin};
+    /// use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
     /// use zip::tokio::combinators::Limiter;
     ///
     /// let mut buf = Cursor::new(Vec::new());
-    /// buf.write_all(b"hello\n")?;
-    /// buf.seek(SeekFrom::Start(1))?;
+    /// buf.write_all(b"hello\n").await?;
+    /// buf.seek(SeekFrom::Start(1)).await?;
     ///
-    /// let mut limited = Limiter::take(1, buf, 3);
+    /// let mut limited = Limiter::take(1, Box::pin(buf), 3);
     /// let mut s = String::new();
-    /// limited.read_to_string(&mut s)?;
+    /// limited.read_to_string(&mut s).await?;
     /// assert_eq!(s, "ell");
     ///
-    /// io::AsyncSeekExt::seek(&mut limited, SeekFrom::End(-1)).await?;
+    /// limited.seek(SeekFrom::End(-1)).await?;
     /// s.clear();
-    /// io::AsyncReadExt::read_to_string(&mut limited, &mut s).await?;
+    /// limited.read_to_string(&mut s).await?;
     /// assert_eq!(s, "l");
     /// # Ok(())
     /// # })}
     ///```
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct Limiter<S> {
         pub max_len: usize,
         pub internal_pos: usize,
         pub start_pos: u64,
-        pub source_stream: S,
+        pub source_stream: Pin<Box<S>>,
     }
 
     impl<S> Limiter<S> {
-        pub fn take(start_pos: u64, source_stream: S, limit: usize) -> Self {
+        pub fn take(start_pos: u64, source_stream: Pin<Box<S>>, limit: usize) -> Self {
             Self {
                 max_len: limit,
                 internal_pos: 0,
@@ -62,7 +59,13 @@ pub mod stream_adaptors {
         }
 
         #[inline]
+        fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut S> {
+            self.get_mut().source_stream.as_mut()
+        }
+
+        #[inline]
         fn remaining_len(&self) -> usize {
+            debug_assert!(self.internal_pos <= self.max_len);
             self.max_len - self.internal_pos
         }
 
@@ -102,8 +105,8 @@ pub mod stream_adaptors {
         }
     }
 
-    impl<S> IntoInner<S> for Limiter<S> {
-        fn into_inner(self) -> S {
+    impl<S> WrappedPin<S> for Limiter<S> {
+        fn unwrap_inner_pin(self) -> Pin<Box<S>> {
             self.source_stream
         }
     }
@@ -115,71 +118,22 @@ pub mod stream_adaptors {
         }
     }
 
-    impl<S: std::io::Read> std::io::Read for Limiter<S> {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            debug_assert!(!buf.is_empty());
-
-            let num_bytes_to_read: usize = self.limit_length(buf.len());
-            if num_bytes_to_read == 0 {
-                return Ok(0);
-            }
-
-            let bytes_read = self.source_stream.read(&mut buf[..num_bytes_to_read])?;
-            /* dbg!(bytes_read); */
-            if bytes_read > 0 {
-                self.push_cursor(bytes_read);
-            }
-            Ok(bytes_read)
-        }
-    }
-
-    impl<S: std::io::Seek> std::io::Seek for Limiter<S> {
-        fn seek(&mut self, op: io::SeekFrom) -> io::Result<u64> {
-            let diff = self.convert_seek_request_to_relative(op);
-            let cur_pos = self.source_stream.seek(io::SeekFrom::Current(diff))?;
-            self.interpret_new_pos(cur_pos);
-            Ok(cur_pos)
-        }
-    }
-
-    impl<S: std::io::Write> std::io::Write for Limiter<S> {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            debug_assert!(!buf.is_empty());
-
-            let num_bytes_to_write: usize = self.limit_length(buf.len());
-            if num_bytes_to_write == 0 {
-                return Ok(0);
-            }
-
-            let bytes_written = self.source_stream.write(&buf[..num_bytes_to_write])?;
-            if bytes_written > 0 {
-                self.push_cursor(bytes_written);
-            }
-            Ok(bytes_written)
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            self.source_stream.flush()
-        }
-    }
-
-    impl<S: io::AsyncRead + Unpin> io::AsyncRead for Limiter<S> {
+    impl<S: io::AsyncRead> io::AsyncRead for Limiter<S> {
         fn poll_read(
-            self: Pin<&mut Self>,
+            mut self: Pin<&mut Self>,
             cx: &mut Context<'_>,
             buf: &mut io::ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
             debug_assert!(buf.remaining() > 0);
 
-            let num_bytes_to_read: usize = self.limit_length(buf.remaining());
+            let num_bytes_to_read: usize = self.as_mut().limit_length(buf.remaining());
             if num_bytes_to_read == 0 {
                 return Poll::Ready(Ok(()));
             }
 
-            let s = self.get_mut();
             buf.initialize_unfilled_to(num_bytes_to_read);
             let mut unfilled_buf = buf.take(num_bytes_to_read);
-            match Pin::new(&mut s.source_stream).poll_read(cx, &mut unfilled_buf) {
+            match self.as_mut().pin_stream().poll_read(cx, &mut unfilled_buf) {
                 Poll::Pending => Poll::Pending,
                 Poll::Ready(x) => {
                     let bytes_read = unfilled_buf.filled().len();
@@ -187,7 +141,7 @@ pub mod stream_adaptors {
                         assert!(bytes_read <= num_bytes_to_read);
                         if bytes_read > 0 {
                             buf.advance(bytes_read);
-                            s.push_cursor(bytes_read);
+                            self.push_cursor(bytes_read);
                         }
                     }))
                 }
@@ -195,7 +149,7 @@ pub mod stream_adaptors {
         }
     }
 
-    impl<S: io::AsyncSeek + Unpin> io::AsyncSeek for Limiter<S> {
+    impl<S: io::AsyncSeek> io::AsyncSeek for Limiter<S> {
         fn start_seek(self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> {
             let diff = self.convert_seek_request_to_relative(op);
             let s = self.get_mut();
@@ -211,7 +165,7 @@ pub mod stream_adaptors {
         }
     }
 
-    impl<S: io::AsyncWrite + Unpin> io::AsyncWrite for Limiter<S> {
+    impl<S: io::AsyncWrite> io::AsyncWrite for Limiter<S> {
         fn poll_write(
             self: Pin<&mut Self>,
             cx: &mut Context<'_>,

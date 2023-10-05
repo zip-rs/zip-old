@@ -145,7 +145,7 @@ async fn main() -> ZipResult<()> {
                 /* .custom_flags(libc::O_NONBLOCK) */
                 .open(&test_archive_path)
                 .await?;
-            let mut src = zip::read::tokio::ZipArchive::new(handle).await?;
+            let mut src = zip::tokio::read::ZipArchive::new(Box::pin(handle)).await?;
             Pin::new(&mut src).extract(out.clone()).await?;
         }
     }

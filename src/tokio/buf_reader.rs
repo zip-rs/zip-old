@@ -1,7 +1,8 @@
 /* Taken from https://docs.rs/tokio/latest/src/tokio/io/util/buf_reader.rs.html to fix a few
  * issues. */
 
-use pin_project::pin_project;
+use crate::tokio::WrappedPin;
+
 #[cfg(doc)]
 use tokio::io::AsyncRead;
 use tokio::io::{self, AsyncBufRead};
@@ -36,11 +37,11 @@ const DEFAULT_BUF_SIZE: num::NonZeroUsize = unsafe { num::NonZeroUsize::new_unch
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
 /// use zip::tokio::buf_reader::BufReader;
 /// use tokio::io::AsyncReadExt;
-/// use std::io::Cursor;
+/// use std::{io::Cursor, pin::Pin};
 ///
 /// let msg = "hello";
 /// let buf = Cursor::new(msg.as_bytes());
-/// let mut buf_reader = BufReader::new(buf);
+/// let mut buf_reader = BufReader::new(Box::pin(buf));
 ///
 /// let mut s = String::new();
 /// buf_reader.read_to_string(&mut s).await?;
@@ -48,24 +49,27 @@ const DEFAULT_BUF_SIZE: num::NonZeroUsize = unsafe { num::NonZeroUsize::new_unch
 /// # Ok(())
 /// # })}
 ///```
-#[pin_project]
 pub struct BufReader<R> {
-    #[pin]
-    inner: R,
+    inner: Pin<Box<R>>,
     buf: Box<[u8]>,
     pos: usize,
     cap: usize,
 }
 
+struct BufProj<'a, R> {
+    pub inner: Pin<&'a mut R>,
+    pub buf: &'a mut Box<[u8]>,
+}
+
 impl<R> BufReader<R> {
     /// Creates a new `BufReader` with a default buffer capacity. The default is currently 8 KB,
     /// but may change in the future.
-    pub fn new(inner: R) -> Self {
+    pub fn new(inner: Pin<Box<R>>) -> Self {
         Self::with_capacity(DEFAULT_BUF_SIZE, inner)
     }
 
     /// Creates a new `BufReader` with the specified buffer capacity.
-    pub fn with_capacity(capacity: num::NonZeroUsize, inner: R) -> Self {
+    pub fn with_capacity(capacity: num::NonZeroUsize, inner: Pin<Box<R>>) -> Self {
         let buffer = vec![0; capacity.into()];
         Self {
             inner,
@@ -80,35 +84,20 @@ impl<R> BufReader<R> {
         self.buf.len()
     }
 
-    /// Gets a reference to the underlying reader.
-    ///
-    /// It is inadvisable to directly read from the underlying reader.
     #[inline]
-    pub fn get_ref(&self) -> &R {
-        &self.inner
-    }
-
-    /// Gets a mutable reference to the underlying reader.
-    ///
-    /// It is inadvisable to directly read from the underlying reader.
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut R {
-        &mut self.inner
-    }
-
-    /// Gets a pinned mutable reference to the underlying reader.
-    ///
-    /// It is inadvisable to directly read from the underlying reader.
-    #[inline]
-    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut R> {
+    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut R> {
         self.project().inner
     }
 
-    /// Consumes this `BufReader`, returning the underlying reader.
-    ///
-    /// Note that any leftover data in the internal buffer is lost.
-    pub fn into_inner(self) -> R {
-        self.inner
+    #[inline]
+    fn project(self: Pin<&mut Self>) -> BufProj<'_, R> {
+        unsafe {
+            let Self { inner, buf, .. } = self.get_unchecked_mut();
+            BufProj {
+                inner: Pin::new_unchecked(inner.as_mut().get_unchecked_mut()),
+                buf,
+            }
+        }
     }
 
     #[inline]
@@ -130,21 +119,17 @@ impl<R> BufReader<R> {
         &self.buf[self.pos..self.cap]
     }
 
-    #[inline]
-    fn buffer_pin<'a>(self: Pin<&'a mut Self>) -> &'a [u8] {
-        let me = self.project();
-        let pos: usize = *me.pos;
-        let cap: usize = *me.cap;
-        debug_assert!(pos <= cap);
-        &me.buf[pos..cap]
-    }
-
     /// Invalidates all data in the internal buffer.
     #[inline]
-    fn discard_buffer(self: Pin<&mut Self>) {
-        let me = self.project();
-        *me.pos = 0;
-        *me.cap = 0;
+    fn discard_buffer(&mut self) {
+        self.pos = 0;
+        self.cap = 0;
+    }
+
+    #[inline]
+    fn reset_buffer(&mut self, len: usize) {
+        self.pos = 0;
+        self.cap = len;
     }
 
     #[inline]
@@ -155,6 +140,15 @@ impl<R> BufReader<R> {
     #[inline]
     fn should_bypass_buffer(&self, buf: &io::ReadBuf<'_>) -> bool {
         self.is_empty() && self.request_is_larger_than_buffer(buf)
+    }
+}
+
+/// Consumes this `BufReader`, returning the underlying reader.
+///
+/// Note that any leftover data in the internal buffer is lost.
+impl<R> WrappedPin<R> for BufReader<R> {
+    fn unwrap_inner_pin(self) -> Pin<Box<R>> {
+        self.inner
     }
 }
 
@@ -170,13 +164,18 @@ impl<R: io::AsyncRead> BufReader<R> {
     }
 
     #[inline]
-    fn reset_to_single_read(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let me = self.project();
-        let mut buf = io::ReadBuf::new(me.buf);
-        ready!(me.inner.poll_read(cx, &mut buf))?;
-        /* debug_assert!(buf.filled().len() > 0); */
-        *me.cap = buf.filled().len();
-        *me.pos = 0;
+    fn reset_to_single_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
+        let len = {
+            let me = self.as_mut().project();
+            let mut buf = io::ReadBuf::new(me.buf);
+            ready!(me.inner.poll_read(cx, &mut buf))?;
+            buf.filled().len()
+        };
+
+        self.reset_buffer(len);
         Poll::Ready(Ok(()))
     }
 }
@@ -206,7 +205,7 @@ impl<R: io::AsyncRead> io::AsyncBufRead for BufReader<R> {
         if self.is_empty() {
             ready!(self.as_mut().reset_to_single_read(cx))?;
         }
-        let buf: &[u8] = self.buffer_pin();
+        let buf: &[u8] = self.into_ref().get_ref().buffer();
         Poll::Ready(Ok(buf))
     }
 
@@ -214,8 +213,8 @@ impl<R: io::AsyncRead> io::AsyncBufRead for BufReader<R> {
         if amt == 0 {
             return;
         }
-        let me = self.project();
-        *me.pos = cmp::min(*me.pos + amt, *me.cap);
+        let me = self.get_mut();
+        me.pos = cmp::min(me.pos + amt, me.cap);
     }
 }
 

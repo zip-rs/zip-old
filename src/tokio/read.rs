@@ -1,25 +1,11 @@
 use crate::compression::CompressionMethod;
-use crate::crc32::Crc32Reader;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::tokio::{
-    buf_reader::BufReader,
-    combinators::{IntoInner, Limiter},
-    extraction::CompletedPaths,
-    stream_impls::deflate,
+    buf_reader::BufReader, combinators::Limiter, crc32::Crc32Reader, extraction::CompletedPaths,
+    stream_impls::deflate, utils::map_take_manual_drop, WrappedPin,
 };
 use crate::types::ZipFileData;
-
-use std::{
-    cell,
-    marker::Unpin,
-    mem, num, ops,
-    path::{Path, PathBuf},
-    pin::Pin,
-    str,
-    sync::Arc,
-    task::{Context, Poll},
-};
 
 #[cfg(any(
     feature = "deflate",
@@ -33,7 +19,6 @@ use cfg_if::cfg_if;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
 use indexmap::IndexMap;
-use pin_project::pin_project;
 use tokio::{
     fs,
     io::{self, AsyncReadExt, AsyncSeekExt},
@@ -41,19 +26,29 @@ use tokio::{
     task,
 };
 
+use std::{
+    cell::UnsafeCell,
+    mem::{self, ManuallyDrop},
+    num, ops,
+    path::{Path, PathBuf},
+    pin::Pin,
+    str,
+    sync::Arc,
+    task::{Context, Poll},
+};
+
 pub trait ReaderWrapper<S> {
-    fn construct(data: &ZipFileData, s: S) -> Self
+    fn construct(data: &ZipFileData, s: Pin<Box<S>>) -> Self
     where
         Self: Sized;
 }
 
-#[pin_project]
-pub struct StoredReader<S>(#[pin] Crc32Reader<S>);
+pub struct StoredReader<S>(Crc32Reader<S>);
 
 impl<S> StoredReader<S> {
     #[inline]
     pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut Crc32Reader<S>> {
-        self.project().0
+        unsafe { self.map_unchecked_mut(|Self(inner)| inner) }
     }
 }
 
@@ -67,27 +62,26 @@ impl<S: io::AsyncRead> io::AsyncRead for StoredReader<S> {
     }
 }
 
-impl<S> IntoInner<S> for StoredReader<S> {
-    fn into_inner(self) -> S {
-        self.0.into_inner()
+impl<S> WrappedPin<S> for StoredReader<S> {
+    fn unwrap_inner_pin(self) -> Pin<Box<S>> {
+        self.0.unwrap_inner_pin()
     }
 }
 
 impl<S> ReaderWrapper<S> for StoredReader<S> {
-    fn construct(data: &ZipFileData, s: S) -> Self {
+    fn construct(data: &ZipFileData, s: Pin<Box<S>>) -> Self {
         Self(Crc32Reader::new(s, data.crc32, false))
     }
 }
 
-#[pin_project]
-pub struct DeflateReader<S>(#[pin] Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>);
+pub struct DeflateReader<S>(Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>);
 
 impl<S> DeflateReader<S> {
     #[inline]
     pub fn pin_stream(
         self: Pin<&mut Self>,
     ) -> Pin<&mut Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>> {
-        self.project().0
+        unsafe { self.map_unchecked_mut(|Self(inner)| inner) }
     }
 }
 
@@ -101,32 +95,45 @@ impl<S: io::AsyncRead> io::AsyncRead for DeflateReader<S> {
     }
 }
 
-impl<S> IntoInner<S> for DeflateReader<S> {
-    fn into_inner(self) -> S {
-        self.0.into_inner().into_inner().into_inner()
+impl<S> WrappedPin<S> for DeflateReader<S> {
+    fn unwrap_inner_pin(self) -> Pin<Box<S>> {
+        Pin::into_inner(Pin::into_inner(self.0.unwrap_inner_pin()).unwrap_inner_pin())
+            .unwrap_inner_pin()
     }
 }
 
 impl<S: io::AsyncRead> ReaderWrapper<S> for DeflateReader<S> {
-    fn construct(data: &ZipFileData, s: S) -> Self {
-        Self(Crc32Reader::new(
-            deflate::Reader::with_state(
-                Decompress::new(false),
-                BufReader::with_capacity(unsafe { num::NonZeroUsize::new_unchecked(32 * 1024) }, s),
-            ),
-            data.crc32,
-            false,
-        ))
+    fn construct(data: &ZipFileData, s: Pin<Box<S>>) -> Self {
+        let buf_reader = BufReader::with_capacity(num::NonZeroUsize::new(32 * 1024).unwrap(), s);
+        let deflater = deflate::Reader::with_state(Decompress::new(false), Box::pin(buf_reader));
+        Self(Crc32Reader::new(Box::pin(deflater), data.crc32, false))
     }
 }
 
-#[pin_project(project = WrappedProj)]
 pub enum ZipFileWrappedReader<S> {
-    Stored(#[pin] StoredReader<S>),
-    Deflated(#[pin] DeflateReader<S>),
+    Stored(StoredReader<S>),
+    Deflated(DeflateReader<S>),
 }
 
-impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFileWrappedReader<S> {
+enum WrappedProj<'a, S> {
+    Stored(Pin<&'a mut StoredReader<S>>),
+    Deflated(Pin<&'a mut DeflateReader<S>>),
+}
+
+impl<S> ZipFileWrappedReader<S> {
+    #[inline]
+    fn project(self: Pin<&mut Self>) -> WrappedProj<'_, S> {
+        unsafe {
+            let s = self.get_unchecked_mut();
+            match s {
+                Self::Stored(s) => WrappedProj::Stored(Pin::new_unchecked(s)),
+                Self::Deflated(s) => WrappedProj::Deflated(Pin::new_unchecked(s)),
+            }
+        }
+    }
+}
+
+impl<S: io::AsyncRead> io::AsyncRead for ZipFileWrappedReader<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -139,26 +146,26 @@ impl<S: io::AsyncRead + Unpin> io::AsyncRead for ZipFileWrappedReader<S> {
     }
 }
 
-impl<S> IntoInner<S> for ZipFileWrappedReader<S> {
-    fn into_inner(self) -> S {
+impl<S> WrappedPin<S> for ZipFileWrappedReader<S> {
+    fn unwrap_inner_pin(self) -> Pin<Box<S>> {
         match self {
-            Self::Stored(r) => r.into_inner(),
-            Self::Deflated(r) => r.into_inner(),
+            Self::Stored(r) => r.unwrap_inner_pin(),
+            Self::Deflated(r) => r.unwrap_inner_pin(),
         }
     }
 }
 
-impl<S> IntoInner<S> for ZipFileWrappedReader<Limiter<S>> {
-    fn into_inner(self) -> S {
+impl<S> WrappedPin<S> for ZipFileWrappedReader<Limiter<S>> {
+    fn unwrap_inner_pin(self) -> Pin<Box<S>> {
         match self {
-            Self::Stored(r) => r.into_inner().into_inner(),
-            Self::Deflated(r) => r.into_inner().into_inner(),
+            Self::Stored(r) => Pin::into_inner(r.unwrap_inner_pin()).unwrap_inner_pin(),
+            Self::Deflated(r) => Pin::into_inner(r.unwrap_inner_pin()).unwrap_inner_pin(),
         }
     }
 }
 
 impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
-    fn construct(data: &ZipFileData, s: S) -> Self {
+    fn construct(data: &ZipFileData, s: Pin<Box<S>>) -> Self {
         match data.compression_method {
             CompressionMethod::Stored => Self::Stored(StoredReader::<S>::construct(data, s)),
             #[cfg(any(
@@ -172,29 +179,32 @@ impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
     }
 }
 
-pub async fn find_content<S: io::AsyncRead + io::AsyncSeek + Unpin>(
+pub async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     data: &ZipFileData,
-    mut reader: S,
+    mut reader: Pin<Box<S>>,
 ) -> ZipResult<Limiter<S>> {
-    // Parse local header
-    reader.seek(io::SeekFrom::Start(data.header_start)).await?;
+    let cur_pos = {
+        // Parse local header
+        reader.seek(io::SeekFrom::Start(data.header_start)).await?;
 
-    let signature = reader.read_u32_le().await?;
-    if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid local file header"));
-    }
+        let signature = reader.read_u32_le().await?;
+        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid local file header"));
+        }
 
-    reader.seek(io::SeekFrom::Current(22)).await?;
-    let file_name_length = reader.read_u16_le().await? as u64;
-    /* NB: zip files have separate local and central extra data records. The length of the local
-     * extra field is being parsed here. The value of this field cannot be inferred from the
-     * central record data. */
-    let extra_field_length = reader.read_u16_le().await? as u64;
-    let magic_and_header = 4 + 22 + 2 + 2;
-    let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
-    data.data_start.store(data_start);
+        reader.seek(io::SeekFrom::Current(22)).await?;
+        let file_name_length = reader.read_u16_le().await? as u64;
+        /* NB: zip files have separate local and central extra data records. The length of the local
+         * extra field is being parsed here. The value of this field cannot be inferred from the
+         * central record data. */
+        let extra_field_length = reader.read_u16_le().await? as u64;
+        let magic_and_header = 4 + 22 + 2 + 2;
+        let data_start =
+            data.header_start + magic_and_header + file_name_length + extra_field_length;
+        data.data_start.store(data_start);
 
-    let cur_pos = reader.seek(io::SeekFrom::Start(data_start)).await?;
+        reader.seek(io::SeekFrom::Start(data_start)).await?
+    };
     Ok(Limiter::take(
         cur_pos,
         reader,
@@ -257,8 +267,8 @@ impl Shared {
         self.files.keys().map(|s| s.as_str())
     }
 
-    pub(crate) async fn get_directory_counts<S: io::AsyncRead + io::AsyncSeek + Unpin>(
-        reader: Pin<&mut S>,
+    pub(crate) async fn get_directory_counts<S: io::AsyncRead + io::AsyncSeek>(
+        mut reader: Pin<&mut S>,
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
@@ -266,15 +276,15 @@ impl Shared {
         // have its signature 20 bytes in front of the standard footer. The
         // standard footer, in turn, is 22+N bytes large, where N is the
         // comment length. Therefore:
-        let reader = reader.get_mut();
         let zip64locator = if reader
+            .as_mut()
             .seek(io::SeekFrom::End(
                 -(20 + 22 + footer.zip_file_comment.len() as i64),
             ))
             .await
             .is_ok()
         {
-            match spec::Zip64CentralDirectoryEndLocator::parse_async(Pin::new(reader)).await {
+            match spec::Zip64CentralDirectoryEndLocator::parse_async(reader.as_mut()).await {
                 Ok(loc) => Some(loc),
                 Err(ZipError::InvalidArchive(_)) => {
                     // No ZIP64 header; that's actually fine. We're done here.
@@ -334,7 +344,7 @@ impl Shared {
                     ))?;
                 let (footer, archive_offset) =
                     spec::Zip64CentralDirectoryEnd::find_and_parse_async(
-                        Pin::new(reader),
+                        reader.as_mut(),
                         locator64.end_of_central_directory_offset,
                         search_upper_bound,
                     )
@@ -362,11 +372,11 @@ impl Shared {
         }
     }
 
-    pub async fn parse<S: io::AsyncRead + io::AsyncSeek + Unpin>(
-        mut reader: S,
-    ) -> ZipResult<(Self, S)> {
+    pub async fn parse<S: io::AsyncRead + io::AsyncSeek>(
+        mut reader: Pin<Box<S>>,
+    ) -> ZipResult<(Self, Pin<Box<S>>)> {
         let (footer, cde_start_pos) =
-            spec::CentralDirectoryEnd::find_and_parse_async(Pin::new(&mut reader)).await?;
+            spec::CentralDirectoryEnd::find_and_parse_async(reader.as_mut()).await?;
 
         if !footer.record_too_small() && footer.disk_number != footer.disk_with_central_directory {
             return Err(ZipError::UnsupportedArchive(
@@ -375,7 +385,7 @@ impl Shared {
         }
 
         let (archive_offset, directory_start, number_of_files) =
-            Self::get_directory_counts(Pin::new(&mut reader), &footer, cde_start_pos).await?;
+            Self::get_directory_counts(reader.as_mut(), &footer, cde_start_pos).await?;
 
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
@@ -398,7 +408,7 @@ impl Shared {
         }
 
         for _ in 0..number_of_files {
-            let file = central_header_to_zip_file(Pin::new(&mut reader), archive_offset).await?;
+            let file = central_header_to_zip_file(reader.as_mut(), archive_offset).await?;
             assert!(files.insert(file.file_name.clone(), file).is_none());
         }
 
@@ -422,79 +432,88 @@ async fn create_dir_idempotent<P: AsRef<Path>>(dir: P) -> io::Result<Option<()>>
     }
 }
 
-pub struct ZipFile<'a, S, R: IntoInner<S>> {
+#[derive(Debug)]
+pub struct ZipFile<'a, S, R: WrappedPin<S>> {
     data: &'a ZipFileData,
-    wrapped_reader: mem::ManuallyDrop<R>,
+    wrapped_reader: ManuallyDrop<R>,
     parent: &'a mut ZipArchive<S>,
 }
 
-impl<'a, S, R: IntoInner<S>> ZipFile<'a, S, R> {
-    #[inline]
-    pub fn data(&self) -> &ZipFileData {
-        &self.data
-    }
-
+impl<'a, S, R: WrappedPin<S>> ZipFile<'a, S, R> {
     #[inline]
     pub fn name(&self) -> ZipResult<&Path> {
-        self.data()
+        self.data
             .enclosed_name()
             .ok_or(ZipError::InvalidArchive("Invalid file path"))
     }
+
+    #[inline]
+    fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut R> {
+        unsafe { self.map_unchecked_mut(|s| &mut *s.wrapped_reader) }
+    }
 }
 
-impl<'a, S, R: IntoInner<S>> ZipFile<'a, S, R> {
-    pub fn decode_stream<T: ReaderWrapper<R> + IntoInner<R> + IntoInner<S>>(
-        mut self,
-    ) -> ZipFile<'a, S, T> {
-        let Self {
-            data,
-            ref mut wrapped_reader,
-            ref parent,
-        } = self;
-        let parent: *mut ZipArchive<S> = unsafe { mem::transmute(*parent as *const ZipArchive<S>) };
-        let parent: cell::UnsafeCell<&mut ZipArchive<S>> =
-            cell::UnsafeCell::new(unsafe { &mut *parent });
-        let wrapped_reader: R = unsafe { mem::ManuallyDrop::take(wrapped_reader) };
-        let wrapped_reader = mem::ManuallyDrop::new(T::construct(data, wrapped_reader));
-        ZipFile {
-            data,
-            wrapped_reader,
-            parent: unsafe { *parent.get() },
+impl<'a, S, R: WrappedPin<S>> ops::Drop for ZipFile<'a, S, R> {
+    fn drop(&mut self) {
+        inner_drop(unsafe { Pin::new_unchecked(self) });
+        fn inner_drop<'a, S, R: WrappedPin<S>>(this: Pin<&mut ZipFile<'a, S, R>>) {
+            let ZipFile {
+                ref mut wrapped_reader,
+                ref mut parent,
+                ..
+            } = unsafe { this.get_unchecked_mut() };
+            let _ = parent
+                .reader
+                .insert(unsafe { ManuallyDrop::take(wrapped_reader) }.unwrap_inner_pin());
         }
     }
 }
 
-impl<'a, S, R: IntoInner<S>> ops::Drop for ZipFile<'a, S, R> {
-    fn drop(&mut self) {
-        let Self {
+impl<'a, S, R: WrappedPin<S> + 'a> ZipFile<'a, S, R> {
+    pub fn decode_stream<T: ReaderWrapper<R> + WrappedPin<S>>(self) -> ZipFile<'a, S, T> {
+        let s = UnsafeCell::new(ManuallyDrop::new(self));
+
+        let data: &'a ZipFileData = unsafe { &*s.get() }.data;
+        let wrapped_reader: &mut ManuallyDrop<R> = &mut unsafe { &mut *s.get() }.wrapped_reader;
+        let parent: &'a mut ZipArchive<S> = unsafe { &mut *s.get() }.parent;
+        let wrapped_reader = map_take_manual_drop(wrapped_reader, move |wrapped_reader: R| {
+            T::construct(data, Box::pin(wrapped_reader))
+        });
+
+        let data: &'a ZipFileData = unsafe { &*s.get() }.data;
+        ZipFile {
+            data,
             wrapped_reader,
             parent,
-            ..
-        } = self;
-        let _ = parent
-            .reader
-            .insert(unsafe { mem::ManuallyDrop::take(wrapped_reader) }.into_inner());
+        }
     }
 }
 
-impl<'a, S, R: io::AsyncRead + Unpin + IntoInner<S>> io::AsyncRead for ZipFile<'a, S, R> {
+impl<'a, S, R: WrappedPin<S> + io::AsyncRead> io::AsyncRead for ZipFile<'a, S, R> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut *self.get_mut().wrapped_reader).poll_read(cx, buf)
+        self.pin_stream().poll_read(cx, buf)
     }
 }
 
 #[derive(Debug)]
 pub struct ZipArchive<S> {
-    reader: Option<S>,
+    reader: Option<Pin<Box<S>>>,
     shared: Arc<Shared>,
 }
 
-impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
-    pub async fn new(reader: S) -> ZipResult<Self> {
+impl<S> ZipArchive<S> {
+    #[inline]
+    fn pin_reader(self: Pin<&mut Self>) -> &mut Option<Pin<Box<S>>> {
+        &mut self.get_mut().reader
+    }
+}
+
+impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
+    pub async fn new(reader: Pin<Box<S>>) -> ZipResult<ZipArchive<S>> {
         let (shared, reader) = Shared::parse(reader).await?;
         Ok(Self {
             reader: Some(reader),
@@ -503,17 +522,17 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
     }
 }
 
-impl<S> ZipArchive<S> {
-    pub fn into_inner(self) -> S {
+impl<S> WrappedPin<S> for ZipArchive<S> {
+    fn unwrap_inner_pin(self) -> Pin<Box<S>> {
         self.reader.unwrap()
     }
 }
 
-impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
-    pub async fn by_name<'a>(
-        self: Pin<&'a mut Self>,
+impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
+    pub async fn by_name(
+        self: Pin<&mut Self>,
         name: &str,
-    ) -> ZipResult<ZipFile<'a, S, ZipFileWrappedReader<Limiter<S>>>> {
+    ) -> ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>>> {
         let index = match self.shared.files.get_index_of(name) {
             None => {
                 return Err(ZipError::FileNotFound);
@@ -523,22 +542,21 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
         self.by_index(index).await
     }
 
-    pub async fn by_index<'a>(
-        self: Pin<&'a mut Self>,
+    pub async fn by_index(
+        self: Pin<&mut Self>,
         index: usize,
-    ) -> ZipResult<ZipFile<'a, S, ZipFileWrappedReader<Limiter<S>>>> {
-        let raw_entry: ZipFile<'a, S, Limiter<S>> = self.by_index_raw(index).await?;
-        let decoded_entry: ZipFile<'a, S, ZipFileWrappedReader<Limiter<S>>> =
-            raw_entry.decode_stream();
+    ) -> ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>>> {
+        let raw_entry: Pin<Box<ZipFile<'_, S, Limiter<S>>>> = self.by_index_raw(index).await?;
+        let decoded_entry: Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>> =
+            Box::pin(Pin::into_inner(raw_entry).decode_stream());
         Ok(decoded_entry)
     }
 
-    pub async fn by_index_raw<'a>(
-        self: Pin<&'a mut Self>,
+    pub async fn by_index_raw(
+        self: Pin<&mut Self>,
         index: usize,
-    ) -> ZipResult<ZipFile<'a, S, Limiter<S>>> {
-        let s = self.get_mut();
-        let s = cell::UnsafeCell::new(s);
+    ) -> ZipResult<Pin<Box<ZipFile<'_, S, Limiter<S>>>>> {
+        let s = UnsafeCell::new(self);
         let data = match unsafe { &*s.get() }.shared.files.get_index(index) {
             None => {
                 return Err(ZipError::FileNotFound);
@@ -546,20 +564,28 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             Some((_, data)) => data,
         };
 
-        let reader = unsafe { &mut *s.get() }.reader.take().unwrap();
-        let limited_reader = find_content(data, reader).await?;
-        Ok(ZipFile {
+        let limited_reader = find_content(
             data,
-            wrapped_reader: mem::ManuallyDrop::new(limited_reader),
+            unsafe { &mut *s.get() }
+                .as_mut()
+                .pin_reader()
+                .take()
+                .unwrap(),
+        )
+        .await?;
+
+        Ok(Box::pin(ZipFile {
+            data,
+            wrapped_reader: ManuallyDrop::new(limited_reader),
             parent: unsafe { &mut *s.get() },
-        })
+        }))
     }
 
-    pub fn raw_entries_stream<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> impl Stream<Item = ZipResult<ZipFile<'a, S, Limiter<S>>>> + '_ {
+    pub fn raw_entries_stream(
+        self: Pin<&mut Self>,
+    ) -> impl Stream<Item = ZipResult<Pin<Box<ZipFile<'_, S, Limiter<S>>>>>> + '_ {
         let len = self.shared.len();
-        let s = std::cell::UnsafeCell::new(self.get_mut());
+        let s = std::cell::UnsafeCell::new(self);
         /* FIXME: make this a stream with a known length! */
         try_stream! {
             for i in 0..len {
@@ -569,13 +595,14 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
         }
     }
 
-    pub fn entries_stream<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> impl Stream<Item = ZipResult<ZipFile<'a, S, ZipFileWrappedReader<Limiter<S>>>>> + '_ {
+    pub fn entries_stream(
+        self: Pin<&mut Self>,
+    ) -> impl Stream<Item = ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>>>> + '_
+    {
         use futures_util::StreamExt;
 
         self.raw_entries_stream()
-            .map(|result| result.map(|entry| entry.decode_stream()))
+            .map(|result| result.map(|entry| Box::pin(Pin::into_inner(entry).decode_stream())))
     }
 
     ///```
@@ -593,7 +620,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
     ///   f.write_all(b"hello\n")?;
     ///   f.finish()?
     /// };
-    /// let mut f = zip::tokio::read::ZipArchive::new(buf).await?;
+    /// let mut f = zip::tokio::read::ZipArchive::new(Box::pin(buf)).await?;
     ///
     /// let t = tempfile::tempdir()?;
     ///
@@ -757,7 +784,10 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
                          * blocking on memory availability for the decompressor. */
                         let mut wrapped = BufReader::with_capacity(
                             num::NonZeroUsize::new(uncompressed_size).unwrap(),
-                            ZipFileWrappedReader::construct(data, buf.as_ref()),
+                            Box::pin(ZipFileWrappedReader::construct(
+                                data,
+                                Box::pin(buf.as_ref()),
+                            )),
                         );
 
                         assert_eq!(
@@ -801,7 +831,7 @@ impl<S: io::AsyncRead + io::AsyncSeek + Unpin> ZipArchive<S> {
             if CompletedPaths::is_dir(&name) {
                 continue;
             }
-            let compressed_size = file.data().compressed_size as usize;
+            let compressed_size = file.data.compressed_size as usize;
 
             let mut compressed_contents: Vec<u8> = Vec::with_capacity(compressed_size);
             assert_eq!(
@@ -1185,7 +1215,7 @@ mod test {
             f.write_all(b"hello\n")?;
             f.finish()?
         };
-        let f = ZipArchive::new(buf).await?;
+        let f = ZipArchive::new(Box::pin(buf)).await?;
 
         assert_eq!(1, f.shared.len());
         let data = f
@@ -1197,15 +1227,10 @@ mod test {
             .clone();
         assert_eq!(b"a/b.txt", &data.file_name_raw[..]);
 
-        let mut limited = find_content(&data, f.into_inner()).await?;
+        let mut limited = find_content(&data, f.unwrap_inner_pin()).await?;
 
         let mut buf = String::new();
-        std::io::Read::read_to_string(&mut limited, &mut buf)?;
-        assert_eq!(&buf, "hello\n");
-
-        let mut buf = String::new();
-        io::AsyncSeekExt::rewind(&mut limited).await?;
-        io::AsyncReadExt::read_to_string(&mut limited, &mut buf).await?;
+        limited.read_to_string(&mut buf).await?;
         assert_eq!(&buf, "hello\n");
 
         Ok(())
@@ -1222,7 +1247,7 @@ mod test {
             f.write_all(b"hello\n")?;
             f.finish()?
         };
-        let f = ZipArchive::new(buf).await?;
+        let f = ZipArchive::new(Box::pin(buf)).await?;
 
         assert_eq!(1, f.shared.len());
         let data = f
@@ -1235,7 +1260,7 @@ mod test {
         assert_eq!(data.crc32, 909783072);
         assert_eq!(b"a/b.txt", &data.file_name_raw[..]);
 
-        let mut limited = find_content(&data, f.into_inner()).await?;
+        let mut limited = find_content(&data, f.unwrap_inner_pin()).await?;
 
         let mut buf: Vec<u8> = Vec::new();
         io::AsyncReadExt::read_to_end(&mut limited, &mut buf).await?;
@@ -1247,7 +1272,7 @@ mod test {
 
         io::AsyncSeekExt::rewind(&mut limited).await?;
         /* This stream should decode the compressed content! */
-        let mut decoded = ZipFileWrappedReader::construct(&data, limited);
+        let mut decoded = ZipFileWrappedReader::construct(&data, Box::pin(limited));
         let mut buf = String::new();
         io::AsyncReadExt::read_to_string(&mut decoded, &mut buf).await?;
         assert_eq!(&buf, "hello\n");

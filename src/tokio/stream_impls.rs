@@ -1,15 +1,15 @@
 /// As 2 separate read calls:
 ///```
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-/// use zip::tokio::{buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
+/// use zip::tokio::{WrappedPin, buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
 /// use flate2::{Decompress, Compress, Compression};
 /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 /// use std::{io::Cursor, pin::Pin, num::NonZeroUsize};
 ///
 /// let msg = "hello";
 /// let c = Compression::default();
-/// let buf_reader = BufReader::new(Cursor::new(msg.as_bytes()));
-/// let mut def = Reader::with_state(Compress::new(c, false), buf_reader);
+/// let buf_reader = BufReader::new(Box::pin(Cursor::new(msg.as_bytes())));
+/// let mut def = Reader::with_state(Compress::new(c, false), Box::pin(buf_reader));
 ///
 /// let mut buf = Vec::new();
 /// {
@@ -18,17 +18,18 @@
 ///   assert_eq!(&buf, &[203, 72, 205, 201, 201, 7, 0]);
 /// }
 ///
+/// let buf_writer = BufWriter::new(Box::pin(Cursor::new(Vec::new())));
 /// let mut out_inf = Writer::with_state(
 ///   Decompress::new(false),
-///   BufWriter::new(Cursor::new(Vec::new())),
+///   Box::pin(buf_writer),
 /// );
 /// {
 ///   use tokio::io::{AsyncReadExt, AsyncSeekExt};
 ///   out_inf.write_all(&buf).await?;
 ///   out_inf.flush().await?;
 ///   out_inf.shutdown().await?;
-///   let buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
-///   assert_eq!(&buf, b"hello");
+///   let buf: Vec<u8> = Pin::into_inner(Pin::into_inner(out_inf.unwrap_inner_pin()).unwrap_inner_pin()).into_inner();
+///   assert_eq!(&buf[..], b"hello");
 /// }
 /// # Ok(())
 /// # })}
@@ -37,27 +38,28 @@
 /// Or, within a single `tokio::io::copy{,_buf}()`:
 ///```
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-/// use zip::tokio::{buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
+/// use zip::tokio::{WrappedPin, buf_reader::BufReader, buf_writer::BufWriter, stream_impls::deflate::*};
 /// use flate2::{Decompress, Compress, Compression};
 /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 /// use std::{io::Cursor, pin::Pin, num::NonZeroUsize};
 ///
 /// let msg = "hello";
 /// let c = Compression::default();
-/// let buf_reader = BufReader::new(Cursor::new(msg.as_bytes()));
-/// let mut def = Reader::with_state(Compress::new(c, false), buf_reader);
+/// let buf_reader = BufReader::new(Box::pin(Cursor::new(msg.as_bytes())));
+/// let mut def = Reader::with_state(Compress::new(c, false), Box::pin(buf_reader));
 ///
+/// let buf_writer = BufWriter::new(Box::pin(Cursor::new(Vec::new())));
 /// let mut out_inf = Writer::with_state(
 ///   Decompress::new(false),
-///   BufWriter::new(Cursor::new(Vec::new())),
+///   Box::pin(buf_writer),
 /// );
 ///
 /// io::copy(&mut def, &mut out_inf).await?;
 /// out_inf.flush().await?;
 /// out_inf.shutdown().await?;
 ///
-/// let mut final_buf: Vec<u8> = out_inf.into_inner().into_inner().into_inner();
-/// let s = std::str::from_utf8(&final_buf).unwrap();
+/// let final_buf: Vec<u8> = Pin::into_inner(Pin::into_inner(out_inf.unwrap_inner_pin()).unwrap_inner_pin()).into_inner();
+/// let s = std::str::from_utf8(&final_buf[..]).unwrap();
 /// assert_eq!(&s, &msg);
 /// # Ok(())
 /// # })}
@@ -68,17 +70,19 @@
     feature = "deflate-zlib"
 ))]
 pub mod deflate {
-    use crate::tokio::buf_writer::{AsyncBufWrite, NonEmptyWriteSlice};
+    use crate::tokio::{
+        buf_writer::{AsyncBufWrite, NonEmptyWriteSlice},
+        WrappedPin,
+    };
 
     use flate2::{
         Compress, CompressError, Decompress, DecompressError, FlushCompress, FlushDecompress,
         Status,
     };
-    use pin_project::pin_project;
     use tokio::io;
 
     use std::{
-        fmt, mem,
+        fmt,
         num::NonZeroUsize,
         pin::Pin,
         task::{ready, Context, Poll},
@@ -90,7 +94,7 @@ pub mod deflate {
         fn total_in(&self) -> u64;
         fn total_out(&self) -> u64;
         fn encode_frame(
-            self: Pin<&mut Self>,
+            &mut self,
             input: &[u8],
             output: &mut [u8],
             flush: Self::Flush,
@@ -103,12 +107,12 @@ pub mod deflate {
     /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
     /// use flate2::{Compress, Compression};
     /// use tokio::io::{self, AsyncReadExt, AsyncBufRead};
-    /// use std::io::Cursor;
+    /// use std::{io::Cursor, pin::Pin};
     ///
     /// let msg = "hello";
-    /// let buf = BufReader::new(Cursor::new(msg.as_bytes()));
     /// let c = Compression::default();
-    /// let mut def = Reader::with_state(Compress::new(c, false), buf);
+    /// let buf = BufReader::new(Box::pin(Cursor::new(msg.as_bytes())));
+    /// let mut def = Reader::with_state(Compress::new(c, false), Box::pin(buf));
     ///
     /// let mut b = Vec::new();
     /// def.read_to_end(&mut b).await?;
@@ -123,11 +127,11 @@ pub mod deflate {
     /// use zip::tokio::{stream_impls::deflate::Reader, buf_reader::BufReader};
     /// use flate2::Decompress;
     /// use tokio::io::{self, AsyncReadExt};
-    /// use std::io::Cursor;
+    /// use std::{io::Cursor, pin::Pin};
     ///
     /// let msg: &[u8] = &[203, 72, 205, 201, 201, 7, 0];
-    /// let buf = BufReader::new(Cursor::new(msg));
-    /// let mut inf = Reader::with_state(Decompress::new(false), buf);
+    /// let buf = BufReader::new(Box::pin(Cursor::new(msg)));
+    /// let mut inf = Reader::with_state(Decompress::new(false), Box::pin(buf));
     ///
     /// let mut s = String::new();
     /// inf.read_to_string(&mut s).await?;
@@ -135,30 +139,42 @@ pub mod deflate {
     /// # Ok(())
     /// # })}
     ///```
-    #[pin_project]
     pub struct Reader<O, S> {
-        #[pin]
         state: O,
-        #[pin]
-        inner: S,
+        inner: Pin<Box<S>>,
+    }
+
+    struct ReadProj<'a, O, S> {
+        pub state: &'a mut O,
+        pub inner: Pin<&'a mut S>,
     }
 
     impl<O, S> Reader<O, S> {
-        pub fn pin_state(self: Pin<&mut Self>) -> Pin<&mut O> {
-            self.project().state
-        }
-
-        pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut S> {
+        #[inline]
+        fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut S> {
             self.project().inner
         }
 
-        pub fn into_inner(self) -> S {
+        #[inline]
+        fn project(self: Pin<&mut Self>) -> ReadProj<'_, O, S> {
+            unsafe {
+                let Self { inner, state } = self.get_unchecked_mut();
+                ReadProj {
+                    inner: Pin::new_unchecked(inner.as_mut().get_unchecked_mut()),
+                    state,
+                }
+            }
+        }
+    }
+
+    impl<O, S> WrappedPin<S> for Reader<O, S> {
+        fn unwrap_inner_pin(self) -> Pin<Box<S>> {
             self.inner
         }
     }
 
     impl<O: Ops, S: io::AsyncBufRead> Reader<O, S> {
-        pub fn with_state(state: O, inner: S) -> Self {
+        pub fn with_state(state: O, inner: Pin<Box<S>>) -> Self {
             Self { state, inner }
         }
     }
@@ -195,7 +211,6 @@ pub mod deflate {
 
                 let ret = me
                     .state
-                    .as_mut()
                     .encode_frame(input, buf.initialize_unfilled(), flush);
 
                 let (num_read, num_consumed): (usize, usize) = (
@@ -225,24 +240,25 @@ pub mod deflate {
     /// Compress:
     ///```
     /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-    /// use zip::tokio::{stream_impls::deflate::Writer, buf_writer::BufWriter};
+    /// use zip::tokio::{WrappedPin, stream_impls::deflate::Writer, buf_writer::BufWriter};
     /// use flate2::{Compress, Compression};
     /// use tokio::io::{self, AsyncWriteExt};
-    /// use std::io::Cursor;
+    /// use std::{io::Cursor, pin::Pin};
     ///
     /// let msg = "hello";
     /// let c = Compression::default();
+    /// let buf = BufWriter::new(Box::pin(Cursor::new(Vec::new())));
     /// let mut def = Writer::with_state(
     ///   Compress::new(c, false),
-    ///   BufWriter::new(Cursor::new(Vec::new())),
+    ///   Box::pin(buf),
     /// );
     ///
     /// def.write_all(msg.as_bytes()).await?;
     /// def.flush().await?;
     /// def.shutdown().await?;
-    /// let buf: Vec<u8> = def.into_inner().into_inner().into_inner();
-    /// let expected = &[202, 72, 205, 201, 201, 7, 0, 0, 0, 255, 255, 3, 0];
-    /// assert_eq!(&buf, expected);
+    /// let buf: Vec<u8> = Pin::into_inner(Pin::into_inner(def.unwrap_inner_pin()).unwrap_inner_pin()).into_inner();
+    /// let expected: &[u8] = &[202, 72, 205, 201, 201, 7, 0, 0, 0, 255, 255, 3, 0];
+    /// assert_eq!(&buf[..], expected);
     /// # Ok(())
     /// # })}
     ///```
@@ -250,62 +266,60 @@ pub mod deflate {
     /// Decompress:
     ///```
     /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-    /// use zip::tokio::{buf_writer::BufWriter, stream_impls::deflate::Writer};
+    /// use zip::tokio::{WrappedPin, buf_writer::BufWriter, stream_impls::deflate::Writer};
     /// use flate2::Decompress;
     /// use tokio::io::{self, AsyncWriteExt};
-    /// use std::{cmp, io::Cursor};
+    /// use std::{cmp, io::Cursor, pin::Pin};
     ///
     /// let msg: &[u8] = &[202, 72, 205, 201, 201, 231, 2, 0, 0, 0, 255, 255, 3, 0];
-    /// let buf = BufWriter::new(Cursor::new(Vec::new()));
-    /// let mut inf = Writer::with_state(Decompress::new(false), buf);
+    /// let buf = BufWriter::new(Box::pin(Cursor::new(Vec::new())));
+    /// let mut inf = Writer::with_state(Decompress::new(false), Box::pin(buf));
     ///
     /// inf.write_all(msg).await?;
     /// inf.flush().await?;
     /// inf.shutdown().await?;
-    /// let buf: Vec<u8> = inf.into_inner().into_inner().into_inner();
+    /// let buf: Vec<u8> = Pin::into_inner(Pin::into_inner(inf.unwrap_inner_pin()).unwrap_inner_pin()).into_inner();
     /// let expected = b"hello\n";
     /// assert_eq!(&buf, &expected);
     /// # Ok(())
     /// # })}
     ///```
-    #[pin_project]
     pub struct Writer<O, S> {
-        #[pin]
         state: O,
-        #[pin]
-        inner: S,
+        inner: Pin<Box<S>>,
+    }
+
+    struct WriteProj<'a, O, S> {
+        pub state: &'a mut O,
+        pub inner: Pin<&'a mut S>,
     }
 
     impl<O, S> Writer<O, S> {
-        fn pin_new_state(&self) -> Pin<&mut O> {
-            unsafe {
-                let state: *mut O = mem::transmute(&self.state);
-                Pin::new_unchecked(&mut *state)
-            }
-        }
-
-        pub fn pin_state(self: Pin<&mut Self>) -> Pin<&mut O> {
-            self.project().state
-        }
-
-        fn pin_new_stream(&self) -> Pin<&mut S> {
-            unsafe {
-                let inner: *mut S = mem::transmute(&self.inner);
-                Pin::new_unchecked(&mut *inner)
-            }
-        }
-
-        pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut S> {
+        #[inline]
+        fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut S> {
             self.project().inner
         }
 
-        pub fn into_inner(self) -> S {
+        #[inline]
+        fn project(self: Pin<&mut Self>) -> WriteProj<'_, O, S> {
+            unsafe {
+                let Self { inner, state } = self.get_unchecked_mut();
+                WriteProj {
+                    inner: Pin::new_unchecked(inner.as_mut().get_unchecked_mut()),
+                    state,
+                }
+            }
+        }
+    }
+
+    impl<O, S> WrappedPin<S> for Writer<O, S> {
+        fn unwrap_inner_pin(self) -> Pin<Box<S>> {
             self.inner
         }
     }
 
     impl<O: Ops, S: AsyncBufWrite> Writer<O, S> {
-        pub fn with_state(state: O, inner: S) -> Self {
+        pub fn with_state(state: O, inner: Pin<Box<S>>) -> Self {
             Self { state, inner }
         }
     }
@@ -318,15 +332,17 @@ pub mod deflate {
         ) -> Poll<io::Result<usize>> {
             debug_assert!(buf.len() > 0);
 
+            let mut me = self.project();
+
             loop {
                 let mut write_buf: NonEmptyWriteSlice<'_, u8> =
-                    ready!(self.pin_new_stream().poll_writable(cx))?;
+                    ready!(me.inner.as_mut().poll_writable(cx))?;
 
-                let before_in = self.state.total_in();
-                let before_out = self.state.total_out();
+                let before_in = me.state.total_in();
+                let before_out = me.state.total_out();
 
-                let status = self
-                    .pin_new_state()
+                let status = me
+                    .state
                     .encode_frame(buf, &mut *write_buf, O::Flush::none())
                     .map_err(|e| {
                         io::Error::new(
@@ -335,11 +351,11 @@ pub mod deflate {
                         )
                     })?;
 
-                let num_read = (self.state.total_in() - before_in) as usize;
-                let num_consumed = (self.state.total_out() - before_out) as usize;
+                let num_read = (me.state.total_in() - before_in) as usize;
+                let num_consumed = (me.state.total_out() - before_out) as usize;
 
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
-                    self.pin_new_stream().consume_write(num_consumed);
+                    me.inner.as_mut().consume_write(num_consumed);
                 }
 
                 match (num_read, status) {
@@ -354,13 +370,15 @@ pub mod deflate {
         }
 
         fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let mut me = self.project();
+
             {
                 let mut write_buf: NonEmptyWriteSlice<'_, u8> =
-                    ready!(self.pin_new_stream().poll_writable(cx))?;
+                    ready!(me.inner.as_mut().poll_writable(cx))?;
 
-                let before_out = self.state.total_out();
+                let before_out = me.state.total_out();
 
-                self.pin_new_state()
+                me.state
                     .encode_frame(&[], &mut *write_buf, O::Flush::sync())
                     .map_err(|e| {
                         io::Error::new(
@@ -369,18 +387,18 @@ pub mod deflate {
                         )
                     })?;
 
-                let num_consumed = (self.state.total_out() - before_out) as usize;
+                let num_consumed = (me.state.total_out() - before_out) as usize;
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
-                    self.pin_new_stream().consume_write(num_consumed);
+                    me.inner.as_mut().consume_write(num_consumed);
                 }
             }
 
             loop {
-                let mut write_buf = ready!(self.pin_new_stream().poll_writable(cx))?;
+                let mut write_buf = ready!(me.inner.as_mut().poll_writable(cx))?;
 
-                let before_out = self.state.total_out();
+                let before_out = me.state.total_out();
 
-                self.pin_new_state()
+                me.state
                     .encode_frame(&[], &mut *write_buf, O::Flush::none())
                     .map_err(|e| {
                         io::Error::new(
@@ -389,24 +407,27 @@ pub mod deflate {
                         )
                     })?;
 
-                let num_consumed = (self.state.total_out() - before_out) as usize;
+                let num_consumed = (me.state.total_out() - before_out) as usize;
+
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
-                    self.pin_new_stream().consume_write(num_consumed);
+                    me.inner.as_mut().consume_write(num_consumed);
                 } else {
                     break;
                 }
             }
 
-            self.pin_stream().poll_flush(cx)
+            me.inner.poll_flush(cx)
         }
 
         fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let mut me = self.project();
+
             loop {
-                let mut write_buf = ready!(self.pin_new_stream().poll_writable(cx))?;
+                let mut write_buf = ready!(me.inner.as_mut().poll_writable(cx))?;
 
-                let before_out = self.state.total_out();
+                let before_out = me.state.total_out();
 
-                self.pin_new_state()
+                me.state
                     .encode_frame(&[], &mut *write_buf, O::Flush::finish())
                     .map_err(|e| {
                         io::Error::new(
@@ -415,15 +436,15 @@ pub mod deflate {
                         )
                     })?;
 
-                let num_consumed = (self.state.total_out() - before_out) as usize;
+                let num_consumed = (me.state.total_out() - before_out) as usize;
                 if let Some(num_consumed) = NonZeroUsize::new(num_consumed) {
-                    self.pin_new_stream().consume_write(num_consumed);
+                    me.inner.as_mut().consume_write(num_consumed);
                 } else {
                     break;
                 }
             }
 
-            self.pin_stream().poll_shutdown(cx)
+            me.inner.poll_shutdown(cx)
         }
     }
 
@@ -472,12 +493,12 @@ pub mod deflate {
         }
         #[inline]
         fn encode_frame(
-            mut self: Pin<&mut Self>,
+            &mut self,
             input: &[u8],
             output: &mut [u8],
             flush: Self::Flush,
         ) -> Result<Status, Self::E> {
-            self.as_mut().compress(input, output, flush)
+            self.compress(input, output, flush)
         }
     }
 
@@ -494,12 +515,12 @@ pub mod deflate {
         }
         #[inline]
         fn encode_frame(
-            mut self: Pin<&mut Self>,
+            &mut self,
             input: &[u8],
             output: &mut [u8],
             flush: Self::Flush,
         ) -> Result<Status, Self::E> {
-            self.as_mut().decompress(input, output, flush)
+            self.decompress(input, output, flush)
         }
     }
 

@@ -1,8 +1,9 @@
-use pin_project::pin_project;
+use crate::tokio::WrappedPin;
+
 use tokio::io;
 
 use std::{
-    cell,
+    cell::UnsafeCell,
     num::NonZeroUsize,
     pin::Pin,
     task::{ready, Context, Poll},
@@ -28,38 +29,42 @@ const DEFAULT_BUF_SIZE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8 * 
 
 ///```
 /// # fn main() -> std::io::Result<()> { tokio_test::block_on(async {
-/// use zip::tokio::buf_writer::{AsyncBufWrite, BufWriter};
+/// use zip::tokio::{WrappedPin, buf_writer::{AsyncBufWrite, BufWriter}};
 /// use tokio::io::AsyncWriteExt;
-/// use std::io::Cursor;
+/// use std::{io::Cursor, pin::Pin};
 ///
 /// let msg = "hello\n";
-/// let buf = Cursor::new(Vec::new());
-/// let mut buf_writer = BufWriter::new(buf);
+/// let mut buf_writer = BufWriter::new(Box::pin(Cursor::new(Vec::new())));
 ///
 /// buf_writer.write_all(msg.as_bytes()).await?;
 /// buf_writer.flush().await?;
 /// buf_writer.shutdown().await?;
-/// let buf: Vec<u8> = buf_writer.into_inner().into_inner();
+/// let buf: Vec<u8> = Pin::into_inner(buf_writer.unwrap_inner_pin()).into_inner();
 /// let s = std::str::from_utf8(&buf).unwrap();
 /// assert_eq!(&s, &msg);
 /// # Ok(())
 /// # })}
 ///```
-#[pin_project]
 pub struct BufWriter<W> {
-    #[pin]
-    inner: W,
+    inner: Pin<Box<W>>,
     buf: Box<[u8]>,
     read_end: usize,
     write_end: usize,
 }
 
+struct BufProj<'a, W> {
+    pub inner: Pin<&'a mut W>,
+    pub buf: &'a mut Box<[u8]>,
+    pub read_end: &'a mut usize,
+    pub write_end: &'a mut usize,
+}
+
 impl<W> BufWriter<W> {
-    pub fn new(inner: W) -> Self {
+    pub fn new(inner: Pin<Box<W>>) -> Self {
         Self::with_capacity(DEFAULT_BUF_SIZE, inner)
     }
 
-    pub fn with_capacity(capacity: NonZeroUsize, inner: W) -> Self {
+    pub fn with_capacity(capacity: NonZeroUsize, inner: Pin<Box<W>>) -> Self {
         let buffer = vec![0; capacity.get()];
         Self {
             inner,
@@ -75,21 +80,36 @@ impl<W> BufWriter<W> {
     }
 
     #[inline]
-    pub fn get_ref(&self) -> &W {
-        &self.inner
-    }
-
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut W {
-        &mut self.inner
-    }
-
-    #[inline]
-    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut W> {
+    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut W> {
         self.project().inner
     }
 
-    pub fn into_inner(self) -> W {
+    #[inline]
+    fn project(self: Pin<&mut Self>) -> BufProj<'_, W> {
+        unsafe {
+            let Self {
+                inner,
+                buf,
+                read_end,
+                write_end,
+            } = self.get_unchecked_mut();
+            BufProj {
+                inner: Pin::new_unchecked(inner.as_mut().get_unchecked_mut()),
+                buf,
+                read_end,
+                write_end,
+            }
+        }
+    }
+
+    #[inline]
+    pub fn buffer(&self) -> &[u8] {
+        &self.buf[self.read_end..self.write_end]
+    }
+}
+
+impl<W> WrappedPin<W> for BufWriter<W> {
+    fn unwrap_inner_pin(self) -> Pin<Box<W>> {
         self.inner
     }
 }
@@ -151,15 +171,15 @@ impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
         if self.write_end == self.buf.len() {
             return None;
         }
-        let write_end = self.write_end;
-        NonEmptyWriteSlice::new(&mut self.project().buf[write_end..])
+        let me = self.project();
+        NonEmptyWriteSlice::new(&mut me.buf[*me.write_end..])
     }
 
     fn poll_writable(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<NonEmptyWriteSlice<'_, u8>>> {
-        let s = cell::UnsafeCell::new(self);
+        let s = UnsafeCell::new(self);
         if let Some(write_buf) = unsafe { &mut *s.get() }.as_mut().try_writable() {
             return Poll::Ready(Ok(write_buf));
         }
@@ -188,7 +208,7 @@ impl<W: io::AsyncWrite> io::AsyncWrite for BufWriter<W> {
         let buf = NonEmptyReadSlice::new(buf).unwrap();
         let mut rem: NonEmptyWriteSlice<'_, u8> = ready!(self.as_mut().poll_writable(cx))?;
 
-        let amt = unsafe { Pin::new_unchecked(&mut rem) }.copy_from_slice(buf);
+        let amt = rem.copy_from_slice(buf);
         dbg!(amt);
         self.as_mut().consume_write(amt);
 
@@ -207,7 +227,7 @@ impl<W: io::AsyncWrite> io::AsyncWrite for BufWriter<W> {
 }
 
 pub mod slices {
-    use std::{cmp, mem, num::NonZeroUsize, ops, pin::Pin};
+    use std::{cmp, mem, num::NonZeroUsize, ops};
 
     #[derive(Debug, Copy, Clone)]
     pub struct NonEmptyReadSlice<'a, T> {
@@ -271,20 +291,16 @@ pub mod slices {
         }
 
         #[inline]
-        pub fn maybe_uninit(self: Pin<&'a mut Self>) -> Pin<&'a mut [mem::MaybeUninit<T>]> {
-            unsafe { self.map_unchecked_mut(|s| mem::transmute(&mut *s.data)) }
+        pub fn maybe_uninit(&mut self) -> &mut [mem::MaybeUninit<T>] {
+            unsafe { mem::transmute(&mut *self.data) }
         }
     }
 
     impl<'a, T: Copy> NonEmptyWriteSlice<'a, T> {
-        pub fn copy_from_slice(
-            self: Pin<&'a mut Self>,
-            src: NonEmptyReadSlice<'a, T>,
-        ) -> NonZeroUsize {
+        pub fn copy_from_slice(&mut self, src: NonEmptyReadSlice<'a, T>) -> NonZeroUsize {
             let amt = cmp::min(self.len(), src.len());
-            let dst: &'a mut [mem::MaybeUninit<T>] =
-                unsafe { self.maybe_uninit().get_unchecked_mut() };
-            let src: &'a [mem::MaybeUninit<T>] = src.maybe_uninit();
+            let dst: &mut [mem::MaybeUninit<T>] = self.maybe_uninit();
+            let src: &[mem::MaybeUninit<T>] = src.maybe_uninit();
             dst[..amt.get()].copy_from_slice(&src[..amt.get()]);
             amt
         }
