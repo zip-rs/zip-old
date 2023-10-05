@@ -990,7 +990,7 @@ mod read_spec {
 
         // Construct the result
         let mut result = ZipFileData {
-            system: System::from_u8((version_made_by >> 8) as u8),
+            system: ((version_made_by >> 8) as u8).into(),
             version_made_by: version_made_by as u8,
             encrypted,
             using_data_descriptor,
