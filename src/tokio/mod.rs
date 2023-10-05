@@ -17,15 +17,9 @@ pub trait WrappedPin<S> {
 
 pub mod utils {
     use std::{
-        cell::UnsafeCell,
         mem::{self, ManuallyDrop, MaybeUninit},
         ptr,
     };
-
-    /* nightly-only UnsafeCell::from_mut() */
-    pub(crate) fn unsafe_cell_from_mut<T: ?Sized>(value: &mut T) -> &mut UnsafeCell<T> {
-        unsafe { &mut *(value as *mut T as *mut UnsafeCell<T>) }
-    }
 
     pub(crate) fn map_take_manual_drop<T, U, F: FnOnce(T) -> U>(
         slot: &mut ManuallyDrop<T>,
@@ -33,22 +27,6 @@ pub mod utils {
     ) -> ManuallyDrop<U> {
         let taken = unsafe { ManuallyDrop::take(slot) };
         ManuallyDrop::new(f(taken))
-    }
-
-    pub(crate) fn leak_box_address<T>(b: &mut Box<T>) -> *mut T {
-        let mut other = MaybeUninit::<Box<T>>::uninit();
-        /* `other` IS UNINIT! */
-        unsafe {
-            ptr::swap(b, other.as_mut_ptr());
-        }
-        /* `b` IS UNINIT! */
-        let ret = Box::into_raw(unsafe { other.assume_init() });
-        unsafe {
-            let new = Box::from_raw(ret);
-            ptr::write(b, new);
-        }
-        /* `b` IS NOW SAFE! */
-        ret
     }
 
     /// Convert a `&mut T` into a `T` temporarily by temporarily swapping its contents with
@@ -78,15 +56,6 @@ pub mod utils {
     #[cfg(test)]
     mod test {
         use super::*;
-
-        #[test]
-        fn test_leak_box_address() {
-            let mut b = Box::new(3);
-            let p = leak_box_address(&mut b);
-            *b = 4;
-            assert_eq!(4, *Box::leak(unsafe { Box::from_raw(p) }));
-            assert_eq!(4, *b);
-        }
 
         #[test]
         fn test_map_swap_uninit_primitive() {
