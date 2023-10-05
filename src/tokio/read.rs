@@ -212,7 +212,7 @@ async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     ))
 }
 
-pub(crate) trait SharedData {
+pub trait SharedData {
     #[inline]
     fn len(&self) -> usize {
         self.contiguous_entries().len()
@@ -227,7 +227,7 @@ pub(crate) trait SharedData {
 }
 
 #[derive(Debug)]
-pub(crate) struct Shared {
+pub struct Shared {
     files: IndexMap<String, ZipFileData>,
     offset: u64,
     directory_start: u64,
@@ -400,9 +400,9 @@ impl Shared {
         reader
             .seek(io::SeekFrom::Start(directory_start))
             .await
-            .map_err(|_| ZipError::InvalidArchive(
-                "Could not seek to start of central directory",
-            ))?;
+            .map_err(|_| {
+                ZipError::InvalidArchive("Could not seek to start of central directory")
+            })?;
 
         for i in 0..number_of_files {
             let file =
@@ -523,6 +523,11 @@ impl<S> ZipArchive<S> {
             let s = self.get_unchecked_mut();
             s.reader.as_mut().unwrap().as_mut()
         }
+    }
+
+    #[inline]
+    pub fn shared(&self) -> &Shared {
+        &self.shared
     }
 }
 

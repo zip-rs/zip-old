@@ -872,6 +872,10 @@ impl<S: io::AsyncRead + io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
     /// let mut zp = Pin::new(&mut result);
     ///
     /// let mut s: String = String::new();
+    /// {
+    ///   use zip::tokio::read::SharedData;
+    ///   assert_eq!(zp.shared().len(), 2);
+    ///}
     /// zp.as_mut().by_name("a.txt").await?.read_to_string(&mut s).await?;
     /// assert_eq!(s, "hello\n");
     /// s.clear();
