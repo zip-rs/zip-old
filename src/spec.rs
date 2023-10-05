@@ -5,7 +5,6 @@ use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use std::io::prelude::*;
 use std::io::Seek;
-use std::marker;
 use std::pin::Pin;
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
@@ -383,10 +382,7 @@ impl Zip64CentralDirectoryEnd {
         Ok(())
     }
 
-    pub async fn write_async<T: io::AsyncWrite + marker::Unpin>(
-        &self,
-        writer: &mut T,
-    ) -> ZipResult<()> {
+    pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
         writer
             .write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE)
             .await?;

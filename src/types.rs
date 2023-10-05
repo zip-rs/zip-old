@@ -1,6 +1,8 @@
 //! Types that specify what is contained in a ZIP.
 use std::path;
 
+#[cfg(doc)]
+use crate::read::ZipFile;
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
@@ -9,8 +11,8 @@ use std::path;
 use std::sync::atomic;
 #[cfg(not(feature = "time"))]
 use std::time::SystemTime;
-#[cfg(doc)]
-use {crate::read::ZipFile, crate::write::FileOptions};
+
+use crate::write::{FileOptions, ZipRawValues};
 
 mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
@@ -353,6 +355,37 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
+    pub(crate) fn initialize(
+        raw: ZipRawValues,
+        options: FileOptions,
+        header_start: u64,
+        file_name: String,
+    ) -> Self {
+        let permissions = options.permissions.unwrap_or(0o100644);
+        Self {
+            system: System::Unix,
+            version_made_by: DEFAULT_VERSION,
+            encrypted: options.encrypt_with.is_some(),
+            using_data_descriptor: false,
+            compression_method: options.compression_method,
+            compression_level: options.compression_level,
+            last_modified_time: options.last_modified_time,
+            crc32: raw.crc32,
+            compressed_size: raw.compressed_size,
+            uncompressed_size: raw.uncompressed_size,
+            file_name,
+            file_name_raw: Vec::new(), // Never used for saving
+            extra_field: Vec::new(),
+            file_comment: String::new(),
+            header_start,
+            data_start: AtomicU64::new(0),
+            central_header_start: 0,
+            external_attributes: permissions << 16,
+            large_file: options.large_file,
+            aes_mode: None,
+        }
+    }
+
     pub fn file_name_sanitized(&self) -> ::std::path::PathBuf {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],

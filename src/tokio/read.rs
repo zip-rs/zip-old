@@ -47,7 +47,7 @@ pub struct StoredReader<S>(Crc32Reader<S>);
 
 impl<S> StoredReader<S> {
     #[inline]
-    pub fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut Crc32Reader<S>> {
+    fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut Crc32Reader<S>> {
         unsafe { self.map_unchecked_mut(|Self(inner)| inner) }
     }
 }
@@ -78,7 +78,7 @@ pub struct DeflateReader<S>(Crc32Reader<deflate::Reader<Decompress, BufReader<S>
 
 impl<S> DeflateReader<S> {
     #[inline]
-    pub fn pin_stream(
+    fn pin_stream(
         self: Pin<&mut Self>,
     ) -> Pin<&mut Crc32Reader<deflate::Reader<Decompress, BufReader<S>>>> {
         unsafe { self.map_unchecked_mut(|Self(inner)| inner) }
