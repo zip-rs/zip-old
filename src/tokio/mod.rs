@@ -3,8 +3,8 @@
 pub mod buf_reader;
 pub mod buf_writer;
 pub mod combinators;
-pub mod crc32;
-pub mod extraction;
+pub(crate) mod crc32;
+pub(crate) mod extraction;
 pub mod read;
 pub mod stream_impls;
 pub mod write;
@@ -15,7 +15,7 @@ pub trait WrappedPin<S> {
     fn unwrap_inner_pin(self) -> Pin<Box<S>>;
 }
 
-pub mod utils {
+pub(crate) mod utils {
     use std::{
         mem::{self, ManuallyDrop, MaybeUninit},
         ptr,
@@ -29,23 +29,18 @@ pub mod utils {
         ManuallyDrop::new(f(taken))
     }
 
-    /// Convert a `&mut T` into a `T` temporarily by temporarily swapping its contents with
-    /// a [`MaybeUninit`].
-    ///
-    ///```
-    /// use zip::tokio::utils::map_swap_uninit;
-    ///
-    /// let mut x = 5;
-    /// map_swap_uninit(&mut x, |x| x + 3);
-    /// assert_eq!(x, 8);
-    ///```
-    pub fn map_swap_uninit<T, F: FnOnce(T) -> T>(slot: &mut T, f: F) {
+    pub(crate) fn map_swap_uninit<T, F: FnOnce(T) -> T>(slot: &mut T, f: F) {
         let mut other = MaybeUninit::<T>::uninit();
+        /* `other` IS UNINIT!!!!! */
         unsafe {
             ptr::swap(slot, other.as_mut_ptr());
         }
         /* `slot` IS NOW UNINIT!!!! */
-        let mut wrapped = f(unsafe { other.assume_init() });
+        let mut wrapped = f(unsafe {
+            /* `other` will be dropped at the end of f(). */
+            other.assume_init()
+        });
+        /* `wrapped` has a valid value, returned by f(). */
         unsafe {
             ptr::swap(slot, &mut wrapped);
         }

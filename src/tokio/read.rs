@@ -37,7 +37,7 @@ use std::{
     task::{Context, Poll},
 };
 
-pub trait ReaderWrapper<S> {
+pub(crate) trait ReaderWrapper<S> {
     fn construct(data: &ZipFileData, s: Pin<Box<S>>) -> Self
     where
         Self: Sized;
@@ -179,7 +179,7 @@ impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
     }
 }
 
-pub async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
+async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     data: &ZipFileData,
     mut reader: Pin<Box<S>>,
 ) -> ZipResult<Limiter<S>> {
@@ -212,7 +212,7 @@ pub async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     ))
 }
 
-pub trait SharedData {
+pub(crate) trait SharedData {
     #[inline]
     fn len(&self) -> usize {
         self.contiguous_entries().len()
@@ -227,7 +227,7 @@ pub trait SharedData {
 }
 
 #[derive(Debug)]
-pub struct Shared {
+pub(crate) struct Shared {
     files: IndexMap<String, ZipFileData>,
     offset: u64,
     directory_start: u64,
@@ -479,7 +479,7 @@ impl<'a, S, R: WrappedPin<S>> ops::Drop for ZipFile<'a, S, R> {
 }
 
 impl<'a, S, R: WrappedPin<S> + 'a> ZipFile<'a, S, R> {
-    pub fn decode_stream<T: ReaderWrapper<R> + WrappedPin<S>>(self) -> ZipFile<'a, S, T> {
+    pub(crate) fn decode_stream<T: ReaderWrapper<R> + WrappedPin<S>>(self) -> ZipFile<'a, S, T> {
         let s = UnsafeCell::new(ManuallyDrop::new(self));
 
         let data: &'a ZipFileData = unsafe { &*s.get() }.data;
