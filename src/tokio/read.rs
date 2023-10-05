@@ -951,7 +951,7 @@ mod read_spec {
         central_header_start: u64,
     ) -> ZipResult<ZipFileData> {
         use crate::cp437::FromCp437;
-        use crate::types::{AtomicU64, DateTime, System};
+        use crate::types::{AtomicU64, DateTime};
 
         let version_made_by = reader.read_u16_le().await?;
         let _version_to_extract = reader.read_u16_le().await?;
