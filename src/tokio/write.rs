@@ -293,7 +293,9 @@ impl<S: io::AsyncWrite + io::AsyncSeek> InnerWriter<S> {
         file: &mut ZipFileData,
     ) -> ZipResult<()> {
         match self.as_mut().project() {
-            InnerProj::NoActiveFile(_) => unreachable!("expected this to be wrapped!"),
+            InnerProj::NoActiveFile(mut inner) => {
+                inner.shutdown().await?;
+            }
             InnerProj::FileWriter(mut inner) => {
                 /* NB: we need to ensure the compression stream writes out everything it has left
                  * before reclaiming the stream handle! */
@@ -607,6 +609,7 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
             .start_entry(name_as_string, options, None)
             .await?;
         self.writing_to_file = false;
+
         Ok(())
     }
 
@@ -1008,11 +1011,11 @@ impl<S: io::AsyncWrite + io::AsyncSeek> io::AsyncWrite for ZipWriter<S> {
     }
 }
 
-impl<S> ops::Drop for ZipWriter<S> {
-    fn drop(&mut self) {
-        unreachable!("must call .finish()!");
-    }
-}
+/* impl<S> ops::Drop for ZipWriter<S> { */
+/*     fn drop(&mut self) { */
+/*         unreachable!("must call .finish()!"); */
+/*     } */
+/* } */
 
 impl<S> WrappedPin<S> for ZipWriter<S> {
     fn unwrap_inner_pin(self) -> Pin<Box<S>> {
@@ -1333,10 +1336,10 @@ mod test {
 
     use std::io::Cursor;
 
-    #[test]
-    #[should_panic(expected = "internal error: entered unreachable code: must call .finish()!")]
-    fn test_drop() {
-        let buf = Cursor::new(Vec::<u8>::new());
-        let _f = ZipWriter::new(Box::pin(buf));
-    }
+    /* #[test] */
+    /* #[should_panic(expected = "internal error: entered unreachable code: must call .finish()!")] */
+    /* fn test_drop() { */
+    /*     let buf = Cursor::new(Vec::<u8>::new()); */
+    /*     let _f = ZipWriter::new(Box::pin(buf)); */
+    /* } */
 }
