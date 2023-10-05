@@ -1395,7 +1395,7 @@ mod test {
             .add_directory(
                 "test",
                 FileOptions::default().last_modified_time(
-                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                    DateTime::parse_from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
                 ),
             )
             .unwrap();
@@ -1424,7 +1424,7 @@ mod test {
                 "name",
                 "target",
                 FileOptions::default().last_modified_time(
-                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                    DateTime::parse_from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
                 ),
             )
             .unwrap();
@@ -1453,7 +1453,7 @@ mod test {
                 "directory\\link",
                 "/absolute/symlink\\with\\mixed/slashes",
                 FileOptions::default().last_modified_time(
-                    DateTime::from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
+                    DateTime::parse_from_date_and_time(2018, 8, 15, 20, 45, 6).unwrap(),
                 ),
             )
             .unwrap();

@@ -8,6 +8,8 @@ use crate::write::{FileOptions, ZipRawValues};
 use cfg_if::cfg_if;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
+use std::convert::TryInto;
+use std::ops::{Range, RangeInclusive};
 use std::path;
 
 mod ffi {
@@ -56,7 +58,10 @@ cfg_if! {
 cfg_if! {
     if #[cfg(feature = "time")] {
         use crate::result::DateTimeRangeError;
-        use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+        use time::{
+            Date, Month, OffsetDateTime, UtcOffset, PrimitiveDateTime, Time,
+            error::ComponentRange,
+        };
     } else {
         use std::time::SystemTime;
     }
@@ -99,9 +104,15 @@ pub struct DateTime {
 }
 
 impl ::std::default::Default for DateTime {
-    /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
-        DateTime {
+        Self::zero()
+    }
+}
+
+impl DateTime {
+    /// Constructs a 'default' datetime of 1980-01-01 00:00:00
+    pub const fn zero() -> Self {
+        Self {
             year: 1980,
             month: 1,
             day: 1,
@@ -110,9 +121,74 @@ impl ::std::default::Default for DateTime {
             second: 0,
         }
     }
-}
 
-impl DateTime {
+    /// The allowed range for years in a zip file's timestamp.
+    pub const YEAR_RANGE: RangeInclusive<u16> = 1980..=2107;
+    /// The allowed range for months in a zip file's timestamp.
+    pub const MONTH_RANGE: RangeInclusive<u8> = 1..=12;
+    /// The allowed range for days in a zip file's timestamp.
+    pub const DAY_RANGE: RangeInclusive<u8> = 1..=31;
+    /// The allowed range for hours in a zip file's timestamp.
+    pub const HOUR_RANGE: Range<u8> = 0..24;
+    /// The allowed range for minutes in a zip file's timestamp.
+    pub const MINUTE_RANGE: Range<u8> = 0..60;
+    /// The allowed range for seconds in a zip file's timestamp.
+    pub const SECOND_RANGE: RangeInclusive<u8> = 0..=60;
+
+    fn check_year(year: u16) -> Result<(), DateTimeRangeError> {
+        if Self::YEAR_RANGE.contains(&year) {
+            Ok(())
+        } else {
+            Err(DateTimeRangeError::InvalidYear(year, Self::YEAR_RANGE))
+        }
+    }
+
+    fn check_month(month: u8) -> Result<(), DateTimeRangeError> {
+        if Self::MONTH_RANGE.contains(&month) {
+            Ok(())
+        } else {
+            Err(DateTimeRangeError::InvalidMonth(month, Self::MONTH_RANGE))
+        }
+    }
+
+    fn check_day(day: u8) -> Result<(), DateTimeRangeError> {
+        if Self::DAY_RANGE.contains(&day) {
+            Ok(())
+        } else {
+            Err(DateTimeRangeError::InvalidDay(day, Self::DAY_RANGE))
+        }
+    }
+
+    fn check_hour(hour: u8) -> Result<(), DateTimeRangeError> {
+        if Self::HOUR_RANGE.contains(&hour) {
+            Ok(())
+        } else {
+            Err(DateTimeRangeError::InvalidHour(hour, Self::HOUR_RANGE))
+        }
+    }
+
+    fn check_minute(minute: u8) -> Result<(), DateTimeRangeError> {
+        if Self::MINUTE_RANGE.contains(&minute) {
+            Ok(())
+        } else {
+            Err(DateTimeRangeError::InvalidMinute(
+                minute,
+                Self::MINUTE_RANGE,
+            ))
+        }
+    }
+
+    fn check_second(second: u8) -> Result<(), DateTimeRangeError> {
+        if Self::SECOND_RANGE.contains(&second) {
+            Ok(())
+        } else {
+            Err(DateTimeRangeError::InvalidSecond(
+                second,
+                Self::SECOND_RANGE,
+            ))
+        }
+    }
+
     /// Converts an msdos (u16, u16) pair to a DateTime object
     pub fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
@@ -142,6 +218,7 @@ impl DateTime {
     /// * minute: [0, 59]
     /// * second: [0, 60]
     #[allow(clippy::result_unit_err)]
+    #[deprecated(note = "use DateTime::parse_from_date_and_time() instead")]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -150,24 +227,50 @@ impl DateTime {
         minute: u8,
         second: u8,
     ) -> Result<DateTime, ()> {
-        if (1980..=2107).contains(&year)
-            && (1..=12).contains(&month)
-            && (1..=31).contains(&day)
-            && hour <= 23
-            && minute <= 59
-            && second <= 60
-        {
-            Ok(DateTime {
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-            })
-        } else {
-            Err(())
-        }
+        Self::parse_from_date_and_time(year, month, day, hour, minute, second).map_err(|_| ())
+    }
+
+    /// Constructs a DateTime from a specific date and time
+    ///
+    /// The bounds are:
+    /// * year ([`Self::YEAR_RANGE`]): [1980, 2107]
+    /// * month ([`Self::MONTH_RANGE`]): [1, 12]
+    /// * day ([`Self::DAY_RANGE`]): [1, 31]
+    /// * hour ([`Self::HOUR_RANGE`]): [0, 23]
+    /// * minute ([`Self::MINUTE_RANGE`]): [0, 59]
+    /// * second ([`Self::SECOND_RANGE`]): [0, 60]
+    ///
+    ///```
+    /// use zip::{DateTime, result::DateTimeRangeError};
+    ///
+    /// assert!(DateTime::parse_from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
+    /// assert!(matches![
+    ///   DateTime::parse_from_date_and_time(1979, 1, 1, 0, 0, 0),
+    ///   Err(DateTimeRangeError::InvalidYear(1979, _)),
+    /// ]);
+    ///```
+    pub fn parse_from_date_and_time(
+        year: u16,
+        month: u8,
+        day: u8,
+        hour: u8,
+        minute: u8,
+        second: u8,
+    ) -> Result<DateTime, DateTimeRangeError> {
+        Self::check_year(year)?;
+        Self::check_month(month)?;
+        Self::check_day(day)?;
+        Self::check_hour(hour)?;
+        Self::check_minute(minute)?;
+        Self::check_second(second)?;
+        Ok(Self {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        })
     }
 
     /// Converts a OffsetDateTime object to a DateTime
@@ -176,6 +279,8 @@ impl DateTime {
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     #[allow(clippy::result_unit_err)]
+    #[cfg(feature = "time")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     #[deprecated(note = "use `DateTime::try_from()`")]
     pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
         dt.try_into().map_err(|_err| ())
@@ -194,11 +299,19 @@ impl DateTime {
     /// Converts the DateTime to a OffsetDateTime structure
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+    #[deprecated(note = "use `DateTime::to_time_with_offset()`")]
     pub fn to_time(&self) -> Result<OffsetDateTime, ComponentRange> {
+        self.to_time_with_offset(UtcOffset::UTC)
+    }
+
+    /// Converts the DateTime to a OffsetDateTime structure, given a UTC offset.
+    #[cfg(feature = "time")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+    pub fn to_time_with_offset(&self, offset: UtcOffset) -> Result<OffsetDateTime, ComponentRange> {
         let date =
             Date::from_calendar_date(self.year as i32, Month::try_from(self.month)?, self.day)?;
         let time = Time::from_hms(self.hour, self.minute, self.second)?;
-        Ok(PrimitiveDateTime::new(date, time).assume_utc())
+        Ok(PrimitiveDateTime::new(date, time).assume_offset(offset))
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
@@ -258,18 +371,17 @@ impl TryFrom<OffsetDateTime> for DateTime {
     type Error = DateTimeRangeError;
 
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
-        if dt.year() >= 1980 && dt.year() <= 2107 {
-            Ok(DateTime {
-                year: (dt.year()) as u16,
-                month: (dt.month()) as u8,
-                day: dt.day(),
-                hour: dt.hour(),
-                minute: dt.minute(),
-                second: dt.second(),
-            })
-        } else {
-            Err(DateTimeRangeError)
-        }
+        let year: u16 = dt
+            .year()
+            .try_into()
+            .map_err(|e| DateTimeRangeError::NumericConversion("year", e))?;
+        let month: u8 = dt.month().into();
+        let day: u8 = dt.day().into();
+        let hour: u8 = dt.hour().into();
+        let minute: u8 = dt.minute().into();
+        let second: u8 = dt.second().into();
+
+        Self::parse_from_date_and_time(year, month, day, hour, minute, second)
     }
 }
 
@@ -507,6 +619,7 @@ impl AesMode {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod test {
     #[test]
     fn system() {
@@ -566,7 +679,7 @@ mod test {
     #[allow(clippy::unusual_byte_groupings)]
     fn datetime_max() {
         use super::DateTime;
-        let dt = DateTime::from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
+        let dt = DateTime::parse_from_date_and_time(2107, 12, 31, 23, 59, 60).unwrap();
         assert_eq!(dt.timepart(), 0b10111_111011_11110);
         assert_eq!(dt.datepart(), 0b1111111_1100_11111);
     }
@@ -575,23 +688,23 @@ mod test {
     fn datetime_bounds() {
         use super::DateTime;
 
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 23, 59, 60).is_ok());
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 24, 0, 0).is_err());
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 60, 0).is_err());
-        assert!(DateTime::from_date_and_time(2000, 1, 1, 0, 0, 61).is_err());
+        assert!(DateTime::parse_from_date_and_time(2000, 1, 1, 23, 59, 60).is_ok());
+        assert!(DateTime::parse_from_date_and_time(2000, 1, 1, 24, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(2000, 1, 1, 0, 60, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(2000, 1, 1, 0, 0, 61).is_err());
 
-        assert!(DateTime::from_date_and_time(2107, 12, 31, 0, 0, 0).is_ok());
-        assert!(DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
-        assert!(DateTime::from_date_and_time(1979, 1, 1, 0, 0, 0).is_err());
-        assert!(DateTime::from_date_and_time(1980, 0, 1, 0, 0, 0).is_err());
-        assert!(DateTime::from_date_and_time(1980, 1, 0, 0, 0, 0).is_err());
-        assert!(DateTime::from_date_and_time(2108, 12, 31, 0, 0, 0).is_err());
-        assert!(DateTime::from_date_and_time(2107, 13, 31, 0, 0, 0).is_err());
-        assert!(DateTime::from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(2107, 12, 31, 0, 0, 0).is_ok());
+        assert!(DateTime::parse_from_date_and_time(1980, 1, 1, 0, 0, 0).is_ok());
+        assert!(DateTime::parse_from_date_and_time(1979, 1, 1, 0, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(1980, 0, 1, 0, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(1980, 1, 0, 0, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(2108, 12, 31, 0, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(2107, 13, 31, 0, 0, 0).is_err());
+        assert!(DateTime::parse_from_date_and_time(2107, 12, 32, 0, 0, 0).is_err());
     }
 
     #[cfg(feature = "time")]
-    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
 
     #[cfg(feature = "time")]
     #[test]
@@ -626,10 +739,14 @@ mod test {
         assert_eq!(dt.second(), 30);
 
         #[cfg(feature = "time")]
-        assert_eq!(
-            dt.to_time().unwrap().format(&Rfc3339).unwrap(),
-            "2018-11-17T10:38:30Z"
-        );
+        {
+            let offset_time = dt.to_time_with_offset(UtcOffset::UTC).unwrap();
+            assert_eq!(dt.to_time().unwrap(), offset_time);
+            assert_eq!(
+                offset_time.format(&Rfc3339).unwrap(),
+                "2018-11-17T10:38:30Z"
+            );
+        }
     }
 
     #[test]
@@ -644,7 +761,10 @@ mod test {
         assert_eq!(dt.second(), 62);
 
         #[cfg(feature = "time")]
-        assert!(dt.to_time().is_err());
+        {
+            assert!(dt.to_time().is_err());
+            assert!(dt.to_time_with_offset(UtcOffset::UTC).is_err());
+        }
 
         let dt = DateTime::from_msdos(0x0000, 0x0000);
         assert_eq!(dt.year(), 1980);
@@ -655,7 +775,10 @@ mod test {
         assert_eq!(dt.second(), 0);
 
         #[cfg(feature = "time")]
-        assert!(dt.to_time().is_err());
+        {
+            assert!(dt.to_time().is_err());
+            assert!(dt.to_time_with_offset(UtcOffset::UTC).is_err());
+        }
     }
 
     #[cfg(feature = "time")]
