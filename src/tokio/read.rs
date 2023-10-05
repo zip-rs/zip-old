@@ -448,6 +448,11 @@ impl<'a, S, R: WrappedPin<S>> ZipFile<'a, S, R> {
     }
 
     #[inline]
+    pub fn data(&self) -> &ZipFileData {
+        &self.data
+    }
+
+    #[inline]
     fn pin_stream(self: Pin<&mut Self>) -> Pin<&mut R> {
         unsafe { self.map_unchecked_mut(|s| &mut *s.wrapped_reader) }
     }
@@ -603,6 +608,64 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
 
         self.raw_entries_stream()
             .map(|result| result.map(|entry| Box::pin(Pin::into_inner(entry).decode_stream())))
+    }
+
+    ///```
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use std::{io::Cursor, pin::Pin, sync::Arc};
+    /// use tokio::{io, fs};
+    ///
+    /// let buf = {
+    ///   use std::io::prelude::*;
+    ///   let buf = Cursor::new(Vec::new());
+    ///   let mut f = zip::ZipWriter::new(buf);
+    ///   let options = zip::write::FileOptions::default()
+    ///     .compression_method(zip::CompressionMethod::Deflated);
+    ///   f.start_file("a/b.txt", options)?;
+    ///   f.write_all(b"hello\n")?;
+    ///   f.finish()?
+    /// };
+    /// let mut f = zip::tokio::read::ZipArchive::new(Box::pin(buf)).await?;
+    ///
+    /// let t = tempfile::tempdir()?;
+    ///
+    /// let root = t.path();
+    /// Pin::new(&mut f).extract_simple(Arc::new(root.to_path_buf())).await?;
+    /// let msg = fs::read_to_string(root.join("a/b.txt")).await?;
+    /// assert_eq!(&msg, "hello\n");
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub async fn extract_simple(self: Pin<&mut Self>, root: Arc<PathBuf>) -> ZipResult<()> {
+        fs::create_dir_all(&*root).await?;
+
+        let entries = self.entries_stream();
+        pin_mut!(entries);
+
+        while let Some(mut file) = entries.try_next().await? {
+            let name = file.name()?;
+            let outpath = root.join(name);
+
+            if CompletedPaths::is_dir(name) {
+                fs::create_dir_all(&outpath).await?;
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        fs::create_dir_all(p).await?;
+                    }
+                }
+                let mut outfile = fs::File::create(&outpath).await?;
+                io::copy(&mut file, &mut outfile).await?;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Some(mode) = file.data().unix_mode() {
+                    fs::set_permissions(&outpath, std::fs::Permissions::from_mode(mode)).await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     ///```

@@ -162,7 +162,7 @@ pub fn bench_extract(c: &mut Criterion) {
             group.measurement_time(t);
         }
 
-        group.bench_function(BenchmarkId::new(&id, "<async extraction>"), |b| {
+        group.bench_function(BenchmarkId::new(&id, "<async extract()>"), |b| {
             let td = tempdir().unwrap();
             b.to_async(&rt).iter(|| async {
                 let out_dir = Arc::new(td.path().to_path_buf());
@@ -174,7 +174,19 @@ pub fn bench_extract(c: &mut Criterion) {
             })
         });
 
-        group.bench_function(BenchmarkId::new(&id, "<sync extraction>"), |b| {
+        group.bench_function(BenchmarkId::new(&id, "<async extract_simple()>"), |b| {
+            let td = tempdir().unwrap();
+            b.to_async(&rt).iter(|| async {
+                let out_dir = Arc::new(td.path().to_path_buf());
+                let handle = fs::File::open(path).await.unwrap();
+                let mut zip = zip::tokio::read::ZipArchive::new(Box::pin(handle))
+                    .await
+                    .unwrap();
+                Pin::new(&mut zip).extract_simple(out_dir).await.unwrap();
+            })
+        });
+
+        group.bench_function(BenchmarkId::new(&id, "<sync extract()>"), |b| {
             let td = tempdir().unwrap();
             b.iter(|| {
                 let sync_handle = std::fs::File::open(path).unwrap();
