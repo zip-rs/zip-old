@@ -397,15 +397,12 @@ impl Shared {
 
         let mut files = IndexMap::with_capacity(file_capacity);
 
-        if reader
+        reader
             .seek(io::SeekFrom::Start(directory_start))
             .await
-            .is_err()
-        {
-            return Err(ZipError::InvalidArchive(
+            .map_err(|_| ZipError::InvalidArchive(
                 "Could not seek to start of central directory",
-            ));
-        }
+            ))?;
 
         for i in 0..number_of_files {
             let file =
@@ -1039,7 +1036,7 @@ impl<S> ZipArchive<S> {
     }
 }
 
-mod read_spec {
+pub(crate) mod read_spec {
     use crate::{
         compression::CompressionMethod,
         result::{ZipError, ZipResult},

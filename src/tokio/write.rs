@@ -3,7 +3,10 @@ use crate::{
     result::{ZipError, ZipResult},
     spec,
     tokio::{
-        buf_writer::BufWriter, read::ZipArchive, stream_impls::deflate, utils::map_swap_uninit,
+        buf_writer::BufWriter,
+        read::{read_spec, Shared, ZipArchive},
+        stream_impls::deflate,
+        utils::map_swap_uninit,
         WrappedPin,
     },
     types::{ZipFileData, DEFAULT_VERSION},
@@ -512,6 +515,19 @@ impl<S> ZipWriter<S> {
         }
     }
 
+    fn for_append(inner: Pin<Box<S>>, files: Vec<ZipFileData>, comment: Vec<u8>) -> Self {
+        Self {
+            inner: InnerWriter::NoActiveFile(inner),
+            files,
+            stats: Default::default(),
+            writing_to_file: false,
+            writing_to_extra_field: false,
+            writing_to_central_extra_field_only: false,
+            comment,
+            writing_raw: true, /* avoid recomputing the last file's header */
+        }
+    }
+
     #[inline]
     fn project(self: Pin<&mut Self>) -> WriteProj<'_, S> {
         unsafe {
@@ -827,6 +843,79 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
 }
 
 impl<S: io::AsyncRead + io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
+    /// Initializes the archive from an existing ZIP archive, making it ready for append.
+    ///
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use zip::{tokio::{read::ZipArchive, write::ZipWriter}, write::FileOptions};
+    /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
+    /// use std::{io::Cursor, pin::Pin};
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(Box::pin(buf));
+    /// let mut zp = Pin::new(&mut zip);
+    /// zp.as_mut().start_file("a.txt", FileOptions::default()).await?;
+    /// zp.write_all(b"hello\n").await?;
+    /// let src = zip.finish().await?;
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(Box::pin(buf));
+    /// let mut zp = Pin::new(&mut zip);
+    /// zp.as_mut().start_file("b.txt", FileOptions::default()).await?;
+    /// zp.write_all(b"hey\n").await?;
+    /// let mut src2 = zip.finish_into_readable().await?;
+    /// let src2 = Pin::new(&mut src2);
+    ///
+    /// let mut zip = ZipWriter::new_append(src);
+    /// let mut zp = Pin::new(&mut zip);
+    /// zp.merge_archive(src2).await?;
+    /// let mut result = zip.finish_into_readable().await?;
+    /// let mut zp = Pin::new(&mut result);
+    ///
+    /// let mut s: String = String::new();
+    /// zp.as_mut().by_name("a.txt").await?.read_to_string(&mut s).await?;
+    /// assert_eq!(s, "hello\n");
+    /// s.clear();
+    /// zp.by_name("b.txt").await?.read_to_string(&mut s).await?;
+    /// assert_eq!(s, "hey\n");
+    ///
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub async fn new_append(mut readwriter: Pin<Box<S>>) -> ZipResult<Self> {
+        let (footer, cde_end_pos) =
+            spec::CentralDirectoryEnd::find_and_parse_async(readwriter.as_mut()).await?;
+
+        if footer.disk_number != footer.disk_with_central_directory {
+            return Err(ZipError::UnsupportedArchive(
+                "Support for multi-disk files is not implemented",
+            ));
+        }
+
+        let (archive_offset, directory_start, number_of_files) =
+            Shared::get_directory_counts(readwriter.as_mut(), &footer, cde_end_pos).await?;
+
+        readwriter
+            .seek(io::SeekFrom::Start(directory_start))
+            .await
+            .map_err(|_| {
+                ZipError::InvalidArchive("Could not seek to start of central directory")
+            })?;
+
+        let mut files: Vec<ZipFileData> = Vec::with_capacity(number_of_files);
+        for _ in 0..number_of_files {
+            let file =
+                read_spec::central_header_to_zip_file(readwriter.as_mut(), archive_offset).await?;
+            files.push(file);
+        }
+
+        /* seek directory_start to overwrite it */
+        readwriter
+            .seek(io::SeekFrom::Start(directory_start))
+            .await?;
+
+        Ok(Self::for_append(readwriter, files, footer.zip_file_comment))
+    }
+
     /// Write the zip file into the backing stream, then produce a readable archive of that data.
     ///
     /// This method avoids parsing the central directory records at the end of the stream for
@@ -929,7 +1018,7 @@ impl<S> WrappedPin<S> for ZipWriter<S> {
     }
 }
 
-mod write_spec {
+pub(crate) mod write_spec {
     use crate::{result::ZipResult, spec, types::ZipFileData};
 
     use std::pin::Pin;
