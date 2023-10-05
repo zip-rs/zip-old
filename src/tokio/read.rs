@@ -449,6 +449,17 @@ impl<'a, S, R: WrappedPin<S>> ZipFile<'a, S, R> {
     }
 
     #[inline]
+    pub fn is_dir(&self) -> bool {
+        /* TODO: '\\' too? */
+        self.data.file_name.ends_with('/')
+    }
+
+    #[inline]
+    pub fn unix_mode(&self) -> Option<u32> {
+        self.data.unix_mode()
+    }
+
+    #[inline]
     pub fn data(&self) -> &ZipFileData {
         &self.data
     }
