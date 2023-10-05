@@ -270,7 +270,7 @@ impl Shared {
     pub(crate) async fn get_directory_counts<S: io::AsyncRead + io::AsyncSeek>(
         mut reader: Pin<&mut S>,
         footer: &spec::CentralDirectoryEnd,
-        cde_start_pos: u64,
+        cde_end_pos: u64,
     ) -> ZipResult<(u64, u64, usize)> {
         // See if there's a ZIP64 footer. The ZIP64 locator if present will
         // have its signature 20 bytes in front of the standard footer. The
@@ -307,7 +307,7 @@ impl Shared {
                 // offsets all being too small. Get the amount of error by comparing
                 // the actual file position we found the CDE at with the offset
                 // recorded in the CDE.
-                let archive_offset = cde_start_pos
+                let archive_offset = cde_end_pos
                     .checked_sub(footer.central_directory_size as u64)
                     .and_then(|x| x.checked_sub(footer.central_directory_offset as u64))
                     .ok_or(ZipError::InvalidArchive(
@@ -337,7 +337,7 @@ impl Shared {
                 // read::CentralDirectoryEnd::find_and_parse, except now we search
                 // forward.
 
-                let search_upper_bound = cde_start_pos
+                let search_upper_bound = cde_end_pos
                     .checked_sub(60) // minimum size of Zip64CentralDirectoryEnd + Zip64CentralDirectoryEndLocator
                     .ok_or(ZipError::InvalidArchive(
                         "File cannot contain ZIP64 central directory end",
@@ -375,7 +375,7 @@ impl Shared {
     pub async fn parse<S: io::AsyncRead + io::AsyncSeek>(
         mut reader: Pin<Box<S>>,
     ) -> ZipResult<(Self, Pin<Box<S>>)> {
-        let (footer, cde_start_pos) =
+        let (footer, cde_end_pos) =
             spec::CentralDirectoryEnd::find_and_parse_async(reader.as_mut()).await?;
 
         if !footer.record_too_small() && footer.disk_number != footer.disk_with_central_directory {
@@ -385,11 +385,11 @@ impl Shared {
         }
 
         let (archive_offset, directory_start, number_of_files) =
-            Self::get_directory_counts(reader.as_mut(), &footer, cde_start_pos).await?;
+            Self::get_directory_counts(reader.as_mut(), &footer, cde_end_pos).await?;
 
         // If the parsed number of files is greater than the offset then
         // something fishy is going on and we shouldn't trust number_of_files.
-        let file_capacity = if number_of_files > cde_start_pos as usize {
+        let file_capacity = if number_of_files > directory_start as usize {
             0
         } else {
             number_of_files
@@ -407,9 +407,12 @@ impl Shared {
             ));
         }
 
-        for _ in 0..number_of_files {
+        for i in 0..number_of_files {
             let file =
                 read_spec::central_header_to_zip_file(reader.as_mut(), archive_offset).await?;
+            if i == 0 {
+                assert_eq!(archive_offset, file.header_start);
+            }
             assert!(files.insert(file.file_name.clone(), file).is_none());
         }
 
@@ -913,6 +916,38 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
         decompress_task.await.expect("panic in subtask")?;
 
         Ok(())
+    }
+}
+
+impl<S> ZipArchive<S> {
+    pub(crate) fn from_finalized_writer(
+        files: Vec<ZipFileData>,
+        comment: Vec<u8>,
+        stream: Pin<Box<S>>,
+        directory_start: u64,
+    ) -> ZipResult<Self> {
+        /* This is where the whole file starts. */
+        if let Some(initial_offset) = files.first().map(|d| d.header_start) {
+            let files: IndexMap<String, ZipFileData> = files
+                .into_iter()
+                .map(|d| (d.file_name.clone(), d))
+                .collect();
+            let shared = Shared {
+                files,
+                offset: initial_offset,
+                directory_start,
+                comment,
+            };
+            Ok(Self {
+                reader: Some(stream),
+                shared: Arc::new(shared),
+            })
+        } else {
+            /* We currently require at least 1 file in order to determine the `initial_offset`. */
+            Err(ZipError::InvalidArchive(
+                "attempt to finalize empty zip writer into readable",
+            ))
+        }
     }
 }
 

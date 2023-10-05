@@ -2,7 +2,10 @@ use crate::{
     compression::CompressionMethod,
     result::{ZipError, ZipResult},
     spec,
-    tokio::{buf_writer::BufWriter, stream_impls::deflate, utils::map_swap_uninit, WrappedPin},
+    tokio::{
+        buf_writer::BufWriter, read::ZipArchive, stream_impls::deflate, utils::map_swap_uninit,
+        WrappedPin,
+    },
     types::{ZipFileData, DEFAULT_VERSION},
     write::{FileOptions, ZipRawValues, ZipWriterStats},
 };
@@ -198,11 +201,12 @@ impl WriterWrapResult {
 }
 
 impl<S: io::AsyncWrite + io::AsyncSeek> InnerWriter<S> {
+    /// Returns `directory_start`.
     pub(crate) async fn finalize(
         self: Pin<&mut Self>,
         files: &[ZipFileData],
         comment: &[u8],
-    ) -> ZipResult<()> {
+    ) -> ZipResult<u64> {
         match self.project() {
             InnerProj::FileWriter(_) => unreachable!("stream should be unwrapped!"),
             InnerProj::NoActiveFile(mut inner) => {
@@ -247,9 +251,10 @@ impl<S: io::AsyncWrite + io::AsyncSeek> InnerWriter<S> {
                     central_directory_offset: central_start.min(spec::ZIP64_BYTES_THR) as u32,
                 };
                 footer.write_async(inner.as_mut()).await?;
+
+                Ok(central_start)
             }
         }
-        Ok(())
     }
 
     pub(crate) async fn initialize_entry(
@@ -735,18 +740,54 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
     }
 
     pub async fn finish(mut self) -> ZipResult<Pin<Box<S>>> {
-        Pin::new(&mut self).finalize().await?;
+        let _ = Pin::new(&mut self).finalize().await?;
         Pin::new(&mut self).shutdown().await?;
         Ok(self.unwrap_inner_pin())
     }
 
-    async fn finalize(mut self: Pin<&mut Self>) -> ZipResult<()> {
+    async fn finalize(mut self: Pin<&mut Self>) -> ZipResult<u64> {
         self.as_mut().finish_file().await?;
 
         let me = self.project();
-        me.inner.finalize(me.files, me.comment).await?;
+        me.inner.finalize(me.files, me.comment).await
+    }
+}
 
-        Ok(())
+impl<S: io::AsyncRead + io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
+    /// Write the zip file into the backing stream, then produce a readable archive of that data.
+    ///
+    /// This method avoids parsing the central directory records at the end of the stream for
+    /// a slight performance improvement over running [`ZipArchive::new()`] on the output of
+    /// [`Self::finish()`].
+    ///
+    ///```
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use zip::{tokio::{read::ZipArchive, write::ZipWriter}, write::FileOptions};
+    /// use tokio::io::{self, AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
+    /// use std::{io::Cursor, pin::Pin};
+    ///
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut zip = ZipWriter::new(Box::pin(buf));
+    /// let mut zp = Pin::new(&mut zip);
+    /// let options = FileOptions::default();
+    /// zp.as_mut().start_file("a.txt", options).await?;
+    /// zp.write_all(b"hello\n").await?;
+    ///
+    /// let mut zip = zip.finish_into_readable().await?;
+    /// let mut zp = Pin::new(&mut zip);
+    /// let mut s: String = String::new();
+    /// zp.by_name("a.txt").await?.read_to_string(&mut s).await?;
+    /// assert_eq!(s, "hello\n");
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub async fn finish_into_readable(mut self) -> ZipResult<ZipArchive<S>> {
+        let directory_start = Pin::new(&mut self).finalize().await?;
+        Pin::new(&mut self).shutdown().await?;
+        let files = mem::take(&mut self.files);
+        let comment = mem::take(&mut self.comment);
+        let inner = self.unwrap_inner_pin();
+        ZipArchive::from_finalized_writer(files, comment, inner, directory_start)
     }
 }
 
