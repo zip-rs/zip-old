@@ -15,6 +15,7 @@ use crate::types::ZipFileData;
 use flate2::Decompress;
 
 use async_stream::try_stream;
+use byteorder::{ByteOrder, LittleEndian};
 use cfg_if::cfg_if;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
@@ -32,7 +33,7 @@ use std::{
     num, ops,
     path::{Path, PathBuf},
     pin::Pin,
-    str,
+    slice, str,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -179,6 +180,37 @@ impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
     }
 }
 
+#[repr(packed)]
+struct LocalHeaderBuffer {
+    pub magic: u32,
+    #[allow(dead_code)]
+    unparsed_data: [u8; 22],
+    pub file_name_length: u16,
+    pub extra_field_length: u16,
+}
+
+impl LocalHeaderBuffer {
+    #[inline]
+    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
+        let start: *mut u8 = info.as_mut_ptr();
+
+        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 15) });
+
+        unsafe { mem::transmute(info) }
+    }
+
+    #[inline]
+    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
+        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
+
+        LittleEndian::from_slice_u16(unsafe {
+            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 15)
+        });
+
+        buf
+    }
+}
+
 async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     data: &ZipFileData,
     mut reader: Pin<Box<S>>,
@@ -187,20 +219,28 @@ async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
         // Parse local header
         reader.seek(io::SeekFrom::Start(data.header_start)).await?;
 
-        let signature = reader.read_u32_le().await?;
-        if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
+        static_assertions::assert_eq_size!([u8; 30], LocalHeaderBuffer);
+        let mut info = [0u8; 30];
+        reader.read_exact(&mut info[..]).await?;
+
+        let LocalHeaderBuffer {
+            magic,
+            file_name_length,
+            /* NB: zip files have separate local and central extra data records. The length of the
+             * local extra field is being parsed here. The value of this field cannot be inferred
+             * from the central record data alone. */
+            extra_field_length,
+            ..
+        } = LocalHeaderBuffer::extract(info);
+
+        if magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid local file header"));
         }
 
-        reader.seek(io::SeekFrom::Current(22)).await?;
-        let file_name_length = reader.read_u16_le().await? as u64;
-        /* NB: zip files have separate local and central extra data records. The length of the local
-         * extra field is being parsed here. The value of this field cannot be inferred from the
-         * central record data. */
-        let extra_field_length = reader.read_u16_le().await? as u64;
-        let magic_and_header = 4 + 22 + 2 + 2;
-        let data_start =
-            data.header_start + magic_and_header + file_name_length + extra_field_length;
+        let data_start = data.header_start
+            + mem::size_of::<LocalHeaderBuffer>() as u64
+            + file_name_length as u64
+            + extra_field_length as u64;
         data.data_start.store(data_start);
 
         reader.seek(io::SeekFrom::Start(data_start)).await?

@@ -180,6 +180,10 @@ impl CentralDirectoryEnd {
                     leftmost_frontier - cur_len + index_within_buffer as u64;
                 dbg!(central_directory_end);
 
+                reader
+                    .seek(io::SeekFrom::Start(central_directory_end))
+                    .await?;
+
                 return CentralDirectoryEnd::parse_async(reader)
                     .await
                     .map(|cde| (cde, central_directory_end));
@@ -528,6 +532,10 @@ impl Zip64CentralDirectoryEnd {
 
             if let Some(index_within_buffer) = memchr2::memmem::find(&cur_buf, &sig[..]) {
                 let zip64_central_directory_end = rightmost_frontier + index_within_buffer as u64;
+
+                reader
+                    .seek(io::SeekFrom::Start(zip64_central_directory_end))
+                    .await?;
 
                 let archive_offset = zip64_central_directory_end - nominal_offset;
                 return Zip64CentralDirectoryEnd::parse_async(reader)
