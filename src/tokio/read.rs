@@ -1067,9 +1067,10 @@ pub(crate) mod read_spec {
         types::ZipFileData,
     };
 
-    use std::{mem, pin::Pin};
-
+    use byteorder::{ByteOrder, LittleEndian};
     use tokio::io::{self, AsyncReadExt, AsyncSeekExt};
+
+    use std::{mem, pin::Pin, slice};
 
     /// Parse a central directory entry to collect the information for the file.
     pub async fn central_header_to_zip_file<R: io::AsyncRead + io::AsyncSeek>(
@@ -1189,6 +1190,9 @@ pub(crate) mod read_spec {
 
             reader.read_exact(&mut buf[..]).await?;
 
+            LittleEndian::from_slice_u16(unsafe {
+                slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 14)
+            });
             let args: (u16, u16, u64, u64, u64) = unsafe { mem::transmute(buf) };
             let (kind, len, uncompressed_size, compressed_size, header_start) = args;
 
