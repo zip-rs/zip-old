@@ -1,6 +1,6 @@
 use crate::result::{ZipError, ZipResult};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use std::io::prelude::*;
@@ -42,13 +42,22 @@ struct CentralDirectoryEndBuffer {
 impl CentralDirectoryEndBuffer {
     #[inline]
     pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        use byteorder::ByteOrder;
-
         let start: *mut u8 = info.as_mut_ptr();
 
         LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 11) });
 
         unsafe { mem::transmute(info) }
+    }
+
+    #[inline]
+    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
+        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
+
+        LittleEndian::from_slice_u16(unsafe {
+            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 11)
+        });
+
+        buf
     }
 }
 
@@ -227,21 +236,24 @@ impl CentralDirectoryEnd {
     }
 
     pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
-        writer.write_u32_le(CENTRAL_DIRECTORY_END_SIGNATURE).await?;
-        writer.write_u16_le(self.disk_number).await?;
-        writer
-            .write_u16_le(self.disk_with_central_directory)
-            .await?;
-        writer
-            .write_u16_le(self.number_of_files_on_this_disk)
-            .await?;
-        writer.write_u16_le(self.number_of_files).await?;
-        writer.write_u32_le(self.central_directory_size).await?;
-        writer.write_u32_le(self.central_directory_offset).await?;
-        writer
-            .write_u16_le(self.zip_file_comment.len() as u16)
-            .await?;
+        let block = CentralDirectoryEndBuffer {
+            magic: CENTRAL_DIRECTORY_END_SIGNATURE,
+            disk_number: self.disk_number,
+            disk_with_central_directory: self.disk_with_central_directory,
+            number_of_files_on_this_disk: self.number_of_files_on_this_disk,
+            number_of_files: self.number_of_files,
+            central_directory_size: self.central_directory_size,
+            central_directory_offset: self.central_directory_offset,
+            zip_file_comment_length: self.zip_file_comment.len() as u16,
+        }
+        .writable_block();
+
+        /* FIXME: vectored!! */
+        writer.write_all(&block).await?;
+
+        /* FIXME: zero-copy!! */
         writer.write_all(&self.zip_file_comment).await?;
+
         Ok(())
     }
 }
