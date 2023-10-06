@@ -77,7 +77,7 @@ pub fn bench_io(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new(&id, "<copy_file_range>"), |b| {
             use std::fs;
-            use zip::tokio::os::linux::*;
+            use zip::tokio::os::copy_file_range::*;
 
             let td = tempdir().unwrap();
             b.iter(|| {

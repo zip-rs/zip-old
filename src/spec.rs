@@ -165,7 +165,7 @@ impl CentralDirectoryEnd {
 
             /* dbg!(&cur_buf); */
 
-            if let Some(index_within_buffer) = memchr::memmem::rfind(&cur_buf, &sig[..]) {
+            if let Some(index_within_buffer) = memchr2::memmem::rfind(&cur_buf, &sig[..]) {
                 dbg!(index_within_buffer);
                 let central_directory_end =
                     leftmost_frontier - cur_len + index_within_buffer as u64;

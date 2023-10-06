@@ -4,7 +4,7 @@ use crate::{
     types::ZipFileData,
 };
 
-pub mod linux;
+pub mod copy_file_range;
 
 use std::{cmp, ops, os::fd::AsRawFd, path::PathBuf, pin::Pin, sync::Arc};
 

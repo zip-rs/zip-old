@@ -86,7 +86,7 @@ async fn main() -> ZipResult<()> {
     }
     .to_path_buf();
 
-    use zip::tokio::{buf_reader::BufReader, os::linux::*};
+    use zip::tokio::{buf_reader::BufReader, os::copy_file_range::*};
 
     let len: u64 = get_len(&source).await?;
     println!("len = {}", len);
