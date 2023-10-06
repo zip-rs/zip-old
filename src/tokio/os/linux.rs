@@ -38,6 +38,7 @@ macro_rules! try_libc {
     }};
 }
 
+#[allow(dead_code)]
 pub enum SyscallAvailability {
     Available,
     FailedProbe(io::Error),
@@ -82,6 +83,12 @@ pub static HAS_COPY_FILE_RANGE: Lazy<SyscallAvailability> = Lazy::new(|| {
 pub struct RawArgs {
     fd: libc::c_int,
     off: *mut libc::off64_t,
+}
+
+impl RawArgs {
+    pub fn as_option<'a>(self) -> Option<&'a mut libc::off64_t> {
+        ptr::NonNull::new(self.off).map(|ref mut off| unsafe { off.as_mut() })
+    }
 }
 
 pub trait CopyFileRangeHandle {
@@ -251,7 +258,7 @@ impl Role {
         }
     }
 
-    pub fn validate_flags(&self, flags: libc::c_int) -> io::Result<()> {
+    pub(crate) fn validate_flags(&self, flags: libc::c_int) -> io::Result<()> {
         let access_mode = flags & libc::O_ACCMODE;
 
         if !self.allowed_modes().contains(&access_mode) {
@@ -260,6 +267,16 @@ impl Role {
         self.check_append(flags)?;
 
         Ok(())
+    }
+
+    pub(crate) fn interest(&self) -> &'static tokio::io::Interest {
+        use tokio::io::Interest;
+        static READABLE: Interest = Interest::READABLE.add(Interest::ERROR);
+        static WRITABLE: Interest = Interest::WRITABLE.add(Interest::ERROR);
+        match self {
+            Self::Readable => &READABLE,
+            Self::Writable => &WRITABLE,
+        }
     }
 }
 
@@ -385,11 +402,130 @@ mod test {
 }
 
 pub mod async_fd {
+    use super::{CopyFileRangeHandle, Role};
+
     use tokio::io::{self, unix::AsyncFd};
+    use tokio_pipe::{PipeRead, PipeWrite};
 
     use std::{
         os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
         pin::Pin,
         task::{ready, Context, Poll},
     };
+
+    pub struct SpliceArgs<'a, T: AsRawFd> {
+        pub fd: &'a mut AsyncFd<T>,
+        pub off: Option<&'a mut libc::off64_t>,
+    }
+
+    pub trait SpliceHandle {
+        fn role(&self) -> Role;
+        type FD: AsRawFd;
+        fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD>;
+    }
+
+    pub struct MutateAsync {
+        fd: AsyncFd<super::MutateInnerOffset>,
+    }
+
+    impl SpliceHandle for MutateAsync {
+        fn role(&self) -> Role {
+            self.fd.get_ref().role()
+        }
+        type FD = super::MutateInnerOffset;
+        fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD> {
+            let s = self.get_mut();
+
+            let raw_args = Pin::new(s.fd.get_mut()).as_args();
+            SpliceArgs {
+                fd: &mut s.fd,
+                off: raw_args.as_option(),
+            }
+        }
+    }
+
+    impl MutateAsync {
+        pub fn new(inner: super::MutateInnerOffset) -> io::Result<Self> {
+            let role = inner.role();
+            Ok(Self {
+                fd: AsyncFd::with_interest(inner, *role.interest())?,
+            })
+        }
+
+        pub fn into_copy_file_range_handle(self) -> super::MutateInnerOffset {
+            self.fd.into_inner()
+        }
+    }
+
+    impl AsRawFd for MutateAsync {
+        fn as_raw_fd(&self) -> RawFd {
+            self.fd.as_raw_fd()
+        }
+    }
+
+    impl IntoRawFd for MutateAsync {
+        fn into_raw_fd(self) -> RawFd {
+            self.into_copy_file_range_handle().into_raw_fd()
+        }
+    }
+
+    pub struct GivenOffsetAsync {
+        fd: AsyncFd<super::FromGivenOffset>,
+    }
+
+    impl SpliceHandle for GivenOffsetAsync {
+        fn role(&self) -> Role {
+            self.fd.get_ref().role()
+        }
+        type FD = super::FromGivenOffset;
+        fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD> {
+            let s = self.get_mut();
+
+            let raw_args = Pin::new(s.fd.get_mut()).as_args();
+            SpliceArgs {
+                fd: &mut s.fd,
+                off: raw_args.as_option(),
+            }
+        }
+    }
+
+    impl GivenOffsetAsync {
+        pub fn new(inner: super::FromGivenOffset) -> io::Result<Self> {
+            let role = inner.role();
+            Ok(Self {
+                fd: AsyncFd::with_interest(inner, *role.interest())?,
+            })
+        }
+
+        pub fn into_copy_file_range_handle(self) -> super::FromGivenOffset {
+            self.fd.into_inner()
+        }
+    }
+
+    impl AsRawFd for GivenOffsetAsync {
+        fn as_raw_fd(&self) -> RawFd {
+            self.fd.as_raw_fd()
+        }
+    }
+
+    pub async fn splice_from_pipe(
+        src: Pin<&mut PipeRead>,
+        dst: Pin<&mut impl SpliceHandle>,
+        len: usize,
+        has_more_data: bool,
+    ) -> io::Result<usize> {
+        assert_eq!(dst.role(), Role::Writable);
+        let SpliceArgs { fd, off } = dst.as_args();
+        src.get_mut().splice_to(fd, off, len, has_more_data).await
+    }
+
+    pub async fn splice_into_pipe(
+        src: Pin<&mut impl SpliceHandle>,
+        dst: Pin<&mut PipeWrite>,
+        len: usize,
+    ) -> io::Result<usize> {
+        assert_eq!(src.role(), Role::Readable);
+        let SpliceArgs { fd, off } = src.as_args();
+        dst.get_mut().splice_from(fd, off, len).await
+    }
 }
