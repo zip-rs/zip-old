@@ -1241,16 +1241,28 @@ pub(crate) mod write_spec {
 
         writer.write_all(&block).await?;
 
-        /* TODO: vectorized write! */
+        let fname = file.file_name.as_bytes();
 
-        // file name
-        writer.write_all(file.file_name.as_bytes()).await?;
-        // zip64 extra field
-        writer.write_all(&zip64_extra_field).await?;
-        // extra field
-        writer.write_all(&file.extra_field).await?;
-        // file comment
-        // <none>
+        if writer.is_write_vectored() {
+            /* TODO: zero-copy!! */
+            let block = IoSlice::new(&block);
+            let fname = IoSlice::new(&fname);
+            let z64_extra = IoSlice::new(&zip64_extra_field);
+            let extra = IoSlice::new(&file.extra_field);
+            writer
+                .write_vectored(&[block, fname, z64_extra, extra])
+                .await?;
+        } else {
+            writer.write_all(&block).await?;
+            // file name
+            writer.write_all(&fname).await?;
+            // zip64 extra field
+            writer.write_all(&zip64_extra_field).await?;
+            // extra field
+            writer.write_all(&file.extra_field).await?;
+            // file comment
+            // <none>
+        }
 
         Ok(())
     }
