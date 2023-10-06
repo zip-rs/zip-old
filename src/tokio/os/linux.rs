@@ -104,6 +104,10 @@ impl MutateInnerOffset {
         let fd = FileFd::from_raw_fd_checked(owned_fd.as_raw_fd(), role)?;
         Ok(Self { fd, role, owned_fd })
     }
+
+    pub fn into_inner(self) -> OwnedFd {
+        self.owned_fd
+    }
 }
 
 impl CopyFileRangeHandle for MutateInnerOffset {
@@ -346,22 +350,41 @@ mod test {
     }
 
     #[test]
-    fn read_owned_into_write_ref() {
+    fn read_ref_into_write_owned() {
+        use io::{Read, Seek};
+
         let td = tempfile::tempdir().unwrap();
         let p = td.path().join("asdf.txt");
         fs::write(&p, b"wow!").unwrap();
 
-        let mut src = MutateInnerOffset::new(fs::File::open(&p).unwrap(), Role::Readable).unwrap();
+        let in_file = fs::File::open(&p).unwrap();
+        let mut src = FromGivenOffset::new(&in_file, Role::Readable, 0).unwrap();
 
         let p2 = td.path().join("asdf2.txt");
-        let out_file = fs::File::create(&p2).unwrap();
-        let mut dst = FromGivenOffset::new(&out_file, Role::Writable, 0).unwrap();
-        assert_eq!(0, dst.offset);
+        let out_file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            /* Need this to read the output file contents at the end! */
+            .read(true)
+            .open(&p2)
+            .unwrap();
+        let mut dst = MutateInnerOffset::new(out_file, Role::Writable).unwrap();
 
+        /* Explicit offset begins at 0. */
+        assert_eq!(0, src.offset);
+
+        /* 4 bytes were written. */
         assert_eq!(
             4,
             copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), 4).unwrap()
         );
-        assert_eq!(4, dst.offset);
+        assert_eq!(4, src.offset);
+
+        let mut dst: fs::File = dst.into_inner().into();
+        assert_eq!(4, dst.stream_position().unwrap());
+        dst.rewind().unwrap();
+        let mut s = String::new();
+        dst.read_to_string(&mut s).unwrap();
+        assert_eq!(&s, "wow!");
     }
 }
