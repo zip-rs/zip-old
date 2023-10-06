@@ -655,6 +655,7 @@ pub struct CentralDirectoryHeaderBuffer {
     pub extra_field_length: u16,          /* 1 */
     pub file_comment_length: u16,         /* 1 */
     pub disk_number_start: u16,           /* 1 */
+    pub internal_attributes: u16,         /* 1 */
     pub external_attributes: u32,         /* 2 */
     pub header_start: u32,                /* 2 */
 }
@@ -664,7 +665,7 @@ impl CentralDirectoryHeaderBuffer {
     pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
         let start: *mut u8 = info.as_mut_ptr();
 
-        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 21) });
+        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 22) });
 
         unsafe { mem::transmute(info) }
     }
@@ -674,7 +675,7 @@ impl CentralDirectoryHeaderBuffer {
         let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
 
         LittleEndian::from_slice_u16(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 21)
+            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 22)
         });
 
         buf

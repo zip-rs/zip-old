@@ -1,6 +1,6 @@
 use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, LocalHeaderBuffer};
+use crate::spec::{self, CentralDirectoryHeaderBuffer, LocalHeaderBuffer};
 use crate::tokio::{
     buf_reader::BufReader, combinators::Limiter, crc32::Crc32Reader, extraction::CompletedPaths,
     stream_impls::deflate, utils::map_take_manual_drop, WrappedPin,
@@ -1063,7 +1063,7 @@ pub(crate) mod read_spec {
     use crate::{
         compression::CompressionMethod,
         result::{ZipError, ZipResult},
-        spec,
+        spec::{self, CentralDirectoryHeaderBuffer},
         types::ZipFileData,
     };
 
@@ -1096,30 +1096,44 @@ pub(crate) mod read_spec {
         use crate::cp437::FromCp437;
         use crate::types::{AtomicU64, DateTime};
 
-        let version_made_by = reader.read_u16_le().await?;
-        let _version_to_extract = reader.read_u16_le().await?;
-        let flags = reader.read_u16_le().await?;
-        let encrypted = flags & 1 == 1;
-        let is_utf8 = flags & (1 << 11) != 0;
-        let using_data_descriptor = flags & (1 << 3) != 0;
-        let compression_method = reader.read_u16_le().await?;
-        let last_mod_time = reader.read_u16_le().await?;
-        let last_mod_date = reader.read_u16_le().await?;
-        let crc32 = reader.read_u32_le().await?;
-        let compressed_size = reader.read_u32_le().await?;
-        let uncompressed_size = reader.read_u32_le().await?;
-        let file_name_length = reader.read_u16_le().await? as usize;
-        let extra_field_length = reader.read_u16_le().await? as usize;
-        let file_comment_length = reader.read_u16_le().await? as usize;
-        let _disk_number = reader.read_u16_le().await?;
-        let _internal_file_attributes = reader.read_u16_le().await?;
-        let external_file_attributes = reader.read_u32_le().await?;
-        let offset = reader.read_u32_le().await? as u64;
-        let mut file_name_raw = vec![0; file_name_length];
+        static_assertions::assert_eq_size!([u8; 46], CentralDirectoryHeaderBuffer);
+        let mut info = [0u8; 46];
+        reader.read_exact(&mut info[..]).await?;
+
+        let CentralDirectoryHeaderBuffer {
+            magic,
+            version_made_by,
+            /* version_needed: _, */
+            flag,
+            compression_method,
+            last_modified_time_timepart,
+            last_modified_time_datepart,
+            crc32,
+            compressed_size,
+            uncompressed_size,
+            file_name_length,
+            extra_field_length,
+            file_comment_length,
+            /* disk_number_start: _, */
+            /* _internal_file_attributes, */
+            external_attributes,
+            header_start,
+            ..
+        } = CentralDirectoryHeaderBuffer::extract(info);
+
+        if magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
+        }
+
+        let encrypted = flag & 1 == 1;
+        let is_utf8 = flag & (1 << 11) != 0;
+        let using_data_descriptor = flag & (1 << 3) != 0;
+
+        let mut file_name_raw = vec![0; file_name_length as usize];
         reader.read_exact(&mut file_name_raw).await?;
-        let mut extra_field = vec![0; extra_field_length];
+        let mut extra_field = vec![0; extra_field_length as usize];
         reader.read_exact(&mut extra_field).await?;
-        let mut file_comment_raw = vec![0; file_comment_length];
+        let mut file_comment_raw = vec![0; file_comment_length as usize];
         reader.read_exact(&mut file_comment_raw).await?;
 
         let file_name = match is_utf8 {
@@ -1142,7 +1156,10 @@ pub(crate) mod read_spec {
                 CompressionMethod::from_u16(compression_method)
             },
             compression_level: None,
-            last_modified_time: DateTime::from_msdos(last_mod_date, last_mod_time),
+            last_modified_time: DateTime::from_msdos(
+                last_modified_time_datepart,
+                last_modified_time_timepart,
+            ),
             crc32,
             compressed_size: compressed_size as u64,
             uncompressed_size: uncompressed_size as u64,
@@ -1150,10 +1167,10 @@ pub(crate) mod read_spec {
             file_name_raw,
             extra_field,
             file_comment,
-            header_start: offset,
+            header_start: header_start as u64,
             central_header_start,
             data_start: AtomicU64::new(0),
-            external_attributes: external_file_attributes,
+            external_attributes,
             large_file: false,
             aes_mode: None,
         };

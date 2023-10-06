@@ -1160,8 +1160,8 @@ pub(crate) mod write_spec {
             } else {
                 0
             } | if file.encrypted { 1u16 << 0 } else { 0 },
-            #[allow(deprecated)]
-            compression_method: file.compression_method.to_u16(),
+            compression_method: #[allow(deprecated)]
+            file.compression_method.to_u16(),
             last_modified_time_timepart: file.last_modified_time.timepart(),
             last_modified_time_datepart: file.last_modified_time.datepart(),
             crc32: file.crc32,
@@ -1212,7 +1212,6 @@ pub(crate) mod write_spec {
         file: &ZipFileData,
     ) -> ZipResult<()> {
         let zip64_extra_field = get_central_zip64_extra_field(file);
-        writer.write_all(&zip64_extra_field).await?;
 
         let block = CentralDirectoryHeaderBuffer {
             magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
@@ -1223,8 +1222,8 @@ pub(crate) mod write_spec {
             } else {
                 0
             } | if file.encrypted { 1u16 << 0 } else { 0 },
-            #[allow(deprecated)]
-            compression_method: file.compression_method.to_u16(),
+            compression_method: #[allow(deprecated)]
+            file.compression_method.to_u16(),
             last_modified_time_timepart: file.last_modified_time.timepart(),
             last_modified_time_datepart: file.last_modified_time.datepart(),
             crc32: file.crc32,
@@ -1234,12 +1233,15 @@ pub(crate) mod write_spec {
             extra_field_length: zip64_extra_field.len() as u16,
             file_comment_length: 0,
             disk_number_start: 0,
+            internal_attributes: 0,
             external_attributes: file.external_attributes,
             header_start: file.header_start.min(spec::ZIP64_BYTES_THR) as u32,
         }
         .writable_block();
 
         writer.write_all(&block).await?;
+
+        /* TODO: vectorized write! */
 
         // file name
         writer.write_all(file.file_name.as_bytes()).await?;
