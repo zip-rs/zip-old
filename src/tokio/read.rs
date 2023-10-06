@@ -1182,10 +1182,7 @@ pub(crate) mod read_spec {
     }
 
     async fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
-        use crate::types::{AesMode, AesVendorVersion};
-        use std::io::Cursor;
-
-        let mut reader = Cursor::new(&file.extra_field);
+        let mut reader = std::io::Cursor::new(&file.extra_field);
 
         while (reader.position() as usize) < file.extra_field.len() {
             let kind = reader.read_u16_le().await?;
@@ -1194,12 +1191,12 @@ pub(crate) mod read_spec {
             match kind {
                 // Zip64 extended information extra field
                 0x0001 => {
-                    if file.uncompressed_size == spec::ZIP64_BYTES_THR {
+                    if file.uncompressed_size >= spec::ZIP64_BYTES_THR {
                         file.large_file = true;
                         file.uncompressed_size = reader.read_u64_le().await?;
                         len_left -= 8;
                     }
-                    if file.compressed_size == spec::ZIP64_BYTES_THR {
+                    if file.compressed_size >= spec::ZIP64_BYTES_THR {
                         file.large_file = true;
                         file.compressed_size = reader.read_u64_le().await?;
                         len_left -= 8;
@@ -1208,39 +1205,6 @@ pub(crate) mod read_spec {
                         file.header_start = reader.read_u64_le().await?;
                         len_left -= 8;
                     }
-                }
-                0x9901 => {
-                    // AES
-                    if len != 7 {
-                        return Err(ZipError::UnsupportedArchive(
-                            "AES extra data field has an unsupported length",
-                        ));
-                    }
-                    let vendor_version = reader.read_u16_le().await?;
-                    let vendor_id = reader.read_u16_le().await?;
-                    let aes_mode = reader.read_u8().await?;
-                    let compression_method = reader.read_u16_le().await?;
-
-                    if vendor_id != 0x4541 {
-                        return Err(ZipError::InvalidArchive("Invalid AES vendor"));
-                    }
-                    let vendor_version = match vendor_version {
-                        0x0001 => AesVendorVersion::Ae1,
-                        0x0002 => AesVendorVersion::Ae2,
-                        _ => return Err(ZipError::InvalidArchive("Invalid AES vendor version")),
-                    };
-                    match aes_mode {
-                        0x01 => file.aes_mode = Some((AesMode::Aes128, vendor_version)),
-                        0x02 => file.aes_mode = Some((AesMode::Aes192, vendor_version)),
-                        0x03 => file.aes_mode = Some((AesMode::Aes256, vendor_version)),
-                        _ => {
-                            return Err(ZipError::InvalidArchive("Invalid AES encryption strength"))
-                        }
-                    };
-                    file.compression_method = {
-                        #[allow(deprecated)]
-                        CompressionMethod::from_u16(compression_method)
-                    };
                 }
                 _ => {
                     // Other fields are ignored
