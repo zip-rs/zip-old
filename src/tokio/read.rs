@@ -1076,25 +1076,10 @@ pub(crate) mod read_spec {
         mut reader: Pin<&mut R>,
         archive_offset: u64,
     ) -> ZipResult<ZipFileData> {
-        let central_header_start = reader.stream_position().await?;
-
-        // Parse central header
-        let signature = reader.read_u32_le().await?;
-        if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-            Err(ZipError::InvalidArchive("Invalid Central Directory header"))
-        } else {
-            central_header_to_zip_file_inner(reader, archive_offset, central_header_start).await
-        }
-    }
-
-    /// Parse a central directory entry to collect the information for the file.
-    async fn central_header_to_zip_file_inner<R: io::AsyncRead>(
-        mut reader: Pin<&mut R>,
-        archive_offset: u64,
-        central_header_start: u64,
-    ) -> ZipResult<ZipFileData> {
         use crate::cp437::FromCp437;
         use crate::types::{AtomicU64, DateTime};
+
+        let central_header_start = reader.stream_position().await?;
 
         static_assertions::assert_eq_size!([u8; 46], CentralDirectoryHeaderBuffer);
         let mut info = [0u8; 46];
@@ -1122,7 +1107,7 @@ pub(crate) mod read_spec {
         } = CentralDirectoryHeaderBuffer::extract(info);
 
         if magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-            return Err(ZipError::InvalidArchive("Invalid digital signature header"));
+            return Err(ZipError::InvalidArchive("Invalid Central Directory header"));
         }
 
         let encrypted = flag & 1 == 1;
