@@ -1030,9 +1030,43 @@ pub(crate) mod write_spec {
         types::ZipFileData,
     };
 
-    use std::pin::Pin;
-
+    use byteorder::{ByteOrder, LittleEndian};
     use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+    use std::{io::IoSlice, mem, pin::Pin, slice};
+
+    #[repr(packed)]
+    struct LocalZip64ExtraFieldBuffer {
+        pub undocumented_field_1: u16,
+        pub undocumented_field_2: u16,
+        pub uncompressed_size: u64,
+        pub compressed_size: u64,
+        pub disk_start_number: u32,
+    }
+
+    impl LocalZip64ExtraFieldBuffer {
+        #[inline]
+        pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
+            let start: *mut u8 = info.as_mut_ptr();
+
+            LittleEndian::from_slice_u64(unsafe {
+                slice::from_raw_parts_mut(start as *mut u64, 3)
+            });
+
+            unsafe { mem::transmute(info) }
+        }
+
+        #[inline]
+        pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
+            let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
+
+            LittleEndian::from_slice_u64(unsafe {
+                slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u64, 3)
+            });
+
+            buf
+        }
+    }
 
     pub async fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
         if file.extra_field.len() > spec::ZIP64_ENTRY_THR {
