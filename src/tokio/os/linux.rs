@@ -1,7 +1,7 @@
-use crate::tokio::{
-    os::SharedSubset,
-    read::{Shared, SharedData},
-};
+/* use crate::tokio::{ */
+/*     os::SharedSubset, */
+/*     read::{Shared, SharedData}, */
+/* }; */
 
 use cfg_if::cfg_if;
 use displaydoc::Display;
@@ -16,8 +16,6 @@ use std::{
     ptr,
     task::{Context, Poll},
 };
-
-const MAX_LEN: usize = <libc::ssize_t>::MAX as usize;
 
 macro_rules! cvt {
     ($e:expr) => {{
@@ -92,21 +90,31 @@ pub trait CopyFileRangeHandle {
 }
 
 pub struct MutateInnerOffset {
-    fd: FileFd,
     role: Role,
     owned_fd: OwnedFd,
 }
 
 impl MutateInnerOffset {
     pub fn new(f: impl IntoRawFd, role: Role) -> io::Result<Self> {
-        let raw_fd = f.into_raw_fd();
+        let raw_fd = validate_raw_fd(f.into_raw_fd(), role)?;
         let owned_fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
-        let fd = FileFd::from_raw_fd_checked(owned_fd.as_raw_fd(), role)?;
-        Ok(Self { fd, role, owned_fd })
+        Ok(Self { role, owned_fd })
     }
 
-    pub fn into_inner(self) -> OwnedFd {
+    pub fn into_owned(self) -> OwnedFd {
         self.owned_fd
+    }
+}
+
+impl AsRawFd for MutateInnerOffset {
+    fn as_raw_fd(&self) -> RawFd {
+        self.owned_fd.as_raw_fd()
+    }
+}
+
+impl IntoRawFd for MutateInnerOffset {
+    fn into_raw_fd(self) -> RawFd {
+        self.into_owned().into_raw_fd()
     }
 }
 
@@ -116,14 +124,14 @@ impl CopyFileRangeHandle for MutateInnerOffset {
     }
     fn as_args(self: Pin<&mut Self>) -> RawArgs {
         RawArgs {
-            fd: *self.fd.raw_fd(),
+            fd: self.owned_fd.as_raw_fd(),
             off: ptr::null_mut(),
         }
     }
 }
 
 pub struct FromGivenOffset {
-    fd: FileFd,
+    fd: RawFd,
     pub offset: i64,
     role: Role,
 }
@@ -131,12 +139,18 @@ pub struct FromGivenOffset {
 impl FromGivenOffset {
     pub fn new(f: &impl AsRawFd, role: Role, init: u32) -> io::Result<Self> {
         let raw_fd = f.as_raw_fd();
-        let fd = FileFd::from_raw_fd_checked(raw_fd, role)?;
+        let fd = validate_raw_fd(raw_fd, role)?;
         Ok(Self {
             fd,
             role,
             offset: init as i64,
         })
+    }
+}
+
+impl AsRawFd for FromGivenOffset {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
     }
 }
 
@@ -149,7 +163,7 @@ impl CopyFileRangeHandle for FromGivenOffset {
             fd, ref mut offset, ..
         } = self.get_mut();
         RawArgs {
-            fd: *fd.raw_fd(),
+            fd: fd.as_raw_fd(),
             off: offset,
         }
     }
@@ -197,19 +211,6 @@ fn check_regular_file(fd: RawFd) -> io::Result<()> {
 fn get_status_flags(fd: RawFd) -> io::Result<libc::c_int> {
     Ok(try_libc!(unsafe { libc::fcntl(fd, libc::F_GETFL) }))
 }
-
-// needs impl AsRawFd for RawFd (^v1.48)
-#[derive(Debug)]
-// Optimize size of `Option<PipeFd>` by manually specifing the range.
-// Shamelessly taken from [`io-lifetimes::OwnedFd`](https://github.com/sunfishcode/io-lifetimes/blob/8669b5a9fc1d0604d1105f6e39c77fa633ac9c71/src/types.rs#L99).
-#[cfg_attr(rustc_attrs, rustc_layout_scalar_valid_range_start(0))]
-// libstd/os/raw/mod.rs me that every libstd-supported platform has a
-// 32-bit c_int.
-//
-// Below is -2, in two's complement, but that only works out
-// because c_int is 32 bits.
-#[cfg_attr(rustc_attrs, rustc_layout_scalar_valid_range_end(0xFF_FF_FF_FE))]
-struct FileFd(RawFd);
 
 #[derive(Copy, Clone, Debug, Display, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Role {
@@ -262,20 +263,13 @@ impl Role {
     }
 }
 
-impl FileFd {
-    #[inline]
-    pub fn raw_fd(&self) -> &RawFd {
-        &self.0
-    }
+fn validate_raw_fd(fd: RawFd, role: Role) -> io::Result<RawFd> {
+    check_regular_file(fd)?;
 
-    pub fn from_raw_fd_checked(fd: RawFd, role: Role) -> io::Result<Self> {
-        check_regular_file(fd)?;
+    let status_flags = get_status_flags(fd)?;
+    role.validate_flags(status_flags)?;
 
-        let status_flags = get_status_flags(fd)?;
-        role.validate_flags(status_flags)?;
-
-        Ok(Self(fd))
-    }
+    Ok(fd)
 }
 
 #[cfg(test)]
@@ -297,8 +291,8 @@ mod test {
         let f = tempfile::tempfile().unwrap();
         let fd: RawFd = f.as_raw_fd();
 
-        FileFd::from_raw_fd_checked(fd, Role::Readable).unwrap();
-        FileFd::from_raw_fd_checked(fd, Role::Writable).unwrap();
+        validate_raw_fd(fd, Role::Readable).unwrap();
+        validate_raw_fd(fd, Role::Writable).unwrap();
     }
 
     #[test]
@@ -312,8 +306,8 @@ mod test {
             .unwrap();
         let fd: RawFd = f.as_raw_fd();
 
-        FileFd::from_raw_fd_checked(fd, Role::Writable).unwrap();
-        assert!(FileFd::from_raw_fd_checked(fd, Role::Readable).is_err());
+        validate_raw_fd(fd, Role::Writable).unwrap();
+        assert!(validate_raw_fd(fd, Role::Readable).is_err());
     }
 
     #[test]
@@ -329,8 +323,8 @@ mod test {
             .unwrap();
         let fd: RawFd = f.as_raw_fd();
 
-        FileFd::from_raw_fd_checked(fd, Role::Readable).unwrap();
-        assert!(FileFd::from_raw_fd_checked(fd, Role::Writable).is_err());
+        validate_raw_fd(fd, Role::Readable).unwrap();
+        assert!(validate_raw_fd(fd, Role::Writable).is_err());
     }
 
     #[test]
@@ -345,8 +339,8 @@ mod test {
             .unwrap();
         let fd: RawFd = f.as_raw_fd();
 
-        assert!(FileFd::from_raw_fd_checked(fd, Role::Writable).is_err());
-        assert!(FileFd::from_raw_fd_checked(fd, Role::Readable).is_err());
+        assert!(validate_raw_fd(fd, Role::Writable).is_err());
+        assert!(validate_raw_fd(fd, Role::Readable).is_err());
     }
 
     #[test]
@@ -376,15 +370,26 @@ mod test {
         /* 4 bytes were written. */
         assert_eq!(
             4,
-            copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), 4).unwrap()
+            /* NB: 5 bytes were requested! */
+            copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), 5).unwrap()
         );
         assert_eq!(4, src.offset);
 
-        let mut dst: fs::File = dst.into_inner().into();
+        let mut dst: fs::File = dst.into_owned().into();
         assert_eq!(4, dst.stream_position().unwrap());
         dst.rewind().unwrap();
         let mut s = String::new();
         dst.read_to_string(&mut s).unwrap();
         assert_eq!(&s, "wow!");
     }
+}
+
+pub mod async_fd {
+    use tokio::io::{self, unix::AsyncFd};
+
+    use std::{
+        os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
+        pin::Pin,
+        task::{ready, Context, Poll},
+    };
 }
