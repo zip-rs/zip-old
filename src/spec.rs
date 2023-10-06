@@ -639,7 +639,44 @@ impl LocalHeaderBuffer {
     }
 }
 
-/* #[repr(packed)] */
-/* pub struct CentralDirectoryHeaderBuffer { */
+#[repr(packed)]
+pub struct CentralDirectoryHeaderBuffer {
+    pub magic: u32,                       /* 2 */
+    pub version_made_by: u16,             /* 1 */
+    pub version_needed: u16,              /* 1 */
+    pub flag: u16,                        /* 1 */
+    pub compression_method: u16,          /* 1 */
+    pub last_modified_time_timepart: u16, /* 1 */
+    pub last_modified_time_datepart: u16, /* 1 */
+    pub crc32: u32,                       /* 2 */
+    pub compressed_size: u32,             /* 2 */
+    pub uncompressed_size: u32,           /* 2 */
+    pub file_name_length: u16,            /* 1 */
+    pub extra_field_length: u16,          /* 1 */
+    pub file_comment_length: u16,         /* 1 */
+    pub disk_number_start: u16,           /* 1 */
+    pub external_attributes: u32,         /* 2 */
+    pub header_start: u32,                /* 2 */
+}
 
-/* } */
+impl CentralDirectoryHeaderBuffer {
+    #[inline]
+    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
+        let start: *mut u8 = info.as_mut_ptr();
+
+        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 21) });
+
+        unsafe { mem::transmute(info) }
+    }
+
+    #[inline]
+    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
+        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
+
+        LittleEndian::from_slice_u16(unsafe {
+            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 21)
+        });
+
+        buf
+    }
+}

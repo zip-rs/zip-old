@@ -1,7 +1,7 @@
 use crate::{
     compression::CompressionMethod,
     result::{ZipError, ZipResult},
-    spec::{self, LocalHeaderBuffer},
+    spec::{self, CentralDirectoryHeaderBuffer, LocalHeaderBuffer},
     tokio::{
         buf_writer::BufWriter,
         read::{read_spec, Shared, ZipArchive},
@@ -1026,7 +1026,7 @@ impl<S> WrappedPin<S> for ZipWriter<S> {
 pub(crate) mod write_spec {
     use crate::{
         result::ZipResult,
-        spec::{self, LocalHeaderBuffer},
+        spec::{self, CentralDirectoryHeaderBuffer, LocalHeaderBuffer},
         types::ZipFileData,
     };
 
@@ -1034,39 +1034,6 @@ pub(crate) mod write_spec {
     use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
     use std::{io::IoSlice, mem, pin::Pin, slice};
-
-    #[repr(packed)]
-    pub struct LocalZip64ExtraFieldBuffer {
-        pub kind: u16,
-        pub size: u16,
-        pub uncompressed_size: u64,
-        pub compressed_size: u64,
-        pub header_start: u64,
-    }
-
-    impl LocalZip64ExtraFieldBuffer {
-        #[inline]
-        pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-            let start: *mut u8 = info.as_mut_ptr();
-
-            LittleEndian::from_slice_u64(unsafe {
-                slice::from_raw_parts_mut(start as *mut u64, 3)
-            });
-
-            unsafe { mem::transmute(info) }
-        }
-
-        #[inline]
-        pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-            let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-            LittleEndian::from_slice_u64(unsafe {
-                slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u64, 3)
-            });
-
-            buf
-        }
-    }
 
     pub async fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
         if file.extra_field.len() > spec::ZIP64_ENTRY_THR {
@@ -1247,64 +1214,33 @@ pub(crate) mod write_spec {
         let zip64_extra_field = get_central_zip64_extra_field(file);
         writer.write_all(&zip64_extra_field).await?;
 
-        // central file header signature
-        writer
-            .write_u32_le(spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE)
-            .await?;
-        // version made by
-        let version_made_by = (file.system as u16) << 8 | (file.version_made_by as u16);
-        writer.write_u16_le(version_made_by).await?;
-        // version needed to extract
-        writer.write_u16_le(file.version_needed()).await?;
-        // general puprose bit flag
-        let flag = if !file.file_name.is_ascii() {
-            1u16 << 11
-        } else {
-            0
-        } | if file.encrypted { 1u16 << 0 } else { 0 };
-        writer.write_u16_le(flag).await?;
-        // compression method
-        #[allow(deprecated)]
-        writer
-            .write_u16_le(file.compression_method.to_u16())
-            .await?;
-        // last mod file time + date
-        writer
-            .write_u16_le(file.last_modified_time.timepart())
-            .await?;
-        writer
-            .write_u16_le(file.last_modified_time.datepart())
-            .await?;
-        // crc-32
-        writer.write_u32_le(file.crc32).await?;
-        // compressed size
-        writer
-            .write_u32_le(file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32)
-            .await?;
-        // uncompressed size
-        writer
-            .write_u32_le(file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32)
-            .await?;
-        // file name length
-        writer
-            .write_u16_le(file.file_name.as_bytes().len() as u16)
-            .await?;
-        // extra field length
-        writer
-            .write_u16_le((zip64_extra_field.len() + file.extra_field.len()) as u16)
-            .await?;
-        // file comment length
-        writer.write_u16_le(0).await?;
-        // disk number start
-        writer.write_u16_le(0).await?;
-        // internal file attribytes
-        writer.write_u16_le(0).await?;
-        // external file attributes
-        writer.write_u32_le(file.external_attributes).await?;
-        // relative offset of local header
-        writer
-            .write_u32_le(file.header_start.min(spec::ZIP64_BYTES_THR) as u32)
-            .await?;
+        let block = CentralDirectoryHeaderBuffer {
+            magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
+            version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
+            version_needed: file.version_needed(),
+            flag: if !file.file_name.is_ascii() {
+                1u16 << 11
+            } else {
+                0
+            } | if file.encrypted { 1u16 << 0 } else { 0 },
+            #[allow(deprecated)]
+            compression_method: file.compression_method.to_u16(),
+            last_modified_time_timepart: file.last_modified_time.timepart(),
+            last_modified_time_datepart: file.last_modified_time.datepart(),
+            crc32: file.crc32,
+            compressed_size: file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32,
+            uncompressed_size: file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32,
+            file_name_length: file.file_name.as_bytes().len() as u16,
+            extra_field_length: zip64_extra_field.len() as u16,
+            file_comment_length: 0,
+            disk_number_start: 0,
+            external_attributes: file.external_attributes,
+            header_start: file.header_start.min(spec::ZIP64_BYTES_THR) as u32,
+        }
+        .writable_block();
+
+        writer.write_all(&block).await?;
+
         // file name
         writer.write_all(file.file_name.as_bytes()).await?;
         // zip64 extra field
