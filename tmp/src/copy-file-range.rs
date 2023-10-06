@@ -1,9 +1,12 @@
-use std::env;
-use std::io::Cursor;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{
+    env,
+    io::Cursor,
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    pin::Pin,
+    str::FromStr,
+    sync::Arc,
+};
 
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
@@ -61,6 +64,12 @@ fn flag_var(var_name: &str) -> bool {
         .is_some()
 }
 
+fn num_var(var_name: &str) -> Option<usize> {
+    let var = env::var(var_name).ok()?;
+    let n = usize::from_str(&var).ok()?;
+    Some(n)
+}
+
 fn path_var(var_name: &str) -> Option<PathBuf> {
     let var = env::var(var_name).ok()?;
     Some(var.into())
@@ -74,40 +83,62 @@ async fn main() -> ZipResult<()> {
     } else {
         println!("big!");
         &*BIG_ARCHIVE_PATH
-    };
+    }
+    .to_path_buf();
 
-    use std::{fs, io};
-    use zip::tokio::os::linux::*;
+    use zip::tokio::{buf_reader::BufReader, os::linux::*};
 
-    let len = get_len(source).await?;
+    let len: u64 = get_len(&source).await?;
     println!("len = {}", len);
 
-    let handle = fs::File::open(source)?;
-
-    let mut src = FromGivenOffset::new(&handle, Role::Readable, 0)?;
-
-    let out_path = path_var("OUT")
+    let out_path: PathBuf = path_var("OUT")
         .or(path_var("out"))
         .unwrap_or_else(|| PathBuf::from("./tmp-copy-out"));
     println!("out = {}", out_path.display());
-    let out = fs::File::create(out_path)?;
-    let mut dst = MutateInnerOffset::new(out, Role::Writable)?;
 
-    task::spawn_blocking(move || {
-        let mut remaining = len;
-        while remaining > 0 {
-            println!("remaining = {}", remaining);
-            let written =
-                copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), remaining as usize)?;
-            assert!(written > 0);
-            assert!(written as u64 <= remaining);
-            println!("written = {}", written);
-            remaining -= written as u64;
-        }
-        Ok::<_, ZipError>(())
-    })
-    .await
-    .unwrap()?;
+    let num_iters: usize = num_var("N").or(num_var("n")).unwrap_or(15);
+    println!("num_iters = {}", num_iters);
+
+    for _ in 0..num_iters {
+        if flag_var("ASYNC") || flag_var("async") {
+            println!("async!");
+            use tokio::io::AsyncWriteExt;
+
+            let non_zero_len = NonZeroUsize::new(len as usize).unwrap();
+
+            let handle = fs::File::open(&source).await?;
+            let mut out = fs::File::create(&out_path).await?;
+
+            let mut buf_reader = BufReader::with_capacity(non_zero_len, Box::pin(handle));
+
+            let written = io::copy_buf(&mut buf_reader, &mut out).await?;
+            assert_eq!(written, len);
+
+            out.shutdown().await?;
+        } else {
+            println!("copy_file_range!");
+            let source = source.clone();
+            let out_path = out_path.clone();
+            task::spawn_blocking(move || {
+                use std::{fs, io};
+
+                let handle = fs::File::open(source)?;
+                let mut src = MutateInnerOffset::new(handle, Role::Readable)?;
+                let src = Pin::new(&mut src);
+
+                let out = fs::File::create(out_path)?;
+                let mut dst = MutateInnerOffset::new(out, Role::Writable)?;
+                let dst = Pin::new(&mut dst);
+
+                let len = len as usize;
+                assert_eq!(len, copy_file_range(src, dst, len)?);
+
+                Ok::<_, io::Error>(())
+            })
+            .await
+            .unwrap()?;
+        };
+    }
 
     Ok(())
 }

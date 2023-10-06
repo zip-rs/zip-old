@@ -17,6 +17,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use tokio::task;
+
 macro_rules! cvt {
     ($e:expr) => {{
         let ret = $e;
@@ -85,11 +87,11 @@ pub struct RawArgs {
     off: *mut libc::off64_t,
 }
 
-impl RawArgs {
-    pub fn as_option<'a>(self) -> Option<&'a mut libc::off64_t> {
-        ptr::NonNull::new(self.off).map(|ref mut off| unsafe { off.as_mut() })
-    }
-}
+/* impl RawArgs { */
+/*     pub fn as_option<'a>(self) -> Option<&'a mut libc::off64_t> { */
+/*         ptr::NonNull::new(self.off).map(|ref mut off| unsafe { off.as_mut() }) */
+/*     } */
+/* } */
 
 pub trait CopyFileRangeHandle {
     fn role(&self) -> Role;
@@ -97,8 +99,8 @@ pub trait CopyFileRangeHandle {
 }
 
 pub struct MutateInnerOffset {
-    role: Role,
-    owned_fd: OwnedFd,
+    pub role: Role,
+    pub owned_fd: OwnedFd,
 }
 
 impl MutateInnerOffset {
@@ -110,18 +112,6 @@ impl MutateInnerOffset {
 
     pub fn into_owned(self) -> OwnedFd {
         self.owned_fd
-    }
-}
-
-impl AsRawFd for MutateInnerOffset {
-    fn as_raw_fd(&self) -> RawFd {
-        self.owned_fd.as_raw_fd()
-    }
-}
-
-impl IntoRawFd for MutateInnerOffset {
-    fn into_raw_fd(self) -> RawFd {
-        self.into_owned().into_raw_fd()
     }
 }
 
@@ -176,7 +166,7 @@ impl CopyFileRangeHandle for FromGivenOffset {
     }
 }
 
-pub fn copy_file_range_raw(
+pub fn iter_copy_file_range(
     src: Pin<&mut impl CopyFileRangeHandle>,
     dst: Pin<&mut impl CopyFileRangeHandle>,
     len: usize,
@@ -192,11 +182,31 @@ pub fn copy_file_range_raw(
         off: off_out,
     } = dst.as_args();
 
+    /* These must always be set to 0 for now. */
     const FUTURE_FLAGS: libc::c_uint = 0;
     let written: libc::ssize_t =
         cvt!(unsafe { libc::copy_file_range(fd_in, off_in, fd_out, off_out, len, FUTURE_FLAGS) })?;
     assert!(written >= 0);
     Ok(written as usize)
+}
+
+pub fn copy_file_range(
+    mut src: Pin<&mut impl CopyFileRangeHandle>,
+    mut dst: Pin<&mut impl CopyFileRangeHandle>,
+    full_len: usize,
+) -> io::Result<usize> {
+    let mut remaining = full_len;
+
+    while remaining > 0 {
+        let cur_written = iter_copy_file_range(src.as_mut(), dst.as_mut(), remaining)?;
+        assert!(cur_written <= remaining);
+        if cur_written == 0 {
+            debug_assert!(remaining > 0);
+            return Ok(full_len - remaining);
+        }
+        remaining -= cur_written;
+    }
+    Ok(full_len)
 }
 
 fn check_regular_file(fd: RawFd) -> io::Result<()> {
@@ -267,16 +277,6 @@ impl Role {
         self.check_append(flags)?;
 
         Ok(())
-    }
-
-    pub(crate) fn interest(&self) -> &'static tokio::io::Interest {
-        use tokio::io::Interest;
-        static READABLE: Interest = Interest::READABLE.add(Interest::ERROR);
-        static WRITABLE: Interest = Interest::WRITABLE.add(Interest::ERROR);
-        match self {
-            Self::Readable => &READABLE,
-            Self::Writable => &WRITABLE,
-        }
     }
 }
 
@@ -370,6 +370,7 @@ mod test {
 
         let in_file = fs::File::open(&p).unwrap();
         let mut src = FromGivenOffset::new(&in_file, Role::Readable, 0).unwrap();
+        let sp = Pin::new(&mut src);
 
         let p2 = td.path().join("asdf2.txt");
         let out_file = fs::OpenOptions::new()
@@ -380,15 +381,16 @@ mod test {
             .open(&p2)
             .unwrap();
         let mut dst = MutateInnerOffset::new(out_file, Role::Writable).unwrap();
+        let dp = Pin::new(&mut dst);
 
         /* Explicit offset begins at 0. */
-        assert_eq!(0, src.offset);
+        assert_eq!(0, sp.offset);
 
         /* 4 bytes were written. */
         assert_eq!(
             4,
             /* NB: 5 bytes were requested! */
-            copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), 5).unwrap()
+            copy_file_range(sp, dp, 5).unwrap()
         );
         assert_eq!(4, src.offset);
 
@@ -401,131 +403,197 @@ mod test {
     }
 }
 
-pub mod async_fd {
-    use super::{CopyFileRangeHandle, Role};
+/* pub mod async_fd { */
+/*     use super::{CopyFileRangeHandle, Role}; */
 
-    use tokio::io::{self, unix::AsyncFd};
-    use tokio_pipe::{PipeRead, PipeWrite};
+/*     use tokio::io::{self, unix::AsyncFd}; */
+/*     use tokio_pipe::{PipeRead, PipeWrite}; */
 
-    use std::{
-        os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
-        pin::Pin,
-        task::{ready, Context, Poll},
-    };
+/*     use std::{ */
+/*         os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd}, */
+/*         pin::Pin, */
+/*         task::{ready, Context, Poll}, */
+/*     }; */
 
-    pub struct SpliceArgs<'a, T: AsRawFd> {
-        pub fd: &'a mut AsyncFd<T>,
-        pub off: Option<&'a mut libc::off64_t>,
-    }
+/*     pub struct SpliceArgs<'a, T: AsRawFd> { */
+/*         pub fd: &'a mut AsyncFd<T>, */
+/*         pub off: Option<&'a mut libc::off64_t>, */
+/*     } */
 
-    pub trait SpliceHandle {
-        fn role(&self) -> Role;
-        type FD: AsRawFd;
-        fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD>;
-    }
+/*     pub trait SpliceHandle { */
+/*         fn role(&self) -> Role; */
+/*         type FD: AsRawFd; */
+/*         fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD>; */
+/*     } */
 
-    pub struct MutateAsync {
-        fd: AsyncFd<super::MutateInnerOffset>,
-    }
+/*     pub struct MutateAsync { */
+/*         fd: AsyncFd<OwnedFd>, */
+/*         role: Role, */
+/*     } */
 
-    impl SpliceHandle for MutateAsync {
-        fn role(&self) -> Role {
-            self.fd.get_ref().role()
-        }
-        type FD = super::MutateInnerOffset;
-        fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD> {
-            let s = self.get_mut();
+/*     impl MutateAsync { */
+/*         pub fn new(inner: super::MutateInnerOffset) -> io::Result<Self> { */
+/*             let role = inner.role(); */
+/*             Ok(Self { */
+/*                 fd: AsyncFd::with_interest(inner.into_owned(), *role.interest())?, */
+/*                 role, */
+/*             }) */
+/*         } */
 
-            let raw_args = Pin::new(s.fd.get_mut()).as_args();
-            SpliceArgs {
-                fd: &mut s.fd,
-                off: raw_args.as_option(),
-            }
-        }
-    }
+/*         pub fn into_owned(self) -> OwnedFd { */
+/*             self.fd.into_inner() */
+/*         } */
+/*     } */
 
-    impl MutateAsync {
-        pub fn new(inner: super::MutateInnerOffset) -> io::Result<Self> {
-            let role = inner.role();
-            Ok(Self {
-                fd: AsyncFd::with_interest(inner, *role.interest())?,
-            })
-        }
+/*     impl SpliceHandle for MutateAsync { */
+/*         fn role(&self) -> Role { */
+/*             self.role */
+/*         } */
+/*         type FD = OwnedFd; */
+/*         fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD> { */
+/*             let s = self.get_mut(); */
 
-        pub fn into_copy_file_range_handle(self) -> super::MutateInnerOffset {
-            self.fd.into_inner()
-        }
-    }
+/*             SpliceArgs { */
+/*                 fd: &mut s.fd, */
+/*                 off: None, */
+/*             } */
+/*         } */
+/*     } */
 
-    impl AsRawFd for MutateAsync {
-        fn as_raw_fd(&self) -> RawFd {
-            self.fd.as_raw_fd()
-        }
-    }
+/*     pub struct GivenOffsetAsync { */
+/*         fd: AsyncFd<RawFd>, */
+/*         pub offset: i64, */
+/*         role: Role, */
+/*     } */
 
-    impl IntoRawFd for MutateAsync {
-        fn into_raw_fd(self) -> RawFd {
-            self.into_copy_file_range_handle().into_raw_fd()
-        }
-    }
+/*     impl GivenOffsetAsync { */
+/*         pub fn new(inner: super::FromGivenOffset) -> io::Result<Self> { */
+/*             let role = inner.role(); */
+/*             let offset = inner.offset; */
+/*             Ok(Self { */
+/*                 fd: AsyncFd::with_interest(inner.as_raw_fd(), *role.interest())?, */
+/*                 role, */
+/*                 offset, */
+/*             }) */
+/*         } */
+/*     } */
 
-    pub struct GivenOffsetAsync {
-        fd: AsyncFd<super::FromGivenOffset>,
-    }
+/*     impl AsRawFd for GivenOffsetAsync { */
+/*         fn as_raw_fd(&self) -> RawFd { */
+/*             self.fd.as_raw_fd() */
+/*         } */
+/*     } */
 
-    impl SpliceHandle for GivenOffsetAsync {
-        fn role(&self) -> Role {
-            self.fd.get_ref().role()
-        }
-        type FD = super::FromGivenOffset;
-        fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD> {
-            let s = self.get_mut();
+/*     impl SpliceHandle for GivenOffsetAsync { */
+/*         fn role(&self) -> Role { */
+/*             self.role */
+/*         } */
+/*         type FD = RawFd; */
+/*         fn as_args(self: Pin<&mut Self>) -> SpliceArgs<'_, Self::FD> { */
+/*             let s = self.get_mut(); */
 
-            let raw_args = Pin::new(s.fd.get_mut()).as_args();
-            SpliceArgs {
-                fd: &mut s.fd,
-                off: raw_args.as_option(),
-            }
-        }
-    }
+/*             SpliceArgs { */
+/*                 fd: &mut s.fd, */
+/*                 off: Some(&mut s.offset), */
+/*             } */
+/*         } */
+/*     } */
 
-    impl GivenOffsetAsync {
-        pub fn new(inner: super::FromGivenOffset) -> io::Result<Self> {
-            let role = inner.role();
-            Ok(Self {
-                fd: AsyncFd::with_interest(inner, *role.interest())?,
-            })
-        }
+/*     pub async fn splice_from_pipe( */
+/*         src: Pin<&mut PipeRead>, */
+/*         dst: Pin<&mut impl SpliceHandle>, */
+/*         len: usize, */
+/*         has_more_data: bool, */
+/*     ) -> io::Result<usize> { */
+/*         assert_eq!(dst.role(), Role::Writable); */
+/*         let SpliceArgs { fd, off } = dst.as_args(); */
+/*         src.get_mut().splice_to(fd, off, len, has_more_data).await */
+/*     } */
 
-        pub fn into_copy_file_range_handle(self) -> super::FromGivenOffset {
-            self.fd.into_inner()
-        }
-    }
+/*     pub async fn splice_into_pipe( */
+/*         src: Pin<&mut impl SpliceHandle>, */
+/*         dst: Pin<&mut PipeWrite>, */
+/*         len: usize, */
+/*     ) -> io::Result<usize> { */
+/*         assert_eq!(src.role(), Role::Readable); */
+/*         let SpliceArgs { fd, off } = src.as_args(); */
+/*         dst.get_mut().splice_from(fd, off, len).await */
+/*     } */
 
-    impl AsRawFd for GivenOffsetAsync {
-        fn as_raw_fd(&self) -> RawFd {
-            self.fd.as_raw_fd()
-        }
-    }
+/*     #[cfg(test)] */
+/*     mod test { */
+/*         use super::{super::*, *}; */
 
-    pub async fn splice_from_pipe(
-        src: Pin<&mut PipeRead>,
-        dst: Pin<&mut impl SpliceHandle>,
-        len: usize,
-        has_more_data: bool,
-    ) -> io::Result<usize> {
-        assert_eq!(dst.role(), Role::Writable);
-        let SpliceArgs { fd, off } = dst.as_args();
-        src.get_mut().splice_to(fd, off, len, has_more_data).await
-    }
+/*         use std::{fs, io, os::unix::fs::OpenOptionsExt}; */
 
-    pub async fn splice_into_pipe(
-        src: Pin<&mut impl SpliceHandle>,
-        dst: Pin<&mut PipeWrite>,
-        len: usize,
-    ) -> io::Result<usize> {
-        assert_eq!(src.role(), Role::Readable);
-        let SpliceArgs { fd, off } = src.as_args();
-        dst.get_mut().splice_from(fd, off, len).await
-    }
-}
+/*         #[tokio::test] */
+/*         async fn splice_through_pipe() -> io::Result<()> { */
+/*             let td = tempfile::tempdir()?; */
+
+/*             let p = td.path().join("asdf.txt"); */
+/*             fs::write(&p, b"wow!")?; */
+
+/*             let (mut r, mut w) = tokio_pipe::pipe()?; */
+
+/*             let in_file = std::fs::OpenOptions::new() */
+/*                 .read(true) */
+/*                 .custom_flags(libc::O_NONBLOCK) */
+/*                 .open(&p)?; */
+/*             let in_file: OwnedFd = in_file.into(); */
+/*             let role = Role::Readable; */
+/*             let mut src = MutateAsync { */
+/*                 fd: AsyncFd::new(in_file).unwrap(), */
+/*                 /\* fd: AsyncFd::with_interest(in_file, *role.interest()).unwrap(), *\/ */
+/*                 /\* fd: AsyncFd::with_interest(in_file, *role.interest()).unwrap(), *\/ */
+/*                 role, */
+/*             }; */
+/*             /\* let mut src = MutateAsync::new(MutateInnerOffset::new(in_file, Role::Readable)?)?; *\/ */
+/*             todo!("asdf3"); */
+
+/*             let p2 = td.path().join("asdf2.txt"); */
+/*             let out_file = std::fs::OpenOptions::new() */
+/*                 .create_new(true) */
+/*                 .write(true) */
+/*                 /\* Need this to read the output file contents at the end! *\/ */
+/*                 .read(true) */
+/*                 .open(&p2)?; */
+/*             let out_file: OwnedFd = out_file.into(); */
+/*             let role = Role::Writable; */
+/*             let mut dst = MutateAsync { */
+/*                 fd: AsyncFd::with_interest(out_file, *role.interest()).unwrap(), */
+/*                 role, */
+/*             }; */
+/*             /\* let mut dst = MutateAsync::new(MutateInnerOffset::new(out_file, Role::Writable)?)?; *\/ */
+
+/*             /\* 4 bytes were written. *\/ */
+/*             assert_eq!( */
+/*                 4, */
+/*                 /\* NB: 5 bytes were requested! *\/ */
+/*                 splice_into_pipe(Pin::new(&mut src), Pin::new(&mut w), 5).await? */
+/*             ); */
+
+/*             assert_eq!( */
+/*                 4, */
+/*                 splice_from_pipe(Pin::new(&mut r), Pin::new(&mut dst), 5, false).await? */
+/*             ); */
+
+/*             { */
+/*                 use std::{ */
+/*                     fs, */
+/*                     io::{Read, Seek}, */
+/*                 }; */
+
+/*                 let mut dst: fs::File = dst.into_owned().into(); */
+
+/*                 dst.sync_data()?; */
+/*                 assert_eq!(4, dst.stream_position()?); */
+/*                 dst.rewind()?; */
+/*                 let mut s = String::new(); */
+/*                 dst.read_to_string(&mut s)?; */
+/*                 assert_eq!(&s, "wow!"); */
+/*             } */
+
+/*             Ok(()) */
+/*         } */
+/*     } */
+/* } */

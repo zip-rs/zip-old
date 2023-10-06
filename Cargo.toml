@@ -47,7 +47,7 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 getrandom = "0.2.5"
 tempfile = "3.8.0"
 time = { version = "0.3.7", features = ["formatting", "macros"] }
-tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 tokio-test = "0.4.3"
 uuid = { version = "1.4.1", features = ["v4"] }
 walkdir = "2.3.2"

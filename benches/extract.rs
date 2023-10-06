@@ -83,21 +83,16 @@ pub fn bench_io(c: &mut Criterion) {
             b.iter(|| {
                 let sync_handle = fs::File::open(path).unwrap();
                 let mut src = MutateInnerOffset::new(sync_handle, Role::Readable).unwrap();
+                let mut src = Pin::new(&mut src);
 
                 let cur_name = format!("{}.zip", Uuid::new_v4());
                 let tf = td.path().join(cur_name);
                 let out = fs::File::create(tf).unwrap();
                 let mut dst = MutateInnerOffset::new(out, Role::Writable).unwrap();
+                let mut dst = Pin::new(&mut dst);
 
-                let mut remaining = len;
-                while remaining > 0 {
-                    let written =
-                        copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), remaining)
-                            .unwrap();
-                    assert!(written > 0);
-                    assert!(written <= remaining);
-                    remaining -= written;
-                }
+                let written = copy_file_range(src, dst, len).unwrap();
+                assert_eq!(written, len);
             });
         });
 
