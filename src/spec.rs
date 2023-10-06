@@ -638,3 +638,8 @@ impl LocalHeaderBuffer {
         buf
     }
 }
+
+/* #[repr(packed)] */
+/* pub struct CentralDirectoryHeaderBuffer { */
+
+/* } */

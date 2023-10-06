@@ -1036,12 +1036,12 @@ pub(crate) mod write_spec {
     use std::{io::IoSlice, mem, pin::Pin, slice};
 
     #[repr(packed)]
-    struct LocalZip64ExtraFieldBuffer {
-        pub undocumented_field_1: u16,
-        pub undocumented_field_2: u16,
+    pub struct LocalZip64ExtraFieldBuffer {
+        pub kind: u16,
+        pub size: u16,
         pub uncompressed_size: u64,
         pub compressed_size: u64,
-        pub disk_start_number: u32,
+        pub header_start: u64,
     }
 
     impl LocalZip64ExtraFieldBuffer {
@@ -1100,11 +1100,7 @@ pub(crate) mod write_spec {
 
             #[cfg(not(feature = "unreserved"))]
             {
-                if kind <= 31
-                    || crate::write::EXTRA_FIELD_MAPPING
-                        .iter()
-                        .any(|&mapped| mapped == kind)
-                {
+                if kind <= 31 || crate::write::EXTRA_FIELD_MAPPING.contains(&kind) {
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
                         format!(
@@ -1156,7 +1152,7 @@ pub(crate) mod write_spec {
                 file.uncompressed_size as u32,
             ];
             LittleEndian::from_slice_u32(&mut buf[..]);
-            let mut buf: [u8; 12] = unsafe { mem::transmute(buf) };
+            let buf: [u8; 12] = unsafe { mem::transmute(buf) };
             writer.write_all(&buf[..]).await?;
         };
         Ok(())
@@ -1173,7 +1169,7 @@ pub(crate) mod write_spec {
 
         let mut buf: [u64; 2] = [file.uncompressed_size, file.compressed_size];
         LittleEndian::from_slice_u64(&mut buf[..]);
-        let mut buf: [u8; 16] = unsafe { mem::transmute(buf) };
+        let buf: [u8; 16] = unsafe { mem::transmute(buf) };
         writer.write_all(&buf[..]).await?;
         // Excluded fields:
         // u32: disk start number
@@ -1213,23 +1209,20 @@ pub(crate) mod write_spec {
         let maybe_extra_field = if file.large_file {
             // This entry in the Local header MUST include BOTH original
             // and compressed file size fields.
-            Some(LocalZip64ExtraFieldBuffer {
-                undocumented_field_1: 0x0001,
-                undocumented_field_2: 16,
-                uncompressed_size: file.uncompressed_size,
-                compressed_size: file.compressed_size,
-                disk_start_number: 0,
-            })
+            assert!(file.uncompressed_size > spec::ZIP64_BYTES_THR);
+            assert!(file.compressed_size > spec::ZIP64_BYTES_THR);
+            Some(get_central_zip64_extra_field(file))
         } else {
             None
         };
 
+        let fname = file.file_name.as_bytes();
+
         if writer.is_write_vectored() {
             /* TODO: zero-copy!! */
             let block = IoSlice::new(&block);
-            let fname = IoSlice::new(&file.file_name.as_bytes());
-            if let Some(extra_field_buf) = maybe_extra_field {
-                let extra_block = extra_field_buf.writable_block();
+            let fname = IoSlice::new(&fname);
+            if let Some(extra_block) = maybe_extra_field {
                 let extra_field = IoSlice::new(&extra_block);
                 writer.write_vectored(&[block, fname, extra_field]).await?;
             } else {
@@ -1238,9 +1231,8 @@ pub(crate) mod write_spec {
         } else {
             /* If no special vector write support, just perform a series of normal writes. */
             writer.write_all(&block).await?;
-            writer.write_all(&file.file_name.as_bytes()).await?;
-            if let Some(extra_field_buf) = maybe_extra_field {
-                let extra_block = extra_field_buf.writable_block();
+            writer.write_all(&fname).await?;
+            if let Some(extra_block) = maybe_extra_field {
                 writer.write_all(&extra_block).await?;
             }
         }
@@ -1252,10 +1244,8 @@ pub(crate) mod write_spec {
         mut writer: Pin<&mut S>,
         file: &ZipFileData,
     ) -> ZipResult<()> {
-        // buffer zip64 extra field to determine its variable length
-        let zip64_extra_field = [0; 28];
-        let zip64_extra_field_length =
-            write_central_zip64_extra_field(writer.as_mut(), file).await?;
+        let zip64_extra_field = get_central_zip64_extra_field(file);
+        writer.write_all(&zip64_extra_field).await?;
 
         // central file header signature
         writer
@@ -1301,7 +1291,7 @@ pub(crate) mod write_spec {
             .await?;
         // extra field length
         writer
-            .write_u16_le(zip64_extra_field_length + file.extra_field.len() as u16)
+            .write_u16_le((zip64_extra_field.len() + file.extra_field.len()) as u16)
             .await?;
         // file comment length
         writer.write_u16_le(0).await?;
@@ -1318,9 +1308,7 @@ pub(crate) mod write_spec {
         // file name
         writer.write_all(file.file_name.as_bytes()).await?;
         // zip64 extra field
-        writer
-            .write_all(&zip64_extra_field[..zip64_extra_field_length as usize])
-            .await?;
+        writer.write_all(&zip64_extra_field).await?;
         // extra field
         writer.write_all(&file.extra_field).await?;
         // file comment
@@ -1329,18 +1317,19 @@ pub(crate) mod write_spec {
         Ok(())
     }
 
-    async fn write_central_zip64_extra_field<S: io::AsyncWrite>(
-        mut writer: Pin<&mut S>,
-        file: &ZipFileData,
-    ) -> ZipResult<u16> {
+    fn get_central_zip64_extra_field(file: &ZipFileData) -> Vec<u8> {
         // The order of the fields in the zip64 extended
         // information record is fixed, but the fields MUST
         // only appear if the corresponding Local or Central
         // directory record field is set to 0xFFFF or 0xFFFFFFFF.
-        let mut size = 0;
+        let mut ret: Vec<u8> = Vec::new();
+        let mut size: u16 = 0;
         let uncompressed_size = file.uncompressed_size > spec::ZIP64_BYTES_THR;
         let compressed_size = file.compressed_size > spec::ZIP64_BYTES_THR;
         let header_start = file.header_start > spec::ZIP64_BYTES_THR;
+
+        let zip64_kind: u16 = 0x0001;
+
         if uncompressed_size {
             size += 8;
         }
@@ -1351,23 +1340,26 @@ pub(crate) mod write_spec {
             size += 8;
         }
         if size > 0 {
-            writer.write_u16_le(0x0001).await?;
-            writer.write_u16_le(size).await?;
+            ret.extend_from_slice(&zip64_kind.to_le_bytes());
+            ret.extend_from_slice(&size.to_le_bytes());
             size += 4;
 
             if uncompressed_size {
-                writer.write_u64_le(file.uncompressed_size).await?;
+                ret.extend_from_slice(&file.uncompressed_size.to_le_bytes());
             }
             if compressed_size {
-                writer.write_u64_le(file.compressed_size).await?;
+                ret.extend_from_slice(&file.compressed_size.to_le_bytes());
             }
             if header_start {
-                writer.write_u64_le(file.header_start).await?;
+                ret.extend_from_slice(&file.header_start.to_le_bytes());
             }
             // Excluded fields:
             // u32: disk start number
         }
-        Ok(size)
+
+        assert_eq!(size as usize, ret.len());
+
+        ret
     }
 }
 
