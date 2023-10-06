@@ -440,9 +440,8 @@ impl<S> WrappedPin<S> for InnerWriter<S> {
 /// let opts = FileOptions::default();
 /// fp.as_mut().start_file("asdf.txt", opts).await?;
 /// fp.write_all(b"hello!").await?;
-/// let buf = f.finish().await?;
 ///
-/// let mut f = ZipArchive::new(buf).await?;
+/// let mut f = f.finish_into_readable().await?;
 /// let mut f = Pin::new(&mut f);
 /// let mut s = String::new();
 /// {
@@ -468,9 +467,8 @@ impl<S> WrappedPin<S> for InnerWriter<S> {
 /// let opts = FileOptions::default();
 /// fp.as_mut().start_file("asdf.txt", opts).await?;
 /// fp.write_all(b"hello!").await?;
-/// let file = f.finish().await?;
 ///
-/// let mut f = ZipArchive::new(file).await?;
+/// let mut f = f.finish_into_readable().await?;
 /// let mut f = Pin::new(&mut f);
 /// let mut s = String::new();
 /// {

@@ -718,19 +718,18 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
     ///```
     /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
     /// use std::{io::Cursor, pin::Pin, sync::Arc};
-    /// use tokio::{io, fs};
+    /// use tokio::{io::{self, AsyncReadExt, AsyncWriteExt}, fs};
     ///
-    /// let buf = {
-    ///   use std::io::prelude::*;
+    /// let mut f = {
     ///   let buf = Cursor::new(Vec::new());
-    ///   let mut f = zip::ZipWriter::new(buf);
+    ///   let mut f = zip::tokio::write::ZipWriter::new(Box::pin(buf));
+    ///   let mut fp = Pin::new(&mut f);
     ///   let options = zip::write::FileOptions::default()
     ///     .compression_method(zip::CompressionMethod::Deflated);
-    ///   f.start_file("a/b.txt", options)?;
-    ///   f.write_all(b"hello\n")?;
-    ///   f.finish()?
+    ///   fp.as_mut().start_file("a/b.txt", options).await?;
+    ///   fp.write_all(b"hello\n").await?;
+    ///   f.finish_into_readable().await?
     /// };
-    /// let mut f = zip::tokio::read::ZipArchive::new(Box::pin(buf)).await?;
     ///
     /// let t = tempfile::tempdir()?;
     ///
@@ -776,19 +775,18 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
     ///```
     /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
     /// use std::{io::Cursor, pin::Pin, sync::Arc};
-    /// use tokio::{io, fs};
+    /// use tokio::{io::{self, AsyncReadExt, AsyncWriteExt}, fs};
     ///
-    /// let buf = {
-    ///   use std::io::prelude::*;
+    /// let mut f = {
     ///   let buf = Cursor::new(Vec::new());
-    ///   let mut f = zip::ZipWriter::new(buf);
+    ///   let mut f = zip::tokio::write::ZipWriter::new(Box::pin(buf));
+    ///   let mut fp = Pin::new(&mut f);
     ///   let options = zip::write::FileOptions::default()
     ///     .compression_method(zip::CompressionMethod::Deflated);
-    ///   f.start_file("a/b.txt", options)?;
-    ///   f.write_all(b"hello\n")?;
-    ///   f.finish()?
+    ///   fp.as_mut().start_file("a/b.txt", options).await?;
+    ///   fp.write_all(b"hello\n").await?;
+    ///   f.finish_into_readable().await?
     /// };
-    /// let mut f = zip::tokio::read::ZipArchive::new(Box::pin(buf)).await?;
     ///
     /// let t = tempfile::tempdir()?;
     ///
@@ -1252,24 +1250,25 @@ mod test {
     use super::*;
     use crate::{
         compression::CompressionMethod,
-        tokio::combinators::KnownExpanse,
-        write::{FileOptions, ZipWriter},
+        tokio::{combinators::KnownExpanse, write::ZipWriter},
+        write::FileOptions,
     };
+
+    use tokio::io::AsyncWriteExt;
 
     use std::io::Cursor;
 
     #[tokio::test]
     async fn test_find_content() -> ZipResult<()> {
-        let buf = Cursor::new(Vec::new());
-        let buf = {
-            use std::io::Write;
-            let mut f = ZipWriter::new(buf);
+        let f = {
+            let buf = Cursor::new(Vec::new());
+            let mut f = ZipWriter::new(Box::pin(buf));
+            let mut fp = Pin::new(&mut f);
             let options = FileOptions::default().compression_method(CompressionMethod::Stored);
-            f.start_file("a/b.txt", options)?;
-            f.write_all(b"hello\n")?;
-            f.finish()?
+            fp.as_mut().start_file("a/b.txt", options).await?;
+            fp.write_all(b"hello\n").await?;
+            f.finish_into_readable().await?
         };
-        let f = ZipArchive::new(Box::pin(buf)).await?;
 
         assert_eq!(1, f.shared.len());
         let data = f
@@ -1279,7 +1278,7 @@ mod test {
             .unwrap()
             .1
             .clone();
-        assert_eq!(b"a/b.txt", &data.file_name_raw[..]);
+        assert_eq!("a/b.txt", &data.file_name);
 
         let mut limited = find_content(&data, f.unwrap_inner_pin()).await?;
 
@@ -1292,16 +1291,15 @@ mod test {
 
     #[tokio::test]
     async fn test_get_reader() -> ZipResult<()> {
-        let buf = Cursor::new(Vec::new());
-        let buf = {
-            use std::io::Write;
-            let mut f = ZipWriter::new(buf);
+        let f = {
+            let buf = Cursor::new(Vec::new());
+            let mut f = ZipWriter::new(Box::pin(buf));
+            let mut fp = Pin::new(&mut f);
             let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
-            f.start_file("a/b.txt", options)?;
-            f.write_all(b"hello\n")?;
-            f.finish()?
+            fp.as_mut().start_file("a/b.txt", options).await?;
+            fp.write_all(b"hello\n").await?;
+            f.finish_into_readable().await?
         };
-        let f = ZipArchive::new(Box::pin(buf)).await?;
 
         assert_eq!(1, f.shared.len());
         let data = f
@@ -1312,7 +1310,7 @@ mod test {
             .1
             .clone();
         assert_eq!(data.crc32, 909783072);
-        assert_eq!(b"a/b.txt", &data.file_name_raw[..]);
+        assert_eq!("a/b.txt", &data.file_name);
 
         let mut limited = find_content(&data, f.unwrap_inner_pin()).await?;
 

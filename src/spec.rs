@@ -6,6 +6,7 @@ use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::io::prelude::*;
 use std::io::Seek;
 use std::pin::Pin;
+use std::{cmp, mem, ptr};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -24,6 +25,33 @@ pub struct CentralDirectoryEnd {
     pub central_directory_size: u32,
     pub central_directory_offset: u32,
     pub zip_file_comment: Vec<u8>,
+}
+
+#[repr(packed)]
+struct CentralDirectoryEndBuffer {
+    pub magic: u32,
+    pub disk_number: u16,
+    pub disk_with_central_directory: u16,
+    pub number_of_files_on_this_disk: u16,
+    pub number_of_files: u16,
+    pub central_directory_size: u32,
+    pub central_directory_offset: u32,
+    pub zip_file_comment_length: u16,
+}
+
+impl CentralDirectoryEndBuffer {
+    pub fn extract(info: [u8; 22]) -> Self {
+        let mut s: Self = unsafe { mem::transmute(info) };
+        s.magic = u32::from_le(s.magic);
+        s.disk_number = u16::to_le(s.disk_number);
+        s.disk_with_central_directory = u16::to_le(s.disk_with_central_directory);
+        s.number_of_files_on_this_disk = u16::to_le(s.number_of_files_on_this_disk);
+        s.number_of_files = u16::to_le(s.number_of_files);
+        s.central_directory_size = u32::to_le(s.central_directory_size);
+        s.central_directory_offset = u32::to_le(s.central_directory_offset);
+        s.zip_file_comment_length = u16::to_le(s.zip_file_comment_length);
+        s
+    }
 }
 
 impl CentralDirectoryEnd {
@@ -66,18 +94,26 @@ impl CentralDirectoryEnd {
     }
 
     pub async fn parse_async<T: io::AsyncRead>(mut reader: Pin<&mut T>) -> ZipResult<Self> {
-        let magic = reader.read_u32_le().await?;
+        static_assertions::assert_eq_size!([u8; 22], CentralDirectoryEndBuffer);
+        let mut info = [0u8; 22];
+        reader.read_exact(&mut info[..]).await?;
+
+        let CentralDirectoryEndBuffer {
+            magic,
+            disk_number,
+            disk_with_central_directory,
+            number_of_files_on_this_disk,
+            number_of_files,
+            central_directory_size,
+            central_directory_offset,
+            zip_file_comment_length,
+        } = CentralDirectoryEndBuffer::extract(info);
+
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"));
         }
-        let disk_number = reader.read_u16_le().await?;
-        let disk_with_central_directory = reader.read_u16_le().await?;
-        let number_of_files_on_this_disk = reader.read_u16_le().await?;
-        let number_of_files = reader.read_u16_le().await?;
-        let central_directory_size = reader.read_u32_le().await?;
-        let central_directory_offset = reader.read_u32_le().await?;
-        let zip_file_comment_length = reader.read_u16_le().await? as usize;
-        let mut zip_file_comment = vec![0; zip_file_comment_length];
+
+        let mut zip_file_comment = vec![0u8; zip_file_comment_length.into()];
         reader.read_exact(&mut zip_file_comment).await?;
 
         Ok(CentralDirectoryEnd {
@@ -94,36 +130,55 @@ impl CentralDirectoryEnd {
     const HEADER_SIZE: u64 = 22;
     const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = Self::HEADER_SIZE - 6;
 
+    const SEARCH_BUFFER_SIZE: u64 = 4 * Self::HEADER_SIZE;
+    /* const SEARCH_BUFFER_SIZE: u64 = 5; */
+
     pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek>(
         mut reader: Pin<&mut T>,
     ) -> ZipResult<(CentralDirectoryEnd, u64)> {
         let file_length = reader.seek(io::SeekFrom::End(0)).await?;
 
-        let search_upper_bound =
-            file_length.saturating_sub(Self::HEADER_SIZE + ::std::u16::MAX as u64);
-
         if file_length < Self::HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        let mut pos = file_length - Self::HEADER_SIZE;
-        while pos >= search_upper_bound {
-            reader.seek(io::SeekFrom::Start(pos)).await?;
-            if reader.read_u32_le().await? == CENTRAL_DIRECTORY_END_SIGNATURE {
-                reader
-                    .seek(io::SeekFrom::Current(
-                        Self::BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
-                    ))
-                    .await?;
-                let cde_start_pos = reader.seek(io::SeekFrom::Start(pos)).await?;
+        let search_lower_bound =
+            file_length.saturating_sub(Self::HEADER_SIZE + ::std::u16::MAX as u64);
+        dbg!(search_lower_bound);
+
+        dbg!(Self::SEARCH_BUFFER_SIZE);
+        let mut buf = [0u8; Self::SEARCH_BUFFER_SIZE as usize];
+        let sig: [u8; 4] = CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
+        dbg!(sig);
+
+        let mut leftmost_frontier = file_length;
+        while leftmost_frontier > search_lower_bound {
+            dbg!(leftmost_frontier);
+            let remaining = leftmost_frontier - search_lower_bound;
+            dbg!(remaining);
+            let cur_len = cmp::min(remaining, Self::SEARCH_BUFFER_SIZE);
+            dbg!(cur_len);
+            let cur_buf: &mut [u8] = &mut buf[..cur_len as usize];
+
+            reader
+                .seek(io::SeekFrom::Current(-(cur_len as i64)))
+                .await?;
+            reader.read_exact(cur_buf).await?;
+
+            /* dbg!(&cur_buf); */
+
+            if let Some(index_within_buffer) = memchr::memmem::rfind(&cur_buf, &sig[..]) {
+                dbg!(index_within_buffer);
+                let central_directory_end =
+                    leftmost_frontier - cur_len + index_within_buffer as u64;
+                dbg!(central_directory_end);
+
                 return CentralDirectoryEnd::parse_async(reader)
                     .await
-                    .map(|cde| (cde, cde_start_pos));
+                    .map(|cde| (cde, central_directory_end));
+            } else {
+                leftmost_frontier -= cur_len;
             }
-            pos = match pos.checked_sub(1) {
-                Some(p) => p,
-                None => break,
-            };
         }
         Err(ZipError::InvalidArchive(
             "Could not find central directory end",
