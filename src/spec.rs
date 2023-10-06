@@ -6,7 +6,7 @@ use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::io::prelude::*;
 use std::io::Seek;
 use std::pin::Pin;
-use std::{cmp, mem, ptr};
+use std::{cmp, mem, ptr, slice};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -40,17 +40,15 @@ struct CentralDirectoryEndBuffer {
 }
 
 impl CentralDirectoryEndBuffer {
-    pub fn extract(info: [u8; 22]) -> Self {
-        let mut s: Self = unsafe { mem::transmute(info) };
-        s.magic = u32::from_le(s.magic);
-        s.disk_number = u16::to_le(s.disk_number);
-        s.disk_with_central_directory = u16::to_le(s.disk_with_central_directory);
-        s.number_of_files_on_this_disk = u16::to_le(s.number_of_files_on_this_disk);
-        s.number_of_files = u16::to_le(s.number_of_files);
-        s.central_directory_size = u32::to_le(s.central_directory_size);
-        s.central_directory_offset = u32::to_le(s.central_directory_offset);
-        s.zip_file_comment_length = u16::to_le(s.zip_file_comment_length);
-        s
+    #[inline]
+    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
+        use byteorder::ByteOrder;
+
+        let start: *mut u8 = info.as_mut_ptr();
+
+        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 11) });
+
+        unsafe { mem::transmute(info) }
     }
 }
 
@@ -58,6 +56,7 @@ impl CentralDirectoryEnd {
     // Per spec 4.4.1.4 - a CentralDirectoryEnd field might be insufficient to hold the
     // required data. In this case the file SHOULD contain a ZIP64 format record
     // and the field of this record will be set to -1
+    #[inline]
     pub(crate) fn record_too_small(&self) -> bool {
         self.disk_number == 0xFFFF
             || self.disk_with_central_directory == 0xFFFF
@@ -131,7 +130,6 @@ impl CentralDirectoryEnd {
     const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = Self::HEADER_SIZE - 6;
 
     const SEARCH_BUFFER_SIZE: u64 = 4 * Self::HEADER_SIZE;
-    /* const SEARCH_BUFFER_SIZE: u64 = 5; */
 
     pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek>(
         mut reader: Pin<&mut T>,

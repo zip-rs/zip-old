@@ -6,11 +6,6 @@ use crate::{
 
 pub mod linux;
 
-use tokio::{
-    fs,
-    io::{self, unix::AsyncFd},
-};
-
 use std::{cmp, ops, os::fd::AsRawFd, path::PathBuf, pin::Pin, sync::Arc};
 
 #[derive(Debug)]

@@ -17,8 +17,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use tokio::task;
-
 macro_rules! cvt {
     ($e:expr) => {{
         let ret = $e;
