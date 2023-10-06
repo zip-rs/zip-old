@@ -1,6 +1,6 @@
 use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
-use crate::spec;
+use crate::spec::{self, LocalHeaderBuffer};
 use crate::tokio::{
     buf_reader::BufReader, combinators::Limiter, crc32::Crc32Reader, extraction::CompletedPaths,
     stream_impls::deflate, utils::map_take_manual_drop, WrappedPin,
@@ -177,37 +177,6 @@ impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
             CompressionMethod::Deflated => Self::Deflated(DeflateReader::<S>::construct(data, s)),
             _ => todo!("other compression methods not supported yet!"),
         }
-    }
-}
-
-#[repr(packed)]
-struct LocalHeaderBuffer {
-    pub magic: u32,
-    #[allow(dead_code)]
-    unparsed_data: [u8; 22],
-    pub file_name_length: u16,
-    pub extra_field_length: u16,
-}
-
-impl LocalHeaderBuffer {
-    #[inline]
-    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        let start: *mut u8 = info.as_mut_ptr();
-
-        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 15) });
-
-        unsafe { mem::transmute(info) }
-    }
-
-    #[inline]
-    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-        LittleEndian::from_slice_u16(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 15)
-        });
-
-        buf
     }
 }
 

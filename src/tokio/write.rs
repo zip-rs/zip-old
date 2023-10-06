@@ -1,7 +1,7 @@
 use crate::{
     compression::CompressionMethod,
     result::{ZipError, ZipResult},
-    spec,
+    spec::{self, LocalHeaderBuffer},
     tokio::{
         buf_writer::BufWriter,
         read::{read_spec, Shared, ZipArchive},
@@ -1024,7 +1024,11 @@ impl<S> WrappedPin<S> for ZipWriter<S> {
 }
 
 pub(crate) mod write_spec {
-    use crate::{result::ZipResult, spec, types::ZipFileData};
+    use crate::{
+        result::ZipResult,
+        spec::{self, LocalHeaderBuffer},
+        types::ZipFileData,
+    };
 
     use std::pin::Pin;
 
@@ -1137,6 +1141,11 @@ pub(crate) mod write_spec {
         mut writer: Pin<&mut S>,
         file: &ZipFileData,
     ) -> ZipResult<()> {
+        /* let block = LocalHeaderBuffer { */
+        /*     magic: spec::LOCAL_FILE_HEADER_SIGNATURE, */
+        /* } */
+        /* .writable_block(); */
+
         // local file header signature
         writer
             .write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)
