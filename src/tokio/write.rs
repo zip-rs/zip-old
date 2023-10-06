@@ -1137,8 +1137,9 @@ pub(crate) mod write_spec {
         writer
             .seek(io::SeekFrom::Start(file.header_start + CRC32_OFFSET))
             .await?;
-        writer.write_u32_le(file.crc32).await?;
+
         if file.large_file {
+            writer.write_u32_le(file.crc32).await?;
             update_local_zip64_extra_field(writer.as_mut(), file).await?;
         } else {
             // check compressed size as well as it can also be slightly larger than uncompressed size
@@ -1149,10 +1150,15 @@ pub(crate) mod write_spec {
                 )
                 .into());
             }
-            writer.write_u32_le(file.compressed_size as u32).await?;
-            // uncompressed size is already checked on write to catch it as soon as possible
-            writer.write_u32_le(file.uncompressed_size as u32).await?;
-        }
+            let mut buf: [u32; 3] = [
+                file.crc32,
+                file.compressed_size as u32,
+                file.uncompressed_size as u32,
+            ];
+            LittleEndian::from_slice_u32(&mut buf[..]);
+            let mut buf: [u8; 12] = unsafe { mem::transmute(buf) };
+            writer.write_all(&buf[..]).await?;
+        };
         Ok(())
     }
 
@@ -1164,8 +1170,11 @@ pub(crate) mod write_spec {
         writer
             .seek(io::SeekFrom::Start(zip64_extra_field + 4))
             .await?;
-        writer.write_u64_le(file.uncompressed_size).await?;
-        writer.write_u64_le(file.compressed_size).await?;
+
+        let mut buf: [u64; 2] = [file.uncompressed_size, file.compressed_size];
+        LittleEndian::from_slice_u64(&mut buf[..]);
+        let mut buf: [u8; 16] = unsafe { mem::transmute(buf) };
+        writer.write_all(&buf[..]).await?;
         // Excluded fields:
         // u32: disk start number
         Ok(())
