@@ -1184,76 +1184,67 @@ pub(crate) mod write_spec {
         mut writer: Pin<&mut S>,
         file: &ZipFileData,
     ) -> ZipResult<()> {
-        /* let block = LocalHeaderBuffer { */
-        /*     magic: spec::LOCAL_FILE_HEADER_SIGNATURE, */
-        /* } */
-        /* .writable_block(); */
-
-        // local file header signature
-        writer
-            .write_u32_le(spec::LOCAL_FILE_HEADER_SIGNATURE)
-            .await?;
-        // version needed to extract
-        writer.write_u16_le(file.version_needed()).await?;
-        // general purpose bit flag
-        let flag = if !file.file_name.is_ascii() {
-            1u16 << 11
+        let (compressed_size, uncompressed_size): (u32, u32) = if file.large_file {
+            (spec::ZIP64_BYTES_THR as u32, spec::ZIP64_BYTES_THR as u32)
         } else {
-            0
-        } | if file.encrypted { 1u16 << 0 } else { 0 };
-        writer.write_u16_le(flag).await?;
-        // Compression method
-        #[allow(deprecated)]
-        writer
-            .write_u16_le(file.compression_method.to_u16())
-            .await?;
-        // last mod file time and last mod file date
-        writer
-            .write_u16_le(file.last_modified_time.timepart())
-            .await?;
-        writer
-            .write_u16_le(file.last_modified_time.datepart())
-            .await?;
-        // crc-32
-        writer.write_u32_le(file.crc32).await?;
-        // compressed size and uncompressed size
-        if file.large_file {
-            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32).await?;
-            writer.write_u32_le(spec::ZIP64_BYTES_THR as u32).await?;
+            (file.compressed_size as u32, file.uncompressed_size as u32)
+        };
+        let block = LocalHeaderBuffer {
+            magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
+            version_needed_to_extract: file.version_needed(),
+            flag: if !file.file_name.is_ascii() {
+                1u16 << 11
+            } else {
+                0
+            } | if file.encrypted { 1u16 << 0 } else { 0 },
+            #[allow(deprecated)]
+            compression_method: file.compression_method.to_u16(),
+            last_modified_time_timepart: file.last_modified_time.timepart(),
+            last_modified_time_datepart: file.last_modified_time.datepart(),
+            crc32: file.crc32,
+            compressed_size,
+            uncompressed_size,
+            file_name_length: file.file_name.as_bytes().len() as u16,
+            extra_field_length: if file.large_file { 20 } else { 0 }
+                + file.extra_field.len() as u16,
+        }
+        .writable_block();
+
+        let maybe_extra_field = if file.large_file {
+            // This entry in the Local header MUST include BOTH original
+            // and compressed file size fields.
+            Some(LocalZip64ExtraFieldBuffer {
+                undocumented_field_1: 0x0001,
+                undocumented_field_2: 16,
+                uncompressed_size: file.uncompressed_size,
+                compressed_size: file.compressed_size,
+                disk_start_number: 0,
+            })
         } else {
-            writer.write_u32_le(file.compressed_size as u32).await?;
-            writer.write_u32_le(file.uncompressed_size as u32).await?;
-        }
-        // file name length
-        writer
-            .write_u16_le(file.file_name.as_bytes().len() as u16)
-            .await?;
-        // extra field length
-        let extra_field_length =
-            if file.large_file { 20 } else { 0 } + file.extra_field.len() as u16;
-        writer.write_u16_le(extra_field_length).await?;
-        // file name
-        writer.write_all(file.file_name.as_bytes()).await?;
-        // zip64 extra field
-        if file.large_file {
-            write_local_zip64_extra_field(writer.as_mut(), file).await?;
+            None
+        };
+
+        if writer.is_write_vectored() {
+            /* TODO: zero-copy!! */
+            let block = IoSlice::new(&block);
+            let fname = IoSlice::new(&file.file_name.as_bytes());
+            if let Some(extra_field_buf) = maybe_extra_field {
+                let extra_block = extra_field_buf.writable_block();
+                let extra_field = IoSlice::new(&extra_block);
+                writer.write_vectored(&[block, fname, extra_field]).await?;
+            } else {
+                writer.write_vectored(&[block, fname]).await?;
+            }
+        } else {
+            /* If no special vector write support, just perform a series of normal writes. */
+            writer.write_all(&block).await?;
+            writer.write_all(&file.file_name.as_bytes()).await?;
+            if let Some(extra_field_buf) = maybe_extra_field {
+                let extra_block = extra_field_buf.writable_block();
+                writer.write_all(&extra_block).await?;
+            }
         }
 
-        Ok(())
-    }
-
-    async fn write_local_zip64_extra_field<S: io::AsyncWrite>(
-        mut writer: Pin<&mut S>,
-        file: &ZipFileData,
-    ) -> ZipResult<()> {
-        // This entry in the Local header MUST include BOTH original
-        // and compressed file size fields.
-        writer.write_u16_le(0x0001).await?;
-        writer.write_u16_le(16).await?;
-        writer.write_u64_le(file.uncompressed_size).await?;
-        writer.write_u64_le(file.compressed_size).await?;
-        // Excluded fields:
-        // u32: disk start number
         Ok(())
     }
 
