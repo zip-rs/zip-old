@@ -6,7 +6,7 @@ use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::io::prelude::*;
 use std::io::Seek;
 use std::pin::Pin;
-use std::{cmp, mem, ptr, slice};
+use std::{cmp, io::IoSlice, mem, ptr, slice};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -248,11 +248,16 @@ impl CentralDirectoryEnd {
         }
         .writable_block();
 
-        /* FIXME: vectored!! */
-        writer.write_all(&block).await?;
-
-        /* FIXME: zero-copy!! */
-        writer.write_all(&self.zip_file_comment).await?;
+        if writer.is_write_vectored() {
+            /* TODO: zero-copy!! */
+            let block = IoSlice::new(&block);
+            let comment = IoSlice::new(&self.zip_file_comment);
+            writer.write_vectored(&[block, comment]).await?;
+        } else {
+            /* If no special vector write support, just perform two separate writes. */
+            writer.write_all(&block).await?;
+            writer.write_all(&self.zip_file_comment).await?;
+        }
 
         Ok(())
     }
@@ -262,6 +267,36 @@ pub struct Zip64CentralDirectoryEndLocator {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
+}
+
+#[repr(packed)]
+struct Zip64CentralDirectoryEndBuffer {
+    pub magic: u32,
+    pub disk_with_central_directory: u32,
+    pub end_of_central_directory_offset: u64,
+    pub number_of_disks: u32,
+}
+
+impl Zip64CentralDirectoryEndBuffer {
+    #[inline]
+    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
+        let start: *mut u8 = info.as_mut_ptr();
+
+        LittleEndian::from_slice_u32(unsafe { slice::from_raw_parts_mut(start as *mut u32, 5) });
+
+        unsafe { mem::transmute(info) }
+    }
+
+    #[inline]
+    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
+        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
+
+        LittleEndian::from_slice_u16(unsafe {
+            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 5)
+        });
+
+        buf
+    }
 }
 
 impl Zip64CentralDirectoryEndLocator {
@@ -284,15 +319,22 @@ impl Zip64CentralDirectoryEndLocator {
     }
 
     pub async fn parse_async<T: io::AsyncRead>(mut reader: Pin<&mut T>) -> ZipResult<Self> {
-        let magic = reader.read_u32_le().await?;
+        static_assertions::assert_eq_size!([u8; 20], Zip64CentralDirectoryEndBuffer);
+        let mut info = [0u8; 20];
+        reader.read_exact(&mut info[..]).await?;
+
+        let Zip64CentralDirectoryEndBuffer {
+            magic,
+            disk_with_central_directory,
+            end_of_central_directory_offset,
+            number_of_disks,
+        } = Zip64CentralDirectoryEndBuffer::extract(info);
+
         if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
             return Err(ZipError::InvalidArchive(
                 "Invalid zip64 locator digital signature header",
             ));
         }
-        let disk_with_central_directory = reader.read_u32_le().await?;
-        let end_of_central_directory_offset = reader.read_u64_le().await?;
-        let number_of_disks = reader.read_u32_le().await?;
 
         Ok(Zip64CentralDirectoryEndLocator {
             disk_with_central_directory,
@@ -310,16 +352,23 @@ impl Zip64CentralDirectoryEndLocator {
     }
 
     pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
-        writer
-            .write_u32_le(ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE)
-            .await?;
-        writer
-            .write_u32_le(self.disk_with_central_directory)
-            .await?;
-        writer
-            .write_u64_le(self.end_of_central_directory_offset)
-            .await?;
-        writer.write_u32_le(self.number_of_disks).await?;
+        let block = Zip64CentralDirectoryEndBuffer {
+            magic: ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE,
+            disk_with_central_directory: self.disk_with_central_directory,
+            end_of_central_directory_offset: self.end_of_central_directory_offset,
+            number_of_disks: self.number_of_disks,
+        }
+        .writable_block();
+
+        if writer.is_write_vectored() {
+            /* TODO: zero-copy?? */
+            let block = IoSlice::new(&block);
+            writer.write_vectored(&[block]).await?;
+        } else {
+            /* If no special vector write support, just perform two separate writes. */
+            writer.write_all(&block).await?;
+        }
+
         Ok(())
     }
 }
