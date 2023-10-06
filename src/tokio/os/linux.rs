@@ -4,13 +4,14 @@ use crate::tokio::{
 };
 
 use cfg_if::cfg_if;
+use displaydoc::Display;
 use libc;
 use once_cell::sync::Lazy;
 
 use std::{
     ffi::c_void,
     io, mem,
-    os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
+    os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
     pin::Pin,
     ptr,
     task::{Context, Poll},
@@ -39,7 +40,7 @@ macro_rules! try_libc {
     }};
 }
 
-enum SyscallAvailability {
+pub enum SyscallAvailability {
     Available,
     FailedProbe(io::Error),
     NotOnThisPlatform,
@@ -67,7 +68,7 @@ fn invalid_copy_file_range() -> io::Error {
     io::Error::last_os_error()
 }
 
-static HAS_COPY_FILE_RANGE: Lazy<SyscallAvailability> = Lazy::new(|| {
+pub static HAS_COPY_FILE_RANGE: Lazy<SyscallAvailability> = Lazy::new(|| {
     cfg_if! {
         if #[cfg(target_os = "linux")] {
             match invalid_copy_file_range().raw_os_error().unwrap() {
@@ -80,44 +81,87 @@ static HAS_COPY_FILE_RANGE: Lazy<SyscallAvailability> = Lazy::new(|| {
     }
 });
 
-struct RawArgs {
+pub struct RawArgs {
     fd: libc::c_int,
     off: *mut libc::off64_t,
 }
 
-trait CopyFileRangeHandle {
+pub trait CopyFileRangeHandle {
+    fn role(&self) -> Role;
     fn as_args(self: Pin<&mut Self>) -> RawArgs;
 }
 
-pub struct MutateInnerOffset(RawFd);
+pub struct MutateInnerOffset {
+    fd: FileFd,
+    role: Role,
+    owned_fd: OwnedFd,
+}
+
+impl MutateInnerOffset {
+    pub fn new(f: impl IntoRawFd, role: Role) -> io::Result<Self> {
+        let raw_fd = f.into_raw_fd();
+        let owned_fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
+        let fd = FileFd::from_raw_fd_checked(owned_fd.as_raw_fd(), role)?;
+        Ok(Self { fd, role, owned_fd })
+    }
+}
 
 impl CopyFileRangeHandle for MutateInnerOffset {
+    fn role(&self) -> Role {
+        self.role
+    }
     fn as_args(self: Pin<&mut Self>) -> RawArgs {
         RawArgs {
-            fd: self.0,
+            fd: *self.fd.raw_fd(),
             off: ptr::null_mut(),
         }
     }
 }
 
-pub struct FromGivenOffset(RawFd, i64);
+pub struct FromGivenOffset {
+    fd: FileFd,
+    pub offset: i64,
+    role: Role,
+}
 
-impl CopyFileRangeHandle for FromGivenOffset {
-    fn as_args(self: Pin<&mut Self>) -> RawArgs {
-        let Self(fd, ref mut off) = self.get_mut();
-        RawArgs { fd: *fd, off }
+impl FromGivenOffset {
+    pub fn new(f: &impl AsRawFd, role: Role, init: u32) -> io::Result<Self> {
+        let raw_fd = f.as_raw_fd();
+        let fd = FileFd::from_raw_fd_checked(raw_fd, role)?;
+        Ok(Self {
+            fd,
+            role,
+            offset: init as i64,
+        })
     }
 }
 
-fn copy_file_range_raw(
+impl CopyFileRangeHandle for FromGivenOffset {
+    fn role(&self) -> Role {
+        self.role
+    }
+    fn as_args(self: Pin<&mut Self>) -> RawArgs {
+        let Self {
+            fd, ref mut offset, ..
+        } = self.get_mut();
+        RawArgs {
+            fd: *fd.raw_fd(),
+            off: offset,
+        }
+    }
+}
+
+pub fn copy_file_range_raw(
     src: Pin<&mut impl CopyFileRangeHandle>,
     dst: Pin<&mut impl CopyFileRangeHandle>,
     len: usize,
 ) -> io::Result<usize> {
+    assert_eq!(src.role(), Role::Readable);
     let RawArgs {
         fd: fd_in,
         off: off_in,
     } = src.as_args();
+    assert_eq!(dst.role(), Role::Writable);
     let RawArgs {
         fd: fd_out,
         off: off_out,
@@ -161,10 +205,13 @@ fn get_status_flags(fd: RawFd) -> io::Result<libc::c_int> {
 // Below is -2, in two's complement, but that only works out
 // because c_int is 32 bits.
 #[cfg_attr(rustc_attrs, rustc_layout_scalar_valid_range_end(0xFF_FF_FF_FE))]
-pub struct FileFd(RawFd);
+struct FileFd(RawFd);
 
+#[derive(Copy, Clone, Debug, Display, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Role {
+    /// fd has the read capability
     Readable,
+    /// fd has the write capability
     Writable,
 }
 
@@ -199,7 +246,7 @@ impl Role {
         }
     }
 
-    pub(crate) fn validate_flags(&self, flags: libc::c_int) -> io::Result<()> {
+    pub fn validate_flags(&self, flags: libc::c_int) -> io::Result<()> {
         let access_mode = flags & libc::O_ACCMODE;
 
         if !self.allowed_modes().contains(&access_mode) {
@@ -212,6 +259,11 @@ impl Role {
 }
 
 impl FileFd {
+    #[inline]
+    pub fn raw_fd(&self) -> &RawFd {
+        &self.0
+    }
+
     pub fn from_raw_fd_checked(fd: RawFd, role: Role) -> io::Result<Self> {
         check_regular_file(fd)?;
 
@@ -291,5 +343,25 @@ mod test {
 
         assert!(FileFd::from_raw_fd_checked(fd, Role::Writable).is_err());
         assert!(FileFd::from_raw_fd_checked(fd, Role::Readable).is_err());
+    }
+
+    #[test]
+    fn read_owned_into_write_ref() {
+        let td = tempfile::tempdir().unwrap();
+        let p = td.path().join("asdf.txt");
+        fs::write(&p, b"wow!").unwrap();
+
+        let mut src = MutateInnerOffset::new(fs::File::open(&p).unwrap(), Role::Readable).unwrap();
+
+        let p2 = td.path().join("asdf2.txt");
+        let out_file = fs::File::create(&p2).unwrap();
+        let mut dst = FromGivenOffset::new(&out_file, Role::Writable, 0).unwrap();
+        assert_eq!(0, dst.offset);
+
+        assert_eq!(
+            4,
+            copy_file_range_raw(Pin::new(&mut src), Pin::new(&mut dst), 4).unwrap()
+        );
+        assert_eq!(4, dst.offset);
     }
 }
