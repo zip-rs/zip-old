@@ -5,7 +5,7 @@ pub mod buf_writer;
 pub mod combinators;
 pub(crate) mod crc32;
 pub(crate) mod extraction;
-pub(crate) mod os;
+pub mod os;
 pub mod read;
 pub mod stream_impls;
 pub mod write;
