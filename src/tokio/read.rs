@@ -1067,7 +1067,7 @@ pub(crate) mod read_spec {
         types::ZipFileData,
     };
 
-    use std::pin::Pin;
+    use std::{mem, pin::Pin};
 
     use tokio::io::{self, AsyncReadExt, AsyncSeekExt};
 
@@ -1185,24 +1185,29 @@ pub(crate) mod read_spec {
         let mut reader = std::io::Cursor::new(&file.extra_field);
 
         while (reader.position() as usize) < file.extra_field.len() {
-            let kind = reader.read_u16_le().await?;
-            let len = reader.read_u16_le().await?;
+            let mut buf = [0u8; 32];
+
+            reader.read_exact(&mut buf[..]).await?;
+
+            let args: (u16, u16, u64, u64, u64) = unsafe { mem::transmute(buf) };
+            let (kind, len, uncompressed_size, compressed_size, header_start) = args;
+
             let mut len_left = len as i64;
             match kind {
                 // Zip64 extended information extra field
                 0x0001 => {
                     if file.uncompressed_size >= spec::ZIP64_BYTES_THR {
                         file.large_file = true;
-                        file.uncompressed_size = reader.read_u64_le().await?;
+                        file.uncompressed_size = uncompressed_size;
                         len_left -= 8;
                     }
                     if file.compressed_size >= spec::ZIP64_BYTES_THR {
                         file.large_file = true;
-                        file.compressed_size = reader.read_u64_le().await?;
+                        file.compressed_size = compressed_size;
                         len_left -= 8;
                     }
                     if file.header_start == spec::ZIP64_BYTES_THR {
-                        file.header_start = reader.read_u64_le().await?;
+                        file.header_start = header_start;
                         len_left -= 8;
                     }
                 }
@@ -1211,7 +1216,7 @@ pub(crate) mod read_spec {
                 }
             }
 
-            // We could also check for < 0 to check for errors
+            assert!(len_left >= 0);
             if len_left > 0 {
                 reader.seek(io::SeekFrom::Current(len_left)).await?;
             }
