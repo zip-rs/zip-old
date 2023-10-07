@@ -1190,9 +1190,12 @@ pub(crate) mod read_spec {
 
             reader.read_exact(&mut buf[..]).await?;
 
+            static_assertions::assert_eq_size!([u8; 32], (u16, u16, u64, u64, u64));
+
             LittleEndian::from_slice_u16(unsafe {
                 slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 14)
             });
+
             let args: (u16, u16, u64, u64, u64) = unsafe { mem::transmute(buf) };
             let (kind, len, uncompressed_size, compressed_size, header_start) = args;
 
