@@ -1053,8 +1053,13 @@ pub(crate) mod write_spec {
                     io::Error::new(io::ErrorKind::Other, "Incomplete extra data header").into(),
                 );
             }
-            let kind = data.read_u16_le().await?;
-            let size = data.read_u16_le().await? as usize;
+
+            let mut buf = [0u16; 2];
+            LittleEndian::from_slice_u16(&mut buf[..]);
+            let mut buf: [u8; 4] = unsafe { mem::transmute(buf) };
+            data.read_exact(&mut buf[..]).await?;
+            let (kind, size): (u16, u16) = unsafe { mem::transmute(buf) };
+
             let left = left - 4;
 
             if kind == 0x0001 {
@@ -1078,7 +1083,7 @@ pub(crate) mod write_spec {
                 }
             }
 
-            if size > left {
+            if size > left as u16 {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Extra data size exceeds extra field",
@@ -1086,7 +1091,7 @@ pub(crate) mod write_spec {
                 .into());
             }
 
-            data = &data[size..];
+            data = &data[size as usize..];
         }
 
         Ok(())
