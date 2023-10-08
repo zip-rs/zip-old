@@ -39,8 +39,8 @@ tokio-stream = { version = "0.1.14", optional = true }
 zstd = { version = "0.11.2", optional = true }
 
 [dependencies.memchr2]
-git = "https://github.com/cosmicexplorer/memchr"
-rev= "ce7b8e606410f6c81a63f45abb24c5b5aab5d741"
+version = "2.6.4"
+optional = true
 package = "memchr"
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
@@ -63,7 +63,7 @@ deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 tokio-async = [
-  "dep:tokio", "dep:tokio-stream", "dep:parking_lot", "dep:libc", "dep:futures-core",
+  "dep:tokio", "dep:memchr2", "dep:tokio-stream", "dep:parking_lot", "dep:libc", "dep:futures-core",
   "dep:futures-util", "dep:async-stream", "dep:indexmap", "dep:once_cell", "dep:static_assertions",
 ]
 unreserved = []
