@@ -1,7 +1,4 @@
-/* use crate::tokio::{ */
-/*     os::SharedSubset, */
-/*     read::{Shared, SharedData}, */
-/* }; */
+use crate::{cvt, try_libc};
 
 use cfg_if::cfg_if;
 use displaydoc::Display;
@@ -14,27 +11,6 @@ use std::{
     pin::Pin,
     ptr,
 };
-
-macro_rules! cvt {
-    ($e:expr) => {{
-        let ret = $e;
-        if ret == -1 {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(ret)
-        }
-    }};
-}
-
-macro_rules! try_libc {
-    ($e: expr) => {{
-        let ret = $e;
-        if ret == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        ret
-    }};
-}
 
 #[allow(dead_code)]
 pub enum SyscallAvailability {
@@ -78,14 +54,14 @@ pub static HAS_COPY_FILE_RANGE: Lazy<SyscallAvailability> = Lazy::new(|| {
     }
 });
 
-pub struct RawArgs {
+pub struct RawArgs<'a> {
     fd: libc::c_int,
-    off: *mut libc::off64_t,
+    off: Option<&'a mut libc::off64_t>,
 }
 
 pub trait CopyFileRangeHandle {
     fn role(&self) -> Role;
-    fn as_args(self: Pin<&mut Self>) -> RawArgs;
+    fn as_args(self: Pin<&mut Self>) -> RawArgs<'_>;
 }
 
 pub struct MutateInnerOffset {
@@ -109,10 +85,10 @@ impl CopyFileRangeHandle for MutateInnerOffset {
     fn role(&self) -> Role {
         self.role
     }
-    fn as_args(self: Pin<&mut Self>) -> RawArgs {
+    fn as_args(self: Pin<&mut Self>) -> RawArgs<'_> {
         RawArgs {
             fd: self.owned_fd.as_raw_fd(),
-            off: ptr::null_mut(),
+            off: None,
         }
     }
 }
@@ -151,8 +127,17 @@ impl CopyFileRangeHandle for FromGivenOffset {
         } = self.get_mut();
         RawArgs {
             fd: fd.as_raw_fd(),
-            off: offset,
+            off: Some(offset),
         }
+    }
+}
+
+#[inline]
+fn convert_option_ptr<T>(mut p: Option<&mut T>) -> *mut T {
+    if let Some(ref mut val) = p {
+        &mut **val
+    } else {
+        ptr::null_mut()
     }
 }
 
@@ -166,11 +151,13 @@ pub fn iter_copy_file_range(
         fd: fd_in,
         off: off_in,
     } = src.as_args();
+    let off_in = convert_option_ptr(off_in);
     assert_eq!(dst.role(), Role::Writable);
     let RawArgs {
         fd: fd_out,
         off: off_out,
     } = dst.as_args();
+    let off_out = convert_option_ptr(off_out);
 
     /* These must always be set to 0 for now. */
     const FUTURE_FLAGS: libc::c_uint = 0;

@@ -5,6 +5,29 @@ use crate::{
 
 pub mod copy_file_range;
 
+#[macro_export]
+macro_rules! cvt {
+    ($e:expr) => {{
+        let ret = $e;
+        if ret == -1 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(ret)
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! try_libc {
+    ($e: expr) => {{
+        let ret = $e;
+        if ret == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        ret
+    }};
+}
+
 use std::{cmp, ops, sync::Arc};
 
 #[derive(Debug)]
