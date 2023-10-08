@@ -1,3 +1,4 @@
+use super::{SyscallAvailability, INVALID_FD};
 use crate::{cvt, try_libc};
 
 use cfg_if::cfg_if;
@@ -11,20 +12,6 @@ use std::{
     pin::Pin,
     ptr,
 };
-
-#[allow(dead_code)]
-pub enum SyscallAvailability {
-    Available,
-    FailedProbe(io::Error),
-    NotOnThisPlatform,
-}
-
-/// Invalid file descriptor.
-///
-/// Valid file descriptors are guaranteed to be positive numbers (see `open()` manpage)
-/// while negative values are used to indicate errors.
-/// Thus -1 will never be overlap with a valid open file.
-const INVALID_FD: RawFd = -1;
 
 fn invalid_copy_file_range() -> io::Error {
     let ret = unsafe {
