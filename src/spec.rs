@@ -138,7 +138,7 @@ impl CentralDirectoryEnd {
     const HEADER_SIZE: u64 = 22;
     const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = Self::HEADER_SIZE - 6;
 
-    pub const SEARCH_BUFFER_SIZE: u64 = 10 * Self::HEADER_SIZE;
+    pub const SEARCH_BUFFER_MIN_SIZE: usize = 10 * Self::HEADER_SIZE as usize;
 
     pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek>(
         mut reader: Pin<&mut T>,
@@ -153,31 +153,30 @@ impl CentralDirectoryEnd {
             file_length.saturating_sub(Self::HEADER_SIZE + ::std::u16::MAX as u64);
         dbg!(search_lower_bound);
 
-        dbg!(Self::SEARCH_BUFFER_SIZE);
-        let mut buf = [0u8; Self::SEARCH_BUFFER_SIZE as usize];
-        let sig: [u8; 4] = CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-        dbg!(sig);
+        let heuristic_search_buffer_size: usize = (file_length / 100) as usize;
+        let mut buf =
+            vec![0u8; cmp::max(heuristic_search_buffer_size, Self::SEARCH_BUFFER_MIN_SIZE)];
 
         let mut leftmost_frontier = file_length;
         while leftmost_frontier > search_lower_bound {
             dbg!(leftmost_frontier);
             let remaining = leftmost_frontier - search_lower_bound;
             dbg!(remaining);
-            let cur_len = cmp::min(remaining, Self::SEARCH_BUFFER_SIZE);
+            let cur_len = cmp::min(remaining as usize, buf.len());
             dbg!(cur_len);
-            let cur_buf: &mut [u8] = &mut buf[..cur_len as usize];
+            let cur_buf: &mut [u8] = &mut buf[..cur_len];
 
             reader
                 .seek(io::SeekFrom::Current(-(cur_len as i64)))
                 .await?;
             reader.read_exact(cur_buf).await?;
 
-            /* dbg!(&cur_buf); */
-
-            if let Some(index_within_buffer) = memchr2::memmem::rfind(&cur_buf, &sig[..]) {
+            if let Some(index_within_buffer) =
+                memchr2::memmem::rfind(&cur_buf, &CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes()[..])
+            {
                 dbg!(index_within_buffer);
                 let central_directory_end =
-                    leftmost_frontier - cur_len + index_within_buffer as u64;
+                    leftmost_frontier - cur_len as u64 + index_within_buffer as u64;
                 dbg!(central_directory_end);
 
                 reader
@@ -191,7 +190,7 @@ impl CentralDirectoryEnd {
                 reader
                     .seek(io::SeekFrom::Current(-(cur_len as i64)))
                     .await?;
-                leftmost_frontier -= cur_len;
+                leftmost_frontier -= cur_len as u64;
             }
         }
         Err(ZipError::InvalidArchive(
@@ -513,7 +512,7 @@ impl Zip64CentralDirectoryEnd {
         })
     }
 
-    const ZIP64_SEARCH_BUFFER_SIZE: u64 = 2 * CentralDirectoryEnd::SEARCH_BUFFER_SIZE;
+    pub const ZIP64_SEARCH_BUFFER_MIN_SIZE: usize = 2 * CentralDirectoryEnd::SEARCH_BUFFER_MIN_SIZE;
 
     pub async fn find_and_parse_async<T: io::AsyncRead + io::AsyncSeek>(
         mut reader: Pin<&mut T>,
@@ -522,18 +521,25 @@ impl Zip64CentralDirectoryEnd {
     ) -> ZipResult<(Self, u64)> {
         let mut rightmost_frontier = reader.seek(io::SeekFrom::Start(nominal_offset)).await?;
 
-        let mut buf = [0u8; Self::ZIP64_SEARCH_BUFFER_SIZE as usize];
-
-        let sig: [u8; 4] = ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes();
-
+        let heuristic_search_buffer_size: usize = (nominal_offset / 100) as usize;
+        let mut buf = vec![
+            0u8;
+            cmp::max(
+                heuristic_search_buffer_size,
+                Self::ZIP64_SEARCH_BUFFER_MIN_SIZE,
+            )
+        ];
         while rightmost_frontier <= search_upper_bound {
             let remaining = search_upper_bound - rightmost_frontier;
-            let cur_len = cmp::min(remaining, Self::ZIP64_SEARCH_BUFFER_SIZE);
-            let cur_buf: &mut [u8] = &mut buf[..cur_len as usize];
+            let cur_len = cmp::min(remaining as usize, buf.len());
+            let cur_buf: &mut [u8] = &mut buf[..cur_len];
 
             reader.read_exact(cur_buf).await?;
 
-            if let Some(index_within_buffer) = memchr2::memmem::find(&cur_buf, &sig[..]) {
+            if let Some(index_within_buffer) = memchr2::memmem::find(
+                &cur_buf,
+                &ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes()[..],
+            ) {
                 let zip64_central_directory_end = rightmost_frontier + index_within_buffer as u64;
 
                 reader
@@ -545,7 +551,7 @@ impl Zip64CentralDirectoryEnd {
                     .await
                     .map(|cde| (cde, archive_offset));
             } else {
-                rightmost_frontier += cur_len;
+                rightmost_frontier += cur_len as u64;
             }
         }
 
