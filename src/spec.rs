@@ -129,17 +129,13 @@ impl CentralDirectoryEnd {
 
         let search_lower_bound =
             file_length.saturating_sub(Self::HEADER_SIZE + ::std::u16::MAX as u64);
-        dbg!(search_lower_bound);
 
         let mut buf = [0u8; Self::SEARCH_BUFFER_SIZE];
 
         let mut leftmost_frontier = file_length;
         while leftmost_frontier > search_lower_bound {
-            dbg!(leftmost_frontier);
             let remaining = leftmost_frontier - search_lower_bound;
-            dbg!(remaining);
             let cur_len = cmp::min(remaining as usize, buf.len());
-            dbg!(cur_len);
             let cur_buf: &mut [u8] = &mut buf[..cur_len];
 
             reader
@@ -150,10 +146,8 @@ impl CentralDirectoryEnd {
             if let Some(index_within_buffer) =
                 memchr2::memmem::rfind(&cur_buf, &CENTRAL_DIRECTORY_END_SIGNATURE.to_le_bytes()[..])
             {
-                dbg!(index_within_buffer);
                 let central_directory_end =
                     leftmost_frontier - cur_len as u64 + index_within_buffer as u64;
-                dbg!(central_directory_end);
 
                 reader
                     .seek(io::SeekFrom::Start(central_directory_end))

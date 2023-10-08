@@ -1107,7 +1107,7 @@ pub(crate) mod write_spec {
             writer.write_u32_le(file.crc32).await?;
             update_local_zip64_extra_field(writer.as_mut(), file).await?;
         } else {
-            // check compressed size as well as it can also be slightly larger than uncompressed size
+            // check compressed size as well as it can also be slightly larger than uncompressed
             if file.compressed_size > spec::ZIP64_BYTES_THR {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
