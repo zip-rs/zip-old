@@ -1030,7 +1030,6 @@ pub(crate) mod write_spec {
         types::ZipFileData,
     };
 
-    use byteorder::{ByteOrder, LittleEndian};
     use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
     use std::{io::IoSlice, mem, pin::Pin};
@@ -1054,9 +1053,7 @@ pub(crate) mod write_spec {
                 );
             }
 
-            let mut buf = [0u16; 2];
-            LittleEndian::from_slice_u16(&mut buf[..]);
-            let mut buf: [u8; 4] = unsafe { mem::transmute(buf) };
+            let mut buf = [0u8; 4];
             data.read_exact(&mut buf[..]).await?;
             let (kind, size): (u16, u16) = unsafe { mem::transmute(buf) };
 
@@ -1118,12 +1115,11 @@ pub(crate) mod write_spec {
                 )
                 .into());
             }
-            let mut buf: [u32; 3] = [
+            let buf: [u32; 3] = [
                 file.crc32,
                 file.compressed_size as u32,
                 file.uncompressed_size as u32,
             ];
-            LittleEndian::from_slice_u32(&mut buf[..]);
             let buf: [u8; 12] = unsafe { mem::transmute(buf) };
             writer.write_all(&buf[..]).await?;
         };
@@ -1139,8 +1135,7 @@ pub(crate) mod write_spec {
             .seek(io::SeekFrom::Start(zip64_extra_field + 4))
             .await?;
 
-        let mut buf: [u64; 2] = [file.uncompressed_size, file.compressed_size];
-        LittleEndian::from_slice_u64(&mut buf[..]);
+        let buf: [u64; 2] = [file.uncompressed_size, file.compressed_size];
         let buf: [u8; 16] = unsafe { mem::transmute(buf) };
         writer.write_all(&buf[..]).await?;
         // Excluded fields:
@@ -1158,25 +1153,26 @@ pub(crate) mod write_spec {
             (file.compressed_size as u32, file.uncompressed_size as u32)
         };
         #[allow(deprecated)]
-        let block = LocalHeaderBuffer {
-            magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
-            version_needed_to_extract: file.version_needed(),
-            flag: if !file.file_name.is_ascii() {
-                1u16 << 11
-            } else {
-                0
-            } | if file.encrypted { 1u16 << 0 } else { 0 },
-            compression_method: file.compression_method.to_u16(),
-            last_modified_time_timepart: file.last_modified_time.timepart(),
-            last_modified_time_datepart: file.last_modified_time.datepart(),
-            crc32: file.crc32,
-            compressed_size,
-            uncompressed_size,
-            file_name_length: file.file_name.as_bytes().len() as u16,
-            extra_field_length: if file.large_file { 20 } else { 0 }
-                + file.extra_field.len() as u16,
-        }
-        .writable_block();
+        let block: [u8; 30] = unsafe {
+            mem::transmute(LocalHeaderBuffer {
+                magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
+                version_needed_to_extract: file.version_needed(),
+                flag: if !file.file_name.is_ascii() {
+                    1u16 << 11
+                } else {
+                    0
+                } | if file.encrypted { 1u16 << 0 } else { 0 },
+                compression_method: file.compression_method.to_u16(),
+                last_modified_time_timepart: file.last_modified_time.timepart(),
+                last_modified_time_datepart: file.last_modified_time.datepart(),
+                crc32: file.crc32,
+                compressed_size,
+                uncompressed_size,
+                file_name_length: file.file_name.as_bytes().len() as u16,
+                extra_field_length: if file.large_file { 20 } else { 0 }
+                    + file.extra_field.len() as u16,
+            })
+        };
 
         let maybe_extra_field = if file.large_file {
             // This entry in the Local header MUST include BOTH original
@@ -1219,32 +1215,31 @@ pub(crate) mod write_spec {
         let zip64_extra_field = get_central_zip64_extra_field(file);
 
         #[allow(deprecated)]
-        let block = CentralDirectoryHeaderBuffer {
-            magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
-            version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
-            version_needed: file.version_needed(),
-            flag: if !file.file_name.is_ascii() {
-                1u16 << 11
-            } else {
-                0
-            } | if file.encrypted { 1u16 << 0 } else { 0 },
-            compression_method: file.compression_method.to_u16(),
-            last_modified_time_timepart: file.last_modified_time.timepart(),
-            last_modified_time_datepart: file.last_modified_time.datepart(),
-            crc32: file.crc32,
-            compressed_size: file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32,
-            uncompressed_size: file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32,
-            file_name_length: file.file_name.as_bytes().len() as u16,
-            extra_field_length: zip64_extra_field.len() as u16,
-            file_comment_length: 0,
-            disk_number_start: 0,
-            internal_attributes: 0,
-            external_attributes: file.external_attributes,
-            header_start: file.header_start.min(spec::ZIP64_BYTES_THR) as u32,
-        }
-        .writable_block();
-
-        writer.write_all(&block).await?;
+        let block: [u8; 46] = unsafe {
+            mem::transmute(CentralDirectoryHeaderBuffer {
+                magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
+                version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
+                version_needed: file.version_needed(),
+                flag: if !file.file_name.is_ascii() {
+                    1u16 << 11
+                } else {
+                    0
+                } | if file.encrypted { 1u16 << 0 } else { 0 },
+                compression_method: file.compression_method.to_u16(),
+                last_modified_time_timepart: file.last_modified_time.timepart(),
+                last_modified_time_datepart: file.last_modified_time.datepart(),
+                crc32: file.crc32,
+                compressed_size: file.compressed_size.min(spec::ZIP64_BYTES_THR) as u32,
+                uncompressed_size: file.uncompressed_size.min(spec::ZIP64_BYTES_THR) as u32,
+                file_name_length: file.file_name.as_bytes().len() as u16,
+                extra_field_length: zip64_extra_field.len() as u16,
+                file_comment_length: 0,
+                disk_number_start: 0,
+                internal_attributes: 0,
+                external_attributes: file.external_attributes,
+                header_start: file.header_start.min(spec::ZIP64_BYTES_THR) as u32,
+            })
+        };
 
         let fname = file.file_name.as_bytes();
 

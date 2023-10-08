@@ -199,14 +199,14 @@ async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
              * from the central record data alone. */
             extra_field_length,
             ..
-        } = LocalHeaderBuffer::extract(info);
+        } = unsafe { mem::transmute(info) };
 
         if magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid local file header"));
         }
 
         let data_start = data.header_start
-            + mem::size_of::<LocalHeaderBuffer>() as u64
+            + info.len() as u64
             + file_name_length as u64
             + extra_field_length as u64;
         data.data_start.store(data_start);
@@ -1104,7 +1104,7 @@ pub(crate) mod read_spec {
             external_attributes,
             header_start,
             ..
-        } = CentralDirectoryHeaderBuffer::extract(info);
+        } = unsafe { mem::transmute(info) };
 
         if magic != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid Central Directory header"));

@@ -1,12 +1,12 @@
 use crate::result::{ZipError, ZipResult};
 
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use std::io::prelude::*;
 use std::io::Seek;
 use std::pin::Pin;
-use std::{cmp, io::IoSlice, mem, slice};
+use std::{cmp, io::IoSlice, mem};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -37,28 +37,6 @@ struct CentralDirectoryEndBuffer {
     pub central_directory_size: u32,
     pub central_directory_offset: u32,
     pub zip_file_comment_length: u16,
-}
-
-impl CentralDirectoryEndBuffer {
-    #[inline]
-    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        let start: *mut u8 = info.as_mut_ptr();
-
-        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 11) });
-
-        unsafe { mem::transmute(info) }
-    }
-
-    #[inline]
-    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-        LittleEndian::from_slice_u16(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 11)
-        });
-
-        buf
-    }
 }
 
 impl CentralDirectoryEnd {
@@ -115,7 +93,7 @@ impl CentralDirectoryEnd {
             central_directory_size,
             central_directory_offset,
             zip_file_comment_length,
-        } = CentralDirectoryEndBuffer::extract(info);
+        } = unsafe { mem::transmute(info) };
 
         if magic != CENTRAL_DIRECTORY_END_SIGNATURE {
             return Err(ZipError::InvalidArchive("Invalid digital signature header"));
@@ -240,17 +218,18 @@ impl CentralDirectoryEnd {
     }
 
     pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
-        let block = CentralDirectoryEndBuffer {
-            magic: CENTRAL_DIRECTORY_END_SIGNATURE,
-            disk_number: self.disk_number,
-            disk_with_central_directory: self.disk_with_central_directory,
-            number_of_files_on_this_disk: self.number_of_files_on_this_disk,
-            number_of_files: self.number_of_files,
-            central_directory_size: self.central_directory_size,
-            central_directory_offset: self.central_directory_offset,
-            zip_file_comment_length: self.zip_file_comment.len() as u16,
-        }
-        .writable_block();
+        let block: [u8; 22] = unsafe {
+            mem::transmute(CentralDirectoryEndBuffer {
+                magic: CENTRAL_DIRECTORY_END_SIGNATURE,
+                disk_number: self.disk_number,
+                disk_with_central_directory: self.disk_with_central_directory,
+                number_of_files_on_this_disk: self.number_of_files_on_this_disk,
+                number_of_files: self.number_of_files,
+                central_directory_size: self.central_directory_size,
+                central_directory_offset: self.central_directory_offset,
+                zip_file_comment_length: self.zip_file_comment.len() as u16,
+            })
+        };
 
         if writer.is_write_vectored() {
             /* TODO: zero-copy!! */
@@ -279,28 +258,6 @@ struct Zip64CentralDirectoryEndLocatorBuffer {
     pub disk_with_central_directory: u32,
     pub end_of_central_directory_offset: u64,
     pub number_of_disks: u32,
-}
-
-impl Zip64CentralDirectoryEndLocatorBuffer {
-    #[inline]
-    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        let start: *mut u8 = info.as_mut_ptr();
-
-        LittleEndian::from_slice_u32(unsafe { slice::from_raw_parts_mut(start as *mut u32, 5) });
-
-        unsafe { mem::transmute(info) }
-    }
-
-    #[inline]
-    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-        LittleEndian::from_slice_u32(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u32, 5)
-        });
-
-        buf
-    }
 }
 
 impl Zip64CentralDirectoryEndLocator {
@@ -332,7 +289,7 @@ impl Zip64CentralDirectoryEndLocator {
             disk_with_central_directory,
             end_of_central_directory_offset,
             number_of_disks,
-        } = Zip64CentralDirectoryEndLocatorBuffer::extract(info);
+        } = unsafe { mem::transmute(info) };
 
         if magic != ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE {
             return Err(ZipError::InvalidArchive(
@@ -356,13 +313,14 @@ impl Zip64CentralDirectoryEndLocator {
     }
 
     pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
-        let block = Zip64CentralDirectoryEndLocatorBuffer {
-            magic: ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE,
-            disk_with_central_directory: self.disk_with_central_directory,
-            end_of_central_directory_offset: self.end_of_central_directory_offset,
-            number_of_disks: self.number_of_disks,
-        }
-        .writable_block();
+        let block: [u8; 20] = unsafe {
+            mem::transmute(Zip64CentralDirectoryEndLocatorBuffer {
+                magic: ZIP64_CENTRAL_DIRECTORY_END_LOCATOR_SIGNATURE,
+                disk_with_central_directory: self.disk_with_central_directory,
+                end_of_central_directory_offset: self.end_of_central_directory_offset,
+                number_of_disks: self.number_of_disks,
+            })
+        };
 
         if writer.is_write_vectored() {
             /* TODO: zero-copy?? */
@@ -401,28 +359,6 @@ struct Zip64CentralDirectoryEndBuffer {
     pub number_of_files: u64,
     pub central_directory_size: u64,
     pub central_directory_offset: u64,
-}
-
-impl Zip64CentralDirectoryEndBuffer {
-    #[inline]
-    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        let start: *mut u8 = info.as_mut_ptr();
-
-        LittleEndian::from_slice_u32(unsafe { slice::from_raw_parts_mut(start as *mut u32, 14) });
-
-        unsafe { mem::transmute(info) }
-    }
-
-    #[inline]
-    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-        LittleEndian::from_slice_u32(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u32, 14)
-        });
-
-        buf
-    }
 }
 
 impl Zip64CentralDirectoryEnd {
@@ -490,7 +426,7 @@ impl Zip64CentralDirectoryEnd {
             number_of_files,
             central_directory_size,
             central_directory_offset,
-        } = Zip64CentralDirectoryEndBuffer::extract(info);
+        } = unsafe { mem::transmute(info) };
 
         assert_eq!(record_size, 44);
 
@@ -566,19 +502,20 @@ impl Zip64CentralDirectoryEnd {
     }
 
     pub async fn write_async<T: io::AsyncWrite>(&self, mut writer: Pin<&mut T>) -> ZipResult<()> {
-        let block = Zip64CentralDirectoryEndBuffer {
-            magic: ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE,
-            record_size: 44,
-            version_made_by: self.version_made_by,
-            version_needed_to_extract: self.version_needed_to_extract,
-            disk_number: self.disk_number,
-            disk_with_central_directory: self.disk_with_central_directory,
-            number_of_files_on_this_disk: self.number_of_files_on_this_disk,
-            number_of_files: self.number_of_files,
-            central_directory_size: self.central_directory_size,
-            central_directory_offset: self.central_directory_offset,
-        }
-        .writable_block();
+        let block: [u8; 56] = unsafe {
+            mem::transmute(Zip64CentralDirectoryEndBuffer {
+                magic: ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE,
+                record_size: 44,
+                version_made_by: self.version_made_by,
+                version_needed_to_extract: self.version_needed_to_extract,
+                disk_number: self.disk_number,
+                disk_with_central_directory: self.disk_with_central_directory,
+                number_of_files_on_this_disk: self.number_of_files_on_this_disk,
+                number_of_files: self.number_of_files,
+                central_directory_size: self.central_directory_size,
+                central_directory_offset: self.central_directory_offset,
+            })
+        };
 
         if writer.is_write_vectored() {
             /* TODO: zero-copy?? */
@@ -617,67 +554,23 @@ pub struct LocalHeaderBuffer {
     pub extra_field_length: u16,
 }
 
-impl LocalHeaderBuffer {
-    #[inline]
-    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        let start: *mut u8 = info.as_mut_ptr();
-
-        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 15) });
-
-        unsafe { mem::transmute(info) }
-    }
-
-    #[inline]
-    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-        LittleEndian::from_slice_u16(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 15)
-        });
-
-        buf
-    }
-}
-
 #[repr(packed)]
 pub struct CentralDirectoryHeaderBuffer {
-    pub magic: u32,                       /* 2 */
-    pub version_made_by: u16,             /* 1 */
-    pub version_needed: u16,              /* 1 */
-    pub flag: u16,                        /* 1 */
-    pub compression_method: u16,          /* 1 */
-    pub last_modified_time_timepart: u16, /* 1 */
-    pub last_modified_time_datepart: u16, /* 1 */
-    pub crc32: u32,                       /* 2 */
-    pub compressed_size: u32,             /* 2 */
-    pub uncompressed_size: u32,           /* 2 */
-    pub file_name_length: u16,            /* 1 */
-    pub extra_field_length: u16,          /* 1 */
-    pub file_comment_length: u16,         /* 1 */
-    pub disk_number_start: u16,           /* 1 */
-    pub internal_attributes: u16,         /* 1 */
-    pub external_attributes: u32,         /* 2 */
-    pub header_start: u32,                /* 2 */
-}
-
-impl CentralDirectoryHeaderBuffer {
-    #[inline]
-    pub fn extract(mut info: [u8; mem::size_of::<Self>()]) -> Self {
-        let start: *mut u8 = info.as_mut_ptr();
-
-        LittleEndian::from_slice_u16(unsafe { slice::from_raw_parts_mut(start as *mut u16, 22) });
-
-        unsafe { mem::transmute(info) }
-    }
-
-    #[inline]
-    pub fn writable_block(self) -> [u8; mem::size_of::<Self>()] {
-        let mut buf: [u8; mem::size_of::<Self>()] = unsafe { mem::transmute(self) };
-
-        LittleEndian::from_slice_u16(unsafe {
-            slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u16, 22)
-        });
-
-        buf
-    }
+    pub magic: u32,
+    pub version_made_by: u16,
+    pub version_needed: u16,
+    pub flag: u16,
+    pub compression_method: u16,
+    pub last_modified_time_timepart: u16,
+    pub last_modified_time_datepart: u16,
+    pub crc32: u32,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub file_name_length: u16,
+    pub extra_field_length: u16,
+    pub file_comment_length: u16,
+    pub disk_number_start: u16,
+    pub internal_attributes: u16,
+    pub external_attributes: u32,
+    pub header_start: u32,
 }
