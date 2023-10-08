@@ -188,6 +188,9 @@ impl CentralDirectoryEnd {
                     .await
                     .map(|cde| (cde, central_directory_end));
             } else {
+                reader
+                    .seek(io::SeekFrom::Current(-(cur_len as i64)))
+                    .await?;
                 leftmost_frontier -= cur_len;
             }
         }
