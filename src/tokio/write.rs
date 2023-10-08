@@ -1,7 +1,7 @@
 use crate::{
     compression::CompressionMethod,
     result::{ZipError, ZipResult},
-    spec::{self, CentralDirectoryHeaderBuffer, LocalHeaderBuffer},
+    spec,
     tokio::{
         buf_writer::BufWriter,
         read::{read_spec, Shared, ZipArchive},
@@ -1033,7 +1033,7 @@ pub(crate) mod write_spec {
     use byteorder::{ByteOrder, LittleEndian};
     use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-    use std::{io::IoSlice, mem, pin::Pin, slice};
+    use std::{io::IoSlice, mem, pin::Pin};
 
     pub async fn validate_extra_data(file: &ZipFileData) -> ZipResult<()> {
         if file.extra_field.len() > spec::ZIP64_ENTRY_THR {
@@ -1157,6 +1157,7 @@ pub(crate) mod write_spec {
         } else {
             (file.compressed_size as u32, file.uncompressed_size as u32)
         };
+        #[allow(deprecated)]
         let block = LocalHeaderBuffer {
             magic: spec::LOCAL_FILE_HEADER_SIGNATURE,
             version_needed_to_extract: file.version_needed(),
@@ -1165,8 +1166,7 @@ pub(crate) mod write_spec {
             } else {
                 0
             } | if file.encrypted { 1u16 << 0 } else { 0 },
-            compression_method: #[allow(deprecated)]
-            file.compression_method.to_u16(),
+            compression_method: file.compression_method.to_u16(),
             last_modified_time_timepart: file.last_modified_time.timepart(),
             last_modified_time_datepart: file.last_modified_time.datepart(),
             crc32: file.crc32,
@@ -1218,6 +1218,7 @@ pub(crate) mod write_spec {
     ) -> ZipResult<()> {
         let zip64_extra_field = get_central_zip64_extra_field(file);
 
+        #[allow(deprecated)]
         let block = CentralDirectoryHeaderBuffer {
             magic: spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE,
             version_made_by: (file.system as u16) << 8 | (file.version_made_by as u16),
@@ -1227,8 +1228,7 @@ pub(crate) mod write_spec {
             } else {
                 0
             } | if file.encrypted { 1u16 << 0 } else { 0 },
-            compression_method: #[allow(deprecated)]
-            file.compression_method.to_u16(),
+            compression_method: file.compression_method.to_u16(),
             last_modified_time_timepart: file.last_modified_time.timepart(),
             last_modified_time_datepart: file.last_modified_time.datepart(),
             crc32: file.crc32,
@@ -1316,18 +1316,4 @@ pub(crate) mod write_spec {
 
         ret
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    use std::io::Cursor;
-
-    /* #[test] */
-    /* #[should_panic(expected = "internal error: entered unreachable code: must call .finish()!")] */
-    /* fn test_drop() { */
-    /*     let buf = Cursor::new(Vec::<u8>::new()); */
-    /*     let _f = ZipWriter::new(Box::pin(buf)); */
-    /* } */
 }

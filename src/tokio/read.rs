@@ -1,6 +1,6 @@
 use crate::compression::CompressionMethod;
 use crate::result::{ZipError, ZipResult};
-use crate::spec::{self, CentralDirectoryHeaderBuffer, LocalHeaderBuffer};
+use crate::spec::{self, LocalHeaderBuffer};
 use crate::tokio::{
     buf_reader::BufReader, combinators::Limiter, crc32::Crc32Reader, extraction::CompletedPaths,
     stream_impls::deflate, utils::map_take_manual_drop, WrappedPin,
@@ -15,7 +15,6 @@ use crate::types::ZipFileData;
 use flate2::Decompress;
 
 use async_stream::try_stream;
-use byteorder::{ByteOrder, LittleEndian};
 use cfg_if::cfg_if;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, stream::TryStreamExt};
@@ -33,7 +32,7 @@ use std::{
     num, ops,
     path::{Path, PathBuf},
     pin::Pin,
-    slice, str,
+    str,
     sync::Arc,
     task::{Context, Poll},
 };

@@ -6,7 +6,7 @@ use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::io::prelude::*;
 use std::io::Seek;
 use std::pin::Pin;
-use std::{cmp, io::IoSlice, mem, ptr, slice};
+use std::{cmp, io::IoSlice, mem, slice};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;

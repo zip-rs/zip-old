@@ -9,12 +9,10 @@ use libc;
 use once_cell::sync::Lazy;
 
 use std::{
-    ffi::c_void,
     io, mem,
     os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
     pin::Pin,
     ptr,
-    task::{Context, Poll},
 };
 
 macro_rules! cvt {
@@ -193,7 +191,6 @@ pub fn copy_file_range(
         let cur_written = iter_copy_file_range(src.as_mut(), dst.as_mut(), remaining)?;
         assert!(cur_written <= remaining);
         if cur_written == 0 {
-            debug_assert!(remaining > 0);
             return Ok(full_len - remaining);
         }
         remaining -= cur_written;

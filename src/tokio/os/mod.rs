@@ -1,12 +1,11 @@
 use crate::{
-    result::ZipResult,
     tokio::read::{Shared, SharedData},
     types::ZipFileData,
 };
 
 pub mod copy_file_range;
 
-use std::{cmp, ops, os::fd::AsRawFd, path::PathBuf, pin::Pin, sync::Arc};
+use std::{cmp, ops, sync::Arc};
 
 #[derive(Debug)]
 pub struct SharedSubset {
@@ -160,12 +159,9 @@ impl SharedSubset {
 mod test {
     use super::*;
 
-    use crate::{
-        tokio::{read::ZipArchive, write::ZipWriter},
-        write::FileOptions,
-    };
+    use crate::{result::ZipResult, tokio::write::ZipWriter, write::FileOptions};
     use std::{io::Cursor, pin::Pin};
-    use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
 
     #[tokio::test]
     async fn test_split_contiguous_chunks() -> ZipResult<()> {
