@@ -70,6 +70,12 @@ impl MutateInnerOffset {
     }
 }
 
+impl IntoRawFd for MutateInnerOffset {
+    fn into_raw_fd(self) -> RawFd {
+        self.into_owned().into_raw_fd()
+    }
+}
+
 impl CopyFileRangeHandle for MutateInnerOffset {
     fn role(&self) -> Role {
         self.role
