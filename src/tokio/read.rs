@@ -702,14 +702,14 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
 
         /* Rewind to the beginning of the file.
          *
-         * NB: we *could* decide to start copying from new_files[0].header_start instead, which
+         * NB: we *could* decide to start copying from shared.offset instead, which
          * would avoid copying over e.g. any pex shebangs or other file contents that start before
          * the first zip file entry. However, zip files actually shouldn't care about garbage data
          * in *between* real entries, since the central directory header records the correct start
          * location of each, and keeping track of that math is more complicated logic that will only
          * rarely be used, since most zips that get merged together are likely to be produced
          * specifically for that purpose (and therefore are unlikely to have a shebang or other
-         * preface). Finally, this preserves any data that might actually be useful.
+         * preface). Finally, this preserves any data that might actually be desired.
          */
         self.as_mut()
             .pin_reader_assert()
