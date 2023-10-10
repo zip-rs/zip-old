@@ -81,8 +81,8 @@ pub mod subset {
             let chunked_entry_ranges: Vec<ops::RangeInclusive<usize>> = all_entry_indices
                 .chunks(chunk_size)
                 .map(|chunk_indices| {
-                    let min = *chunk_indices.iter().min().unwrap();
-                    let max = *chunk_indices.iter().max().unwrap();
+                    let min = *chunk_indices.first().unwrap();
+                    let max = *chunk_indices.last().unwrap();
                     min..=max
                 })
                 .collect();
