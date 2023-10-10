@@ -76,6 +76,12 @@ impl IntoRawFd for MutateInnerOffset {
     }
 }
 
+impl From<MutateInnerOffset> for std::fs::File {
+    fn from(x: MutateInnerOffset) -> Self {
+        x.into_owned().into()
+    }
+}
+
 impl CopyFileRangeHandle for MutateInnerOffset {
     fn role(&self) -> Role {
         self.role
@@ -463,6 +469,10 @@ mod test {
             splice_to_pipe(Pin::new(&mut in_file), Pin::new(&mut w), 5)
                 .await
                 .unwrap();
+
+            let in_file: fs::File = in_file.into();
+            let mut in_file = tokio::fs::File::from_std(in_file);
+            assert_eq!(5, in_file.stream_position().await.unwrap());
         });
 
         let r_task = tokio::spawn(async move {
