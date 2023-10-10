@@ -867,7 +867,7 @@ impl<S: io::AsyncRead + io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
     /// let mut src2 = zip.finish_into_readable().await?;
     /// let src2 = Pin::new(&mut src2);
     ///
-    /// let mut zip = ZipWriter::new_append(src);
+    /// let mut zip = ZipWriter::new_append(src)?;
     /// let mut zp = Pin::new(&mut zip);
     /// zp.merge_archive(src2).await?;
     /// let mut result = zip.finish_into_readable().await?;
@@ -877,7 +877,7 @@ impl<S: io::AsyncRead + io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
     /// {
     ///   use zip::tokio::read::SharedData;
     ///   assert_eq!(zp.shared().len(), 2);
-    ///}
+    /// }
     /// zp.as_mut().by_name("a.txt").await?.read_to_string(&mut s).await?;
     /// assert_eq!(s, "hello\n");
     /// s.clear();
