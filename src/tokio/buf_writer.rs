@@ -101,11 +101,6 @@ impl<W> BufWriter<W> {
             }
         }
     }
-
-    #[inline]
-    pub fn buffer(&self) -> &[u8] {
-        &self.buf[self.read_end..self.write_end]
-    }
 }
 
 impl<W> WrappedPin<W> for BufWriter<W> {
@@ -117,7 +112,6 @@ impl<W> WrappedPin<W> for BufWriter<W> {
 impl<W: io::AsyncWrite> BufWriter<W> {
     fn flush_one_readable(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         assert!(!self.readable_data().is_empty());
-        dbg!(self.readable_data());
 
         let me = self.as_mut().project();
         let read_buf: &[u8] = &me.buf[*me.read_end..*me.write_end];
@@ -127,7 +121,6 @@ impl<W: io::AsyncWrite> BufWriter<W> {
                 return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
             }
             Some(read) => {
-                eprintln!("read = {}", read);
                 self.consume_read(read);
             }
         }
@@ -155,7 +148,6 @@ impl<W: io::AsyncWrite> AsyncBufWrite for BufWriter<W> {
     fn readable_data(&self) -> &[u8] {
         debug_assert!(self.read_end <= self.write_end);
         debug_assert!(self.write_end <= self.buf.len());
-        dbg!(self.write_end - self.read_end);
         &self.buf[self.read_end..self.write_end]
     }
 

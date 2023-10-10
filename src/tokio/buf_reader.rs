@@ -8,14 +8,15 @@ use tokio::io::AsyncRead;
 use tokio::io::{self, AsyncBufRead};
 
 use std::{
-    cmp, fmt, num,
+    cmp, fmt,
+    num::NonZeroUsize,
     pin::Pin,
     task::{ready, Context, Poll},
 };
 
 // used by `BufReader` and `BufWriter`
 // https://github.com/rust-lang/rust/blob/master/library/std/src/sys_common/io.rs#L1
-const DEFAULT_BUF_SIZE: num::NonZeroUsize = unsafe { num::NonZeroUsize::new_unchecked(8 * 1024) };
+const DEFAULT_BUF_SIZE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8 * 1024) };
 
 /// The `BufReader` struct adds buffering to any reader.
 ///
@@ -69,7 +70,7 @@ impl<R> BufReader<R> {
     }
 
     /// Creates a new `BufReader` with the specified buffer capacity.
-    pub fn with_capacity(capacity: num::NonZeroUsize, inner: Pin<Box<R>>) -> Self {
+    pub fn with_capacity(capacity: NonZeroUsize, inner: Pin<Box<R>>) -> Self {
         let buffer = vec![0; capacity.into()];
         Self {
             inner,
@@ -80,8 +81,8 @@ impl<R> BufReader<R> {
     }
 
     #[inline]
-    pub fn capacity(&self) -> usize {
-        self.buf.len()
+    pub fn capacity(&self) -> NonZeroUsize {
+        unsafe { NonZeroUsize::new_unchecked(self.buf.len()) }
     }
 
     #[inline]
@@ -101,14 +102,8 @@ impl<R> BufReader<R> {
     }
 
     #[inline]
-    fn cur_len(&self) -> usize {
-        debug_assert!(self.cap >= self.pos);
-        self.cap - self.pos
-    }
-
-    #[inline]
     fn is_empty(&self) -> bool {
-        self.cur_len() == 0
+        self.cap == self.pos
     }
 
     /// Returns a reference to the internally buffered data.
@@ -134,7 +129,7 @@ impl<R> BufReader<R> {
 
     #[inline]
     fn request_is_larger_than_buffer(&self, buf: &io::ReadBuf<'_>) -> bool {
-        buf.remaining() >= self.capacity()
+        buf.remaining() >= self.capacity().get()
     }
 
     #[inline]
@@ -143,10 +138,10 @@ impl<R> BufReader<R> {
     }
 }
 
-/// Consumes this `BufReader`, returning the underlying reader.
-///
-/// Note that any leftover data in the internal buffer is lost.
 impl<R> WrappedPin<R> for BufReader<R> {
+    /// Consumes this `BufReader`, returning the underlying reader.
+    ///
+    /// Note that any leftover data in the internal buffer is lost.
     fn unwrap_inner_pin(self) -> Pin<Box<R>> {
         self.inner
     }
@@ -163,7 +158,6 @@ impl<R: io::AsyncRead> BufReader<R> {
         Poll::Ready(res)
     }
 
-    #[inline]
     fn reset_to_single_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -209,6 +203,7 @@ impl<R: io::AsyncRead> io::AsyncBufRead for BufReader<R> {
         Poll::Ready(Ok(buf))
     }
 
+    #[inline]
     fn consume(self: Pin<&mut Self>, amt: usize) {
         if amt == 0 {
             return;
