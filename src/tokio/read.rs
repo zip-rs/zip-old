@@ -1042,10 +1042,12 @@ impl<S> ZipArchive<S> {
         stream: Pin<Box<S>>,
         directory_start: u64,
     ) -> ZipResult<Self> {
+        use rayon::prelude::*;
+
         /* This is where the whole file starts. */
         if let Some(initial_offset) = files.first().map(|d| d.header_start) {
             let files: IndexMap<String, ZipFileData> = files
-                .into_iter()
+                .into_par_iter()
                 .map(|d| (d.file_name.clone(), d))
                 .collect();
             let shared = Shared {
