@@ -646,10 +646,18 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
     pub(crate) async fn merge_contents<W: io::AsyncWrite + io::AsyncSeek>(
         mut self: Pin<&mut Self>,
         mut w: Pin<&mut W>,
-    ) -> ZipResult<Vec<ZipFileData>> {
-        let mut new_files: Vec<ZipFileData> = self.shared.files.values().cloned().collect();
+    ) -> ZipResult<Box<[ZipFileData]>> {
+        use rayon::prelude::*;
+
+        let mut new_files: Box<[ZipFileData]> = self
+            .shared
+            .files
+            .par_values()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         if new_files.is_empty() {
-            return Ok(Vec::new());
+            return Ok(new_files);
         }
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
@@ -659,9 +667,10 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
          */
 
         let new_initial_header_start = w.stream_position().await?;
+
         /* Push back file header starts for all entries in the covered files. */
         new_files
-            .iter_mut()
+            .par_iter_mut()
             .map(|f| {
                 /* This is probably the only really important thing to change. */
                 f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(

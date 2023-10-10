@@ -837,7 +837,8 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
             InnerProj::NoActiveFile(writer) => source.merge_contents(writer).await?,
         };
         /* These file entries are now ours! */
-        me.files.extend(new_files);
+        let new_files: Vec<ZipFileData> = new_files.into();
+        me.files.extend(new_files.into_iter());
 
         Ok(())
     }

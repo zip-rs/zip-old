@@ -25,12 +25,13 @@ flate2 = { version = "1.0.23", default-features = false, optional = true }
 futures-core = { version = "0.3", optional = true }
 futures-util = { version = "0.3", optional = true }
 hmac = { version = "0.12.1", optional = true, features = ["reset"] }
-indexmap = { version =  "2", optional = true }
+indexmap = { version =  "2", features = ["rayon"], optional = true }
 libc = { version = "0.2.148", optional = true }
 num_enum = "0.6.1"
 once_cell = { version = "1.18.0", optional = true }
 parking_lot = { version = "0.12.1", features = ["arc_lock"], optional = true }
 pbkdf2 = {version = "0.11.0", optional = true }
+rayon = { version = "1.8.0", optional = true }
 sha1 = {version = "0.10.1", optional = true }
 static_assertions = { version = "1.1.0", optional = true }
 time = { version = "0.3.7", optional = true, default-features = false, features = ["std"] }
@@ -65,7 +66,7 @@ deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 tokio-async = [
   "dep:tokio", "dep:memchr2", "dep:tokio-stream", "dep:tokio-pipe", "dep:parking_lot", "dep:libc", "dep:futures-core",
-  "dep:futures-util", "dep:async-stream", "dep:indexmap", "dep:once_cell", "dep:static_assertions",
+  "dep:futures-util", "dep:async-stream", "dep:indexmap", "dep:once_cell", "dep:static_assertions", "dep:rayon",
 ]
 unreserved = []
 default = ["aes-crypto", "bzip2", "deflate", "time", "zstd", "tokio-async"]
