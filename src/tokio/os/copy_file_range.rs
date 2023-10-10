@@ -466,9 +466,12 @@ mod test {
         let (mut r, mut w) = tokio_pipe::pipe().unwrap();
 
         let w_task = tokio::spawn(async move {
-            splice_to_pipe(Pin::new(&mut in_file), Pin::new(&mut w), 5)
-                .await
-                .unwrap();
+            assert_eq!(
+                5,
+                splice_to_pipe(Pin::new(&mut in_file), Pin::new(&mut w), 6)
+                    .await
+                    .unwrap()
+            );
 
             let in_file: fs::File = in_file.into();
             let mut in_file = tokio::fs::File::from_std(in_file);
@@ -476,9 +479,12 @@ mod test {
         });
 
         let r_task = tokio::spawn(async move {
-            splice_from_pipe(Pin::new(&mut r), Pin::new(&mut out_file_handle), 5)
-                .await
-                .unwrap();
+            assert_eq!(
+                5,
+                splice_from_pipe(Pin::new(&mut r), Pin::new(&mut out_file_handle), 6)
+                    .await
+                    .unwrap()
+            );
             assert_eq!(out_file_handle.offset, 5);
         });
 
