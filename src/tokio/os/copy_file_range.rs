@@ -495,4 +495,16 @@ mod test {
         out_file.read_to_string(&mut s).await.unwrap();
         assert_eq!(&s, "hello");
     }
+
+    #[test]
+    fn test_has_vectored_write() {
+        use tokio::io::AsyncWrite;
+
+        let f = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        /* FIXME: provide a File object with vectored async write via writev! */
+        assert!(!f.is_write_vectored());
+
+        let f = io::Cursor::new(Vec::new());
+        assert!(f.is_write_vectored());
+    }
 }
