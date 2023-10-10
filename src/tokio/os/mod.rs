@@ -1,5 +1,4 @@
 pub mod copy_file_range;
-pub mod pipe;
 
 #[macro_export]
 macro_rules! cvt {

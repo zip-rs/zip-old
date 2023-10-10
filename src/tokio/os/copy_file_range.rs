@@ -5,6 +5,8 @@ use cfg_if::cfg_if;
 use displaydoc::Display;
 use libc;
 use once_cell::sync::Lazy;
+use tokio::task;
+use tokio_pipe::{PipeRead, PipeWrite};
 
 use std::{
     io, mem,
@@ -128,7 +130,7 @@ fn convert_option_ptr<T>(mut p: Option<&mut T>) -> *mut T {
     }
 }
 
-pub fn iter_copy_file_range(
+pub async fn iter_copy_file_range(
     src: Pin<&mut impl CopyFileRangeHandle>,
     dst: Pin<&mut impl CopyFileRangeHandle>,
     len: usize,
@@ -139,22 +141,94 @@ pub fn iter_copy_file_range(
         off: off_in,
     } = src.as_args();
     let off_in = convert_option_ptr(off_in);
+    let off_in = off_in as usize;
+
     assert_eq!(dst.role(), Role::Writable);
     let RawArgs {
         fd: fd_out,
         off: off_out,
     } = dst.as_args();
     let off_out = convert_option_ptr(off_out);
+    let off_out = off_out as usize;
 
     /* These must always be set to 0 for now. */
     const FUTURE_FLAGS: libc::c_uint = 0;
-    let written: libc::ssize_t =
-        cvt!(unsafe { libc::copy_file_range(fd_in, off_in, fd_out, off_out, len, FUTURE_FLAGS) })?;
+    let written: libc::ssize_t = task::spawn_blocking(move || {
+        let off_in = off_in as *mut libc::off64_t;
+        let off_out = off_out as *mut libc::off64_t;
+        cvt!(unsafe { libc::copy_file_range(fd_in, off_in, fd_out, off_out, len, FUTURE_FLAGS) })
+    })
+    .await
+    .unwrap()?;
     assert!(written >= 0);
     Ok(written as usize)
 }
 
-pub fn copy_file_range(
+pub async fn iter_splice_from_pipe(
+    mut src: Pin<&mut PipeRead>,
+    dst: Pin<&mut impl CopyFileRangeHandle>,
+    len: usize,
+) -> io::Result<usize> {
+    assert_eq!(dst.role(), Role::Writable);
+    let RawArgs {
+        fd: fd_out,
+        off: off_out,
+    } = dst.as_args();
+
+    src.splice_to_blocking_fd(fd_out, off_out, len, false).await
+}
+
+pub async fn splice_from_pipe(
+    mut src: Pin<&mut PipeRead>,
+    mut dst: Pin<&mut impl CopyFileRangeHandle>,
+    full_len: usize,
+) -> io::Result<usize> {
+    let mut remaining = full_len;
+
+    while remaining > 0 {
+        let cur_written = iter_splice_from_pipe(src.as_mut(), dst.as_mut(), remaining).await?;
+        assert!(cur_written <= remaining);
+        if cur_written == 0 {
+            return Ok(full_len - remaining);
+        }
+        remaining -= cur_written;
+    }
+    Ok(full_len)
+}
+
+pub async fn iter_splice_to_pipe(
+    src: Pin<&mut impl CopyFileRangeHandle>,
+    mut dst: Pin<&mut PipeWrite>,
+    len: usize,
+) -> io::Result<usize> {
+    assert_eq!(src.role(), Role::Readable);
+    let RawArgs {
+        fd: fd_in,
+        off: off_in,
+    } = src.as_args();
+
+    dst.splice_from_blocking_fd(fd_in, off_in, len).await
+}
+
+pub async fn splice_to_pipe(
+    mut src: Pin<&mut impl CopyFileRangeHandle>,
+    mut dst: Pin<&mut PipeWrite>,
+    full_len: usize,
+) -> io::Result<usize> {
+    let mut remaining = full_len;
+
+    while remaining > 0 {
+        let cur_written = iter_splice_to_pipe(src.as_mut(), dst.as_mut(), remaining).await?;
+        assert!(cur_written <= remaining);
+        if cur_written == 0 {
+            return Ok(full_len - remaining);
+        }
+        remaining -= cur_written;
+    }
+    Ok(full_len)
+}
+
+pub async fn copy_file_range(
     mut src: Pin<&mut impl CopyFileRangeHandle>,
     mut dst: Pin<&mut impl CopyFileRangeHandle>,
     full_len: usize,
@@ -162,7 +236,7 @@ pub fn copy_file_range(
     let mut remaining = full_len;
 
     while remaining > 0 {
-        let cur_written = iter_copy_file_range(src.as_mut(), dst.as_mut(), remaining)?;
+        let cur_written = iter_copy_file_range(src.as_mut(), dst.as_mut(), remaining).await?;
         assert!(cur_written <= remaining);
         if cur_written == 0 {
             return Ok(full_len - remaining);
@@ -323,8 +397,8 @@ mod test {
         assert!(validate_raw_fd(fd, Role::Readable).is_err());
     }
 
-    #[test]
-    fn read_ref_into_write_owned() {
+    #[tokio::test]
+    async fn read_ref_into_write_owned() {
         use io::{Read, Seek};
 
         let td = tempfile::tempdir().unwrap();
@@ -353,7 +427,7 @@ mod test {
         assert_eq!(
             4,
             /* NB: 5 bytes were requested! */
-            copy_file_range(sp, dp, 5).unwrap()
+            copy_file_range(sp, dp, 5).await.unwrap()
         );
         assert_eq!(4, src.offset);
 
@@ -363,5 +437,40 @@ mod test {
         let mut s = String::new();
         dst.read_to_string(&mut s).unwrap();
         assert_eq!(&s, "wow!");
+    }
+
+    #[tokio::test]
+    async fn test_splice_blocking() {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+        let mut in_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        in_file.write_all(b"hello").await.unwrap();
+        in_file.rewind().await.unwrap();
+        let mut in_file = MutateInnerOffset::new(in_file.into_std().await, Role::Readable).unwrap();
+
+        let mut out_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        let mut out_file_handle = FromGivenOffset::new(&out_file, Role::Writable, 0).unwrap();
+
+        let (mut r, mut w) = tokio_pipe::pipe().unwrap();
+
+        let w_task = tokio::spawn(async move {
+            splice_to_pipe(Pin::new(&mut in_file), Pin::new(&mut w), 5)
+                .await
+                .unwrap();
+        });
+
+        let r_task = tokio::spawn(async move {
+            splice_from_pipe(Pin::new(&mut r), Pin::new(&mut out_file_handle), 5)
+                .await
+                .unwrap();
+            assert_eq!(out_file_handle.offset, 5);
+        });
+
+        tokio::try_join!(w_task, r_task).unwrap();
+
+        assert_eq!(0, out_file.stream_position().await.unwrap());
+        let mut s = String::new();
+        out_file.read_to_string(&mut s).await.unwrap();
+        assert_eq!(&s, "hello");
     }
 }

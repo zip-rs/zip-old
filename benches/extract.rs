@@ -76,22 +76,21 @@ pub fn bench_io(c: &mut Criterion) {
         }
 
         group.bench_function(BenchmarkId::new(&id, "<copy_file_range>"), |b| {
-            use std::fs;
             use zip::tokio::os::copy_file_range::*;
 
             let td = tempdir().unwrap();
-            b.iter(|| {
-                let sync_handle = fs::File::open(path).unwrap();
+            b.to_async(&rt).iter(|| async {
+                let sync_handle = std::fs::File::open(path).unwrap();
                 let mut src = MutateInnerOffset::new(sync_handle, Role::Readable).unwrap();
                 let mut src = Pin::new(&mut src);
 
                 let cur_name = format!("{}.zip", Uuid::new_v4());
                 let tf = td.path().join(cur_name);
-                let out = fs::File::create(tf).unwrap();
+                let out = std::fs::File::create(tf).unwrap();
                 let mut dst = MutateInnerOffset::new(out, Role::Writable).unwrap();
                 let mut dst = Pin::new(&mut dst);
 
-                let written = copy_file_range(src, dst, len).unwrap();
+                let written = copy_file_range(src, dst, len).await.unwrap();
                 assert_eq!(written, len);
             });
         });
