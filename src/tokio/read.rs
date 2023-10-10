@@ -704,15 +704,15 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
          */
         self.as_mut()
             .pin_reader_assert()
-            .seek(io::SeekFrom::Start(shared.offset))
+            .seek(io::SeekFrom::Start(0))
             .await?;
         /* Find the end of the file data. */
-        let length_to_read = (shared.directory_start - shared.offset) as usize;
+        let length_to_read = shared.directory_start as usize;
 
         let inner = self.as_mut().pin_reader_mut_option().take().unwrap();
         /* Produce an AsyncRead that reads bytes up until the start of the central directory
          * header. */
-        let mut limited_raw = Limiter::take(shared.offset, inner, length_to_read);
+        let mut limited_raw = Limiter::take(0, inner, length_to_read);
         io::copy(&mut limited_raw, &mut w).await?;
 
         let _ = self
