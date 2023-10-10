@@ -23,7 +23,6 @@ macro_rules! try_libc {
     }};
 }
 
-#[allow(dead_code)]
 pub enum SyscallAvailability {
     Available,
     FailedProbe(std::io::Error),
@@ -72,7 +71,11 @@ pub mod subset {
     }
 
     impl SharedSubset {
-        pub(crate) fn split_contiguous_chunks(
+        pub fn parent(&self) -> Arc<Shared> {
+            self.parent.clone()
+        }
+
+        pub fn split_contiguous_chunks(
             parent: Arc<Shared>,
             num_chunks: usize,
         ) -> Box<[SharedSubset]> {
@@ -201,67 +204,200 @@ pub mod subset {
         }
     }
 }
+pub use subset::SharedSubset;
 
-/* #[derive(Debug)] */
-/* pub struct MappedZipArchive<S> { */
-/*     shared: Arc<SharedSubset>, */
-/*     reader: Option<Pin<Box<S>>>, */
-/* } */
+pub mod mapped_archive {
+    use super::{
+        copy_file_range::{self, CopyFileRangeHandle, FromGivenOffset, MutateInnerOffset, Role},
+        subset::SharedSubset,
+    };
+    use crate::{
+        result::ZipResult,
+        tokio::{
+            combinators::Limiter,
+            read::{Shared, SharedData, ZipArchive},
+            WrappedPin,
+        },
+    };
 
-/* #[derive(Debug)] */
-/* pub struct ZipFdArchive<S: AsRawFd> { */
-/*     shared: Arc<Shared>, */
-/*     fd: Pin<Box<AsyncFd<S>>>, */
-/* } */
+    use tempfile;
+    use tokio::{
+        fs,
+        io::{self, AsyncSeekExt},
+        task,
+    };
 
-/* impl<S: AsRawFd + io::AsyncRead + io::AsyncSeek> ZipFdArchive<S> { */
-/*     pub async fn new(reader: Pin<Box<S>>) -> ZipResult<Self> { */
-/*         let (shared, reader) = Shared::parse(reader).await?; */
-/*         Ok(Self { */
-/*             fd: AsyncFd::with_interest( */
-/*                 Pin::into_inner(reader), */
-/*                 io::Interest::READABLE | io::Interest::WRITABLE | io::Interest::ERROR, */
-/*             )?, */
-/*             shared: Arc::new(shared), */
-/*         }) */
-/*     } */
-/* } */
+    use std::{marker::Unpin, os::unix::io::AsRawFd, pin::Pin, sync::Arc};
 
-/* impl<S: AsRawFd> ZipFdArchive<S> { */
-/*     const NUM_PIPES: usize = 8; */
+    async fn split_mapped_archive_impl(
+        mut in_handle: impl CopyFileRangeHandle + Unpin,
+        split_chunks: Vec<SharedSubset>,
+    ) -> ZipResult<Box<[ZipArchive<Limiter<fs::File>, SharedSubset>]>> {
+        let mut ret: Vec<ZipArchive<Limiter<fs::File>, SharedSubset>> =
+            Vec::with_capacity(split_chunks.len());
 
-/*     pub async fn splicing_extract(self: Pin<&mut Self>, root: Arc<PathBuf>) -> ZipResult<()> { */
-/*         /\* use futures_util::{stream, StreamExt}; *\/ */
+        for chunk in split_chunks.into_iter() {
+            let cur_len = chunk.content_len() as usize;
+            let cur_start = chunk.content_range().start;
 
-/*         fs::create_dir_all(&*root).await?; */
+            let backing_file = task::spawn_blocking(|| tempfile::tempfile())
+                .await
+                .unwrap()?;
+            let mut out_handle = FromGivenOffset::new(&backing_file, Role::Writable, 0)?;
 
-/*         let s = self.get_mut(); */
+            assert_eq!(
+                cur_len,
+                copy_file_range::copy_file_range(
+                    Pin::new(&mut in_handle),
+                    Pin::new(&mut out_handle),
+                    cur_len,
+                )
+                .await?
+            );
 
-/*         let subsets = SharedSubset::split_contiguous_chunks(s.shared.clone(), Self::NUM_PIPES); */
+            let inner = Limiter::take(
+                cur_start,
+                Box::pin(fs::File::from_std(backing_file)),
+                cur_len,
+            );
+            ret.push(ZipArchive::mapped(Arc::new(chunk), Box::pin(inner)));
+        }
 
-/*         /\* stream::iter(subsets.into_iter()) *\/ */
-/*         /\*     .map(Ok) *\/ */
-/*         /\*     .try_for_each_concurrent(None, move |(range, chunk)| async move { *\/ */
-/*         /\*         let (mut r, mut w) = tokio_pipe::pipe()?; *\/ */
-/*         /\*         task::spawn(async move { *\/ */
-/*         /\*             assert!(range.end >= range.start); *\/ */
-/*         /\*             assert!(range.end <= i64::MAX as u64); *\/ */
-/*         /\*             let mut off_in: i64 = range.start as i64; *\/ */
-/*         /\*             let mut remaining: usize = range.end - range.start; *\/ */
-/*         /\*             while remaining > 0 { *\/ */
-/*         /\*                 let written = w *\/ */
-/*         /\*                     .splice_from(&mut s.fd, Some(&mut off_in), remaining) *\/ */
-/*         /\*                     .await?; *\/ */
-/*         /\*                 assert!(written <= remaining); *\/ */
-/*         /\*                 remaining -= written; *\/ */
-/*         /\*                 off_in += written as i64; *\/ */
-/*         /\*             } *\/ */
-/*         /\*             Ok::<_, ZipError>(()) *\/ */
-/*         /\*         }); *\/ */
-/*         /\*         Ok::<_, ZipError>(()) *\/ */
-/*         /\*     }) *\/ */
-/*         /\*     .await?; *\/ */
+        Ok(ret.into_boxed_slice())
+    }
 
-/*         todo!("impl with copy_file_range and/or tokio_pipe!") */
-/*     } */
-/* } */
+    ///```
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use zip::{result::ZipError, tokio::{read::ZipArchive, write::ZipWriter, os}};
+    /// use futures_util::{pin_mut, TryStreamExt};
+    /// use tokio::{io::{self, AsyncReadExt, AsyncWriteExt}, fs};
+    /// use std::{io::Cursor, pin::Pin, sync::Arc, path::PathBuf};
+    ///
+    /// let f: ZipArchive<_, _> = {
+    ///   let buf = fs::File::from_std(tempfile::tempfile()?);
+    ///   let mut f = zip::tokio::write::ZipWriter::new(Box::pin(buf));
+    ///   let mut fp = Pin::new(&mut f);
+    ///   let options = zip::write::FileOptions::default()
+    ///     .compression_method(zip::CompressionMethod::Deflated);
+    ///   fp.as_mut().start_file("a.txt", options).await?;
+    ///   fp.as_mut().write_all(b"hello\n").await?;
+    ///   fp.as_mut().start_file("b.txt", options).await?;
+    ///   fp.as_mut().write_all(b"hello2\n").await?;
+    ///   fp.as_mut().start_file("c.txt", options).await?;
+    ///   fp.write_all(b"hello3\n").await?;
+    ///   f.finish_into_readable().await?
+    /// };
+    ///
+    /// let split_f: Vec<ZipArchive<_, _>> = os::split_into_mapped_archive(f, 3).await?.into();
+    ///
+    /// let mut ret: Vec<(PathBuf, String)> = Vec::with_capacity(3);
+    ///
+    /// for mut mapped_archive in split_f.into_iter() {
+    ///   let entries = Pin::new(&mut mapped_archive).entries_stream();
+    ///   pin_mut!(entries);
+    ///
+    ///   while let Some(mut zf) = entries.try_next().await? {
+    ///     let name = zf.name()?.to_path_buf();
+    ///     let mut contents = String::new();
+    ///     zf.read_to_string(&mut contents).await?;
+    ///     ret.push((name, contents));
+    ///   }
+    /// }
+    ///
+    /// assert_eq!(
+    ///   ret,
+    ///   vec![
+    ///     (PathBuf::from("a.txt"), "hello\n".to_string()),
+    ///     (PathBuf::from("b.txt"), "hello2\n".to_string()),
+    ///     (PathBuf::from("c.txt"), "hello3\n".to_string()),
+    ///   ],
+    /// );
+    ///
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub async fn split_into_mapped_archive(
+        archive: ZipArchive<fs::File, Shared>,
+        num_chunks: usize,
+    ) -> ZipResult<Box<[ZipArchive<Limiter<fs::File>, SharedSubset>]>> {
+        let shared = archive.shared();
+
+        let inner: Pin<Box<fs::File>> = archive.unwrap_inner_pin();
+        let inner: Box<fs::File> = Pin::into_inner(inner);
+        let mut inner: fs::File = *inner;
+
+        inner.seek(io::SeekFrom::Start(shared.offset())).await?;
+
+        let in_handle = MutateInnerOffset::new(inner.into_std().await, Role::Readable)?;
+
+        let split_chunks: Vec<SharedSubset> =
+            SharedSubset::split_contiguous_chunks(shared, num_chunks).into();
+
+        split_mapped_archive_impl(in_handle, split_chunks).await
+    }
+
+    ///```
+    /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
+    /// use zip::{result::ZipError, tokio::{read::ZipArchive, write::ZipWriter, os}};
+    /// use futures_util::{pin_mut, TryStreamExt};
+    /// use tokio::{io::{self, AsyncReadExt, AsyncWriteExt}, fs};
+    /// use std::{io::Cursor, pin::Pin, sync::Arc, path::PathBuf};
+    ///
+    /// let f: ZipArchive<_, _> = {
+    ///   let buf = fs::File::from_std(tempfile::tempfile()?);
+    ///   let mut f = zip::tokio::write::ZipWriter::new(Box::pin(buf));
+    ///   let mut fp = Pin::new(&mut f);
+    ///   let options = zip::write::FileOptions::default()
+    ///     .compression_method(zip::CompressionMethod::Deflated);
+    ///   fp.as_mut().start_file("a.txt", options).await?;
+    ///   fp.as_mut().write_all(b"hello\n").await?;
+    ///   fp.as_mut().start_file("b.txt", options).await?;
+    ///   fp.as_mut().write_all(b"hello2\n").await?;
+    ///   fp.as_mut().start_file("c.txt", options).await?;
+    ///   fp.write_all(b"hello3\n").await?;
+    ///   f.finish_into_readable().await?
+    /// };
+    ///
+    /// let split_f: Vec<ZipArchive<_, _>> = os::split_mapped_archive_ref(&f, 3).await?.into();
+    ///
+    /// let mut ret: Vec<(PathBuf, String)> = Vec::with_capacity(3);
+    ///
+    /// for mut mapped_archive in split_f.into_iter() {
+    ///   let entries = Pin::new(&mut mapped_archive).entries_stream();
+    ///   pin_mut!(entries);
+    ///
+    ///   while let Some(mut zf) = entries.try_next().await? {
+    ///     let name = zf.name()?.to_path_buf();
+    ///     let mut contents = String::new();
+    ///     zf.read_to_string(&mut contents).await?;
+    ///     ret.push((name, contents));
+    ///   }
+    /// }
+    ///
+    /// assert_eq!(
+    ///   ret,
+    ///   vec![
+    ///     (PathBuf::from("a.txt"), "hello\n".to_string()),
+    ///     (PathBuf::from("b.txt"), "hello2\n".to_string()),
+    ///     (PathBuf::from("c.txt"), "hello3\n".to_string()),
+    ///   ],
+    /// );
+    ///
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub async fn split_mapped_archive_ref<S: AsRawFd>(
+        archive: &ZipArchive<S, Shared>,
+        num_chunks: usize,
+    ) -> ZipResult<Box<[ZipArchive<Limiter<fs::File>, SharedSubset>]>> {
+        let shared = archive.shared();
+
+        let in_handle = FromGivenOffset::new(archive, Role::Readable, shared.offset() as u32)?;
+
+        let split_chunks: Vec<SharedSubset> =
+            SharedSubset::split_contiguous_chunks(shared, num_chunks).into();
+
+        split_mapped_archive_impl(in_handle, split_chunks).await
+    }
+}
+pub use mapped_archive::{split_into_mapped_archive, split_mapped_archive_ref};

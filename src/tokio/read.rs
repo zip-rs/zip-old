@@ -30,6 +30,7 @@ use std::{
     cell::UnsafeCell,
     mem::{self, ManuallyDrop},
     num, ops,
+    os::unix::io::{AsRawFd, RawFd},
     path::{Path, PathBuf},
     pin::Pin,
     str,
@@ -179,7 +180,7 @@ impl<S: io::AsyncRead> ReaderWrapper<S> for ZipFileWrappedReader<S> {
     }
 }
 
-async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
+pub(crate) async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     data: &ZipFileData,
     mut reader: Pin<Box<S>>,
 ) -> ZipResult<Limiter<S>> {
@@ -230,6 +231,12 @@ pub trait SharedData {
         self.len() == 0
     }
     fn content_range(&self) -> ops::Range<u64>;
+    #[inline]
+    fn content_len(&self) -> u64 {
+        let r = self.content_range();
+        debug_assert!(r.start <= r.end);
+        r.end - r.start
+    }
     fn comment(&self) -> &[u8];
     fn contiguous_entries(&self) -> &indexmap::map::Slice<String, ZipFileData>;
 }
@@ -442,13 +449,13 @@ async fn create_dir_idempotent<P: AsRef<Path>>(dir: P) -> io::Result<Option<()>>
 }
 
 #[derive(Debug)]
-pub struct ZipFile<'a, S, R: WrappedPin<S>> {
+pub struct ZipFile<'a, S, R: WrappedPin<S>, Sh> {
     data: &'a ZipFileData,
     wrapped_reader: ManuallyDrop<R>,
-    parent: &'a mut ZipArchive<S>,
+    parent: &'a mut ZipArchive<S, Sh>,
 }
 
-impl<'a, S, R: WrappedPin<S>> ZipFile<'a, S, R> {
+impl<'a, S, R: WrappedPin<S>, Sh> ZipFile<'a, S, R, Sh> {
     #[inline]
     pub fn name(&self) -> ZipResult<&Path> {
         self.data
@@ -478,10 +485,10 @@ impl<'a, S, R: WrappedPin<S>> ZipFile<'a, S, R> {
     }
 }
 
-impl<'a, S, R: WrappedPin<S>> ops::Drop for ZipFile<'a, S, R> {
+impl<'a, S, R: WrappedPin<S>, Sh> ops::Drop for ZipFile<'a, S, R, Sh> {
     fn drop(&mut self) {
         inner_drop(unsafe { Pin::new_unchecked(self) });
-        fn inner_drop<'a, S, R: WrappedPin<S>>(this: Pin<&mut ZipFile<'a, S, R>>) {
+        fn inner_drop<'a, S, R: WrappedPin<S>, Sh>(this: Pin<&mut ZipFile<'a, S, R, Sh>>) {
             let ZipFile {
                 ref mut wrapped_reader,
                 ref mut parent,
@@ -494,13 +501,15 @@ impl<'a, S, R: WrappedPin<S>> ops::Drop for ZipFile<'a, S, R> {
     }
 }
 
-impl<'a, S, R: WrappedPin<S> + 'a> ZipFile<'a, S, R> {
-    pub(crate) fn decode_stream<T: ReaderWrapper<R> + WrappedPin<S>>(self) -> ZipFile<'a, S, T> {
+impl<'a, S, R: WrappedPin<S> + 'a, Sh> ZipFile<'a, S, R, Sh> {
+    pub(crate) fn decode_stream<T: ReaderWrapper<R> + WrappedPin<S>>(
+        self,
+    ) -> ZipFile<'a, S, T, Sh> {
         let s = UnsafeCell::new(ManuallyDrop::new(self));
 
         let data: &'a ZipFileData = unsafe { &*s.get() }.data;
         let wrapped_reader: &mut ManuallyDrop<R> = &mut unsafe { &mut *s.get() }.wrapped_reader;
-        let parent: &'a mut ZipArchive<S> = unsafe { &mut *s.get() }.parent;
+        let parent: &'a mut ZipArchive<S, Sh> = unsafe { &mut *s.get() }.parent;
         let wrapped_reader = map_take_manual_drop(wrapped_reader, move |wrapped_reader: R| {
             T::construct(data, Box::pin(wrapped_reader))
         });
@@ -514,7 +523,7 @@ impl<'a, S, R: WrappedPin<S> + 'a> ZipFile<'a, S, R> {
     }
 }
 
-impl<'a, S, R: WrappedPin<S> + io::AsyncRead> io::AsyncRead for ZipFile<'a, S, R> {
+impl<'a, S, R: WrappedPin<S> + io::AsyncRead, Sh> io::AsyncRead for ZipFile<'a, S, R, Sh> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -525,12 +534,12 @@ impl<'a, S, R: WrappedPin<S> + io::AsyncRead> io::AsyncRead for ZipFile<'a, S, R
 }
 
 #[derive(Debug)]
-pub struct ZipArchive<S> {
+pub struct ZipArchive<S, Sh> {
     reader: Option<Pin<Box<S>>>,
-    shared: Arc<Shared>,
+    shared: Arc<Sh>,
 }
 
-impl<S> ZipArchive<S> {
+impl<S, Sh> ZipArchive<S, Sh> {
     #[inline]
     fn pin_reader_mut_option(self: Pin<&mut Self>) -> &mut Option<Pin<Box<S>>> {
         &mut self.get_mut().reader
@@ -545,13 +554,19 @@ impl<S> ZipArchive<S> {
     }
 
     #[inline]
-    pub fn shared(&self) -> Arc<Shared> {
+    pub fn shared(&self) -> Arc<Sh> {
         self.shared.clone()
     }
 }
 
-impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
-    pub async fn new(reader: Pin<Box<S>>) -> ZipResult<ZipArchive<S>> {
+impl<S: AsRawFd, Sh> AsRawFd for ZipArchive<S, Sh> {
+    fn as_raw_fd(&self) -> RawFd {
+        self.reader.as_ref().unwrap().as_raw_fd()
+    }
+}
+
+impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S, Shared> {
+    pub async fn new(reader: Pin<Box<S>>) -> ZipResult<Self> {
         let (shared, reader) = Shared::parse(reader).await?;
         Ok(Self {
             reader: Some(reader),
@@ -560,32 +575,28 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
     }
 }
 
-impl<S> WrappedPin<S> for ZipArchive<S> {
+impl<S, Sh> ZipArchive<S, Sh> {
+    pub fn mapped(shared: Arc<Sh>, reader: Pin<Box<S>>) -> Self {
+        Self {
+            reader: Some(reader),
+            shared,
+        }
+    }
+}
+
+impl<S, Sh> WrappedPin<S> for ZipArchive<S, Sh> {
     fn unwrap_inner_pin(self) -> Pin<Box<S>> {
         self.reader.unwrap()
     }
 }
 
-impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
-    pub async fn by_name(
-        self: Pin<&mut Self>,
-        name: &str,
-    ) -> ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>>> {
-        let index = match self.shared.files.get_index_of(name) {
-            None => {
-                return Err(ZipError::FileNotFound);
-            }
-            Some(n) => n,
-        };
-        self.by_index(index).await
-    }
-
+impl<S: io::AsyncRead + io::AsyncSeek, Sh: SharedData> ZipArchive<S, Sh> {
     pub async fn by_index(
         self: Pin<&mut Self>,
         index: usize,
-    ) -> ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>>> {
-        let raw_entry: Pin<Box<ZipFile<'_, S, Limiter<S>>>> = self.by_index_raw(index).await?;
-        let decoded_entry: Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>> =
+    ) -> ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>, Sh>>>> {
+        let raw_entry: Pin<Box<ZipFile<'_, S, Limiter<S>, Sh>>> = self.by_index_raw(index).await?;
+        let decoded_entry: Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>, Sh>>> =
             Box::pin(Pin::into_inner(raw_entry).decode_stream());
         Ok(decoded_entry)
     }
@@ -593,9 +604,13 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
     pub async fn by_index_raw(
         self: Pin<&mut Self>,
         index: usize,
-    ) -> ZipResult<Pin<Box<ZipFile<'_, S, Limiter<S>>>>> {
+    ) -> ZipResult<Pin<Box<ZipFile<'_, S, Limiter<S>, Sh>>>> {
         let s = UnsafeCell::new(self);
-        let data = match unsafe { &*s.get() }.shared.files.get_index(index) {
+        let data = match unsafe { &*s.get() }
+            .shared
+            .contiguous_entries()
+            .get_index(index)
+        {
             None => {
                 return Err(ZipError::FileNotFound);
             }
@@ -621,7 +636,7 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
 
     pub fn raw_entries_stream(
         self: Pin<&mut Self>,
-    ) -> impl Stream<Item = ZipResult<Pin<Box<ZipFile<'_, S, Limiter<S>>>>>> + '_ {
+    ) -> impl Stream<Item = ZipResult<Pin<Box<ZipFile<'_, S, Limiter<S>, Sh>>>>> + '_ {
         let len = self.shared.len();
         let s = std::cell::UnsafeCell::new(self);
         /* FIXME: make this a stream with a known length! */
@@ -635,12 +650,27 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
 
     pub fn entries_stream(
         self: Pin<&mut Self>,
-    ) -> impl Stream<Item = ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>>>>>> + '_
+    ) -> impl Stream<Item = ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>, Sh>>>>> + '_
     {
         use futures_util::StreamExt;
 
         self.raw_entries_stream()
             .map(|result| result.map(|entry| Box::pin(Pin::into_inner(entry).decode_stream())))
+    }
+}
+
+impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S, Shared> {
+    pub async fn by_name(
+        self: Pin<&mut Self>,
+        name: &str,
+    ) -> ZipResult<Pin<Box<ZipFile<'_, S, ZipFileWrappedReader<Limiter<S>>, Shared>>>> {
+        let index = match self.shared.files.get_index_of(name) {
+            None => {
+                return Err(ZipError::FileNotFound);
+            }
+            Some(n) => n,
+        };
+        self.by_index(index).await
     }
 
     pub(crate) async fn merge_contents<W: io::AsyncWrite + io::AsyncSeek>(
@@ -1035,7 +1065,7 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S> {
     }
 }
 
-impl<S> ZipArchive<S> {
+impl<S> ZipArchive<S, Shared> {
     pub(crate) fn from_finalized_writer(
         files: Vec<ZipFileData>,
         comment: Vec<u8>,

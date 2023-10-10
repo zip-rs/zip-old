@@ -817,7 +817,7 @@ impl<S: io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
     ///```
     pub async fn merge_archive<R>(
         mut self: Pin<&mut Self>,
-        source: Pin<&mut ZipArchive<R>>,
+        source: Pin<&mut ZipArchive<R, Shared>>,
     ) -> ZipResult<()>
     where
         R: io::AsyncRead + io::AsyncSeek,
@@ -949,7 +949,7 @@ impl<S: io::AsyncRead + io::AsyncWrite + io::AsyncSeek> ZipWriter<S> {
     /// # Ok(())
     /// # })}
     ///```
-    pub async fn finish_into_readable(mut self) -> ZipResult<ZipArchive<S>> {
+    pub async fn finish_into_readable(mut self) -> ZipResult<ZipArchive<S, Shared>> {
         let directory_start = Pin::new(&mut self).finalize().await?;
         Pin::new(&mut self).shutdown().await?;
         let files = mem::take(&mut self.files);
