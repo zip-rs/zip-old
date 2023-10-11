@@ -184,34 +184,41 @@ pub(crate) async fn find_content<S: io::AsyncRead + io::AsyncSeek>(
     data: &ZipFileData,
     mut reader: Pin<Box<S>>,
 ) -> ZipResult<Limiter<S>> {
-    // Parse local header
-    reader.seek(io::SeekFrom::Start(data.header_start)).await?;
+    let cur_pos = {
+        // Parse local header
+        reader.seek(io::SeekFrom::Start(data.header_start)).await?;
 
-    static_assertions::assert_eq_size!([u8; 30], LocalHeaderBuffer);
-    let mut info = [0u8; 30];
-    reader.read_exact(&mut info[..]).await?;
+        static_assertions::assert_eq_size!([u8; 30], LocalHeaderBuffer);
+        let mut info = [0u8; 30];
+        reader.read_exact(&mut info[..]).await?;
 
-    let LocalHeaderBuffer {
-        magic,
-        file_name_length,
-        /* NB: zip files have separate local and central extra data records. The length of the
-         * local extra field is being parsed here. The value of this field cannot be inferred
-         * from the central record data alone. */
-        extra_field_length,
-        ..
-    } = unsafe { mem::transmute(info) };
+        let LocalHeaderBuffer {
+            magic,
+            file_name_length,
+            /* NB: zip files have separate local and central extra data records. The length of the
+             * local extra field is being parsed here. The value of this field cannot be inferred
+             * from the central record data alone. */
+            extra_field_length,
+            ..
+        } = unsafe { mem::transmute(info) };
 
-    if magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
-        return Err(ZipError::InvalidArchive("Invalid local file header"));
-    }
+        if magic != spec::LOCAL_FILE_HEADER_SIGNATURE {
+            return Err(ZipError::InvalidArchive("Invalid local file header"));
+        }
 
-    let data_start =
-        data.header_start + info.len() as u64 + file_name_length as u64 + extra_field_length as u64;
-    data.data_start.store(data_start);
+        let data_start = data.header_start
+            + info.len() as u64
+            + file_name_length as u64
+            + extra_field_length as u64;
+        data.data_start.store(data_start);
 
-    reader.seek(io::SeekFrom::Start(data_start)).await?;
-
-    Ok(Limiter::take(reader, data.compressed_size as usize))
+        reader.seek(io::SeekFrom::Start(data_start)).await?
+    };
+    Ok(Limiter::take(
+        cur_pos,
+        reader,
+        data.compressed_size as usize,
+    ))
 }
 
 pub trait SharedData {
@@ -744,7 +751,7 @@ impl<S: io::AsyncRead + io::AsyncSeek> ZipArchive<S, Shared> {
         let inner = self.as_mut().pin_reader_mut_option().take().unwrap();
         /* Produce an AsyncRead that reads bytes up until the start of the central directory
          * header. */
-        let mut limited_raw = Limiter::take(inner, length_to_read);
+        let mut limited_raw = Limiter::take(0, inner, length_to_read);
         io::copy(&mut limited_raw, &mut w).await?;
 
         let _ = self
@@ -1342,11 +1349,7 @@ mod test {
         assert_eq!(buf.len(), data.compressed_size as usize);
         assert_eq!(b"hello\n".len(), data.uncompressed_size as usize);
 
-        let mut f = limited.unwrap_inner_pin();
-        io::AsyncSeekExt::rewind(&mut f).await?;
-
-        let limited = find_content(&data, f).await?;
-
+        io::AsyncSeekExt::rewind(&mut limited).await?;
         /* This stream should decode the compressed content! */
         let mut decoded = ZipFileWrappedReader::construct(&data, Box::pin(limited));
         let mut buf = String::new();
