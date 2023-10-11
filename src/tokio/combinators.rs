@@ -10,7 +10,7 @@ use std::{
 pub mod stream_adaptors {
     use super::*;
 
-    use std::{cmp, task::ready};
+    use std::cmp;
 
     pub trait KnownExpanse {
         /* TODO: make this have a parameterized Self::Index type, used e.g. with RangeInclusive or
@@ -22,21 +22,18 @@ pub mod stream_adaptors {
     /// # fn main() -> zip::result::ZipResult<()> { tokio_test::block_on(async {
     /// use std::{io::{SeekFrom, Cursor}, pin::Pin};
     /// use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-    /// use zip::tokio::combinators::Limiter;
+    /// use zip::tokio::{WrappedPin, combinators::Limiter};
     ///
-    /// let mut buf = Cursor::new(Vec::new());
-    /// buf.write_all(b"hello\n").await?;
-    /// buf.seek(SeekFrom::Start(1)).await?;
+    /// let buf = Cursor::new(Vec::new());
+    /// let mut buf = Limiter::take(Box::pin(buf), 4);
+    /// buf.write(b"hello\n").await?;
+    /// let mut buf = buf.unwrap_inner_pin();
+    /// buf.seek(SeekFrom::Start(0)).await?;
     ///
-    /// let mut limited = Limiter::take(1, Box::pin(buf), 3);
+    /// let mut limited = Limiter::take(Box::pin(buf), 2);
     /// let mut s = String::new();
     /// limited.read_to_string(&mut s).await?;
-    /// assert_eq!(s, "ell");
-    ///
-    /// limited.seek(SeekFrom::End(-1)).await?;
-    /// s.clear();
-    /// limited.read_to_string(&mut s).await?;
-    /// assert_eq!(s, "l");
+    /// assert_eq!(s, "he");
     /// # Ok(())
     /// # })}
     ///```
@@ -44,16 +41,14 @@ pub mod stream_adaptors {
     pub struct Limiter<S> {
         pub max_len: usize,
         pub internal_pos: usize,
-        pub start_pos: u64,
         pub source_stream: Pin<Box<S>>,
     }
 
     impl<S> Limiter<S> {
-        pub fn take(start_pos: u64, source_stream: Pin<Box<S>>, limit: usize) -> Self {
+        pub fn take(source_stream: Pin<Box<S>>, limit: usize) -> Self {
             Self {
                 max_len: limit,
                 internal_pos: 0,
-                start_pos,
                 source_stream,
             }
         }
@@ -78,30 +73,6 @@ pub mod stream_adaptors {
         fn push_cursor(&mut self, len: usize) {
             debug_assert!(len <= self.remaining_len());
             self.internal_pos += len;
-        }
-
-        #[inline]
-        fn convert_seek_request_to_relative(&self, op: io::SeekFrom) -> i64 {
-            let cur = self.internal_pos as u64;
-            let new_point = cmp::min(
-                self.max_len as u64,
-                match op {
-                    io::SeekFrom::Start(new_point) => new_point,
-                    io::SeekFrom::End(from_end) => {
-                        cmp::max(0, self.max_len as i64 + from_end) as u64
-                    }
-                    io::SeekFrom::Current(from_cur) => cmp::max(0, cur as i64 + from_cur) as u64,
-                },
-            );
-            let diff = new_point as i64 - cur as i64;
-            diff
-        }
-
-        #[inline]
-        fn interpret_new_pos(&mut self, new_pos: u64) {
-            assert!(new_pos >= self.start_pos);
-            assert!(new_pos <= self.start_pos + self.max_len as u64);
-            self.internal_pos = (new_pos - self.start_pos) as usize;
         }
     }
 
@@ -146,22 +117,6 @@ pub mod stream_adaptors {
                     }))
                 }
             }
-        }
-    }
-
-    impl<S: io::AsyncSeek> io::AsyncSeek for Limiter<S> {
-        fn start_seek(self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> {
-            let diff = self.convert_seek_request_to_relative(op);
-            let s = self.get_mut();
-            Pin::new(&mut s.source_stream).start_seek(io::SeekFrom::Current(diff))
-        }
-        fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
-            let s = self.get_mut();
-            let result = ready!(Pin::new(&mut s.source_stream).poll_complete(cx));
-            if let Ok(ref cur_pos) = result {
-                s.interpret_new_pos(*cur_pos);
-            }
-            Poll::Ready(result)
         }
     }
 
