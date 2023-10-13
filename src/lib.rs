@@ -21,7 +21,6 @@
 //!
 //!
 //!
-
 #![warn(missing_docs)]
 
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
@@ -50,6 +49,6 @@ mod zipcrypto;
 ///
 /// ```toml
 /// [dependencies]
-/// zip = "=0.6.6"
+/// zip_next = "=0.10.3"
 /// ```
 pub mod unstable;

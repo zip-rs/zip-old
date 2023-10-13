@@ -1,7 +1,7 @@
 #![cfg(feature = "aes-crypto")]
 
 use std::io::{self, Read};
-use zip::ZipArchive;
+use zip_next::ZipArchive;
 
 const SECRET_CONTENT: &str = "Lorem ipsum dolor sit amet";
 

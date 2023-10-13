@@ -3,8 +3,6 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - master
 
 env:
   RUSTFLAGS: -Dwarnings
@@ -16,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [stable, 1.59.0]
+        rust: [stable, 1.66.0]
 
     steps:
     - uses: actions/checkout@master
@@ -27,23 +25,29 @@ jobs:
         toolchain: ${{ matrix.rust }}
         override: true
 
-    - name: check
+    - name: Check
       uses: actions-rs/cargo@v1
       with:
         command: check
         args: --all --bins --examples
 
-    - name: tests
+    - name: Tests
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --all
 
+    - name: Tests (no features)
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --all --no-default-features
+
   clippy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - uses: actions-rs/toolchain@v1
         with:
@@ -73,13 +77,13 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Docs
-      run: cargo doc
+      run: cargo doc --no-deps
 
-  fuzz:
+  fuzz_read:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -90,3 +94,65 @@ jobs:
       - name: compile fuzz
         run: |
           cargo fuzz build fuzz_read
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_read -- -timeout=1s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000
+      - name: Upload any failure inputs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz_read_bad_inputs
+          path: fuzz/artifacts/fuzz_read/crash-*
+          if-no-files-found: ignore
+
+  fuzz_write:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - run: cargo install cargo-fuzz
+      - name: compile fuzz
+        run: |
+          cargo fuzz build fuzz_write
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_write -- -timeout=5s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000
+      - name: Upload any failure inputs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz_write_bad_inputs
+          path: fuzz/artifacts/fuzz_write/crash-*
+          if-no-files-found: ignore
+
+  fuzz_write_with_no_features:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - run: cargo install cargo-fuzz
+      - name: compile fuzz
+        run: |
+          cargo fuzz build --no-default-features fuzz_write
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_write -- -timeout=5s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000
+      - name: Upload any failure inputs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz_write_bad_inputs
+          path: fuzz/artifacts/fuzz_write/crash-*
+          if-no-files-found: ignore

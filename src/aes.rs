@@ -9,7 +9,7 @@ use crate::types::AesMode;
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
-use std::io::{self, Read};
+use std::io::{self, Error, ErrorKind, Read};
 
 /// The length of the password verifcation value in bytes
 const PWD_VERIFY_LENGTH: usize = 2;
@@ -45,7 +45,7 @@ pub struct AesReader<R> {
 }
 
 impl<R: Read> AesReader<R> {
-    pub fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
+    pub const fn new(reader: R, aes_mode: AesMode, compressed_size: u64) -> AesReader<R> {
         let data_length = compressed_size
             - (PWD_VERIFY_LENGTH + AUTH_CODE_LENGTH + aes_mode.salt_length()) as u64;
 
@@ -84,7 +84,8 @@ impl<R: Read> AesReader<R> {
         let mut derived_key: Vec<u8> = vec![0; derived_key_len];
 
         // use PBKDF2 with HMAC-Sha1 to derive the key
-        pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key);
+        pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, e))?;
         let decrypt_key = &derived_key[0..key_length];
         let hmac_key = &derived_key[key_length..key_length * 2];
         let pwd_verify = &derived_key[derived_key_len - 2..];
@@ -165,8 +166,8 @@ impl<R: Read> Read for AesReaderValid<R> {
             // use constant time comparison to mitigate timing attacks
             if !constant_time_eq(computed_auth_code, &read_auth_code) {
                 return Err(
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
+                    Error::new(
+                        ErrorKind::InvalidData,
                         "Invalid authentication code, this could be due to an invalid password or errors in the data"
                     )
                 );

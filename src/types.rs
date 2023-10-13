@@ -1,18 +1,20 @@
 //! Types that specify what is contained in a ZIP.
+use path::{Component, Path, PathBuf};
 use std::path;
+use std::sync::Arc;
 
+#[cfg(feature = "chrono")]
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(not(any(
     all(target_arch = "arm", target_pointer_width = "32"),
     target_arch = "mips",
     target_arch = "powerpc"
 )))]
 use std::sync::atomic;
-#[cfg(not(feature = "time"))]
-use std::time::SystemTime;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
-mod ffi {
+pub(crate) mod ffi {
     pub const S_IFDIR: u32 = 0o0040000;
     pub const S_IFREG: u32 = 0o0100000;
 }
@@ -49,7 +51,6 @@ mod atomic {
     }
 }
 
-#[cfg(feature = "time")]
 use crate::result::DateTimeRangeError;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
@@ -62,7 +63,7 @@ pub enum System {
 }
 
 impl System {
-    pub fn from_u8(system: u8) -> System {
+    pub const fn from_u8(system: u8) -> System {
         use self::System::*;
 
         match system {
@@ -100,7 +101,51 @@ pub struct DateTime {
     second: u8,
 }
 
-impl ::std::default::Default for DateTime {
+#[cfg(fuzzing)]
+impl arbitrary::Arbitrary<'_> for DateTime {
+    fn arbitrary(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
+        Ok(DateTime {
+            year: u.int_in_range(1980..=2107)?,
+            month: u.int_in_range(1..=12)?,
+            day: u.int_in_range(1..=31)?,
+            hour: u.int_in_range(0..=23)?,
+            minute: u.int_in_range(0..=59)?,
+            second: u.int_in_range(0..=60)?,
+        })
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl TryFrom<NaiveDateTime> for DateTime {
+    type Error = DateTimeRangeError;
+
+    fn try_from(value: NaiveDateTime) -> Result<Self, Self::Error> {
+        DateTime::from_date_and_time(
+            value.year().try_into()?,
+            value.month().try_into()?,
+            value.day().try_into()?,
+            value.hour().try_into()?,
+            value.minute().try_into()?,
+            value.second().try_into()?,
+        )
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl TryInto<NaiveDateTime> for DateTime {
+    type Error = DateTimeRangeError;
+
+    fn try_into(self) -> Result<NaiveDateTime, Self::Error> {
+        let date = NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+            .ok_or(DateTimeRangeError)?;
+        let time =
+            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+                .ok_or(DateTimeRangeError)?;
+        Ok(NaiveDateTime::new(date, time))
+    }
+}
+
+impl Default for DateTime {
     /// Constructs an 'default' datetime of 1980-01-01 00:00:00
     fn default() -> DateTime {
         DateTime {
@@ -116,7 +161,7 @@ impl ::std::default::Default for DateTime {
 
 impl DateTime {
     /// Converts an msdos (u16, u16) pair to a DateTime object
-    pub fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
+    pub const fn from_msdos(datepart: u16, timepart: u16) -> DateTime {
         let seconds = (timepart & 0b0000000000011111) << 1;
         let minutes = (timepart & 0b0000011111100000) >> 5;
         let hours = (timepart & 0b1111100000000000) >> 11;
@@ -143,7 +188,6 @@ impl DateTime {
     /// * hour: [0, 23]
     /// * minute: [0, 59]
     /// * second: [0, 60]
-    #[allow(clippy::result_unit_err)]
     pub fn from_date_and_time(
         year: u16,
         month: u8,
@@ -151,7 +195,7 @@ impl DateTime {
         hour: u8,
         minute: u8,
         second: u8,
-    ) -> Result<DateTime, ()> {
+    ) -> Result<DateTime, DateTimeRangeError> {
         if (1980..=2107).contains(&year)
             && (1..=12).contains(&month)
             && (1..=31).contains(&day)
@@ -168,27 +212,39 @@ impl DateTime {
                 second,
             })
         } else {
-            Err(())
+            Err(DateTimeRangeError)
         }
+    }
+
+    /// Indicates whether this date and time can be written to a zip archive.
+    pub fn is_valid(&self) -> bool {
+        DateTime::from_date_and_time(
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second,
+        )
+        .is_ok()
     }
 
     #[cfg(feature = "time")]
     /// Converts a OffsetDateTime object to a DateTime
     ///
     /// Returns `Err` when this object is out of bounds
-    #[allow(clippy::result_unit_err)]
     #[deprecated(note = "use `DateTime::try_from()`")]
-    pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, ()> {
-        dt.try_into().map_err(|_err| ())
+    pub fn from_time(dt: OffsetDateTime) -> Result<DateTime, DateTimeRangeError> {
+        dt.try_into().map_err(|_err| DateTimeRangeError)
     }
 
     /// Gets the time portion of this datetime in the msdos representation
-    pub fn timepart(&self) -> u16 {
+    pub const fn timepart(&self) -> u16 {
         ((self.second as u16) >> 1) | ((self.minute as u16) << 5) | ((self.hour as u16) << 11)
     }
 
     /// Gets the date portion of this datetime in the msdos representation
-    pub fn datepart(&self) -> u16 {
+    pub const fn datepart(&self) -> u16 {
         (self.day as u16) | ((self.month as u16) << 5) | ((self.year - 1980) << 9)
     }
 
@@ -202,7 +258,7 @@ impl DateTime {
     }
 
     /// Get the year. There is no epoch, i.e. 2018 will be returned as 2018.
-    pub fn year(&self) -> u16 {
+    pub const fn year(&self) -> u16 {
         self.year
     }
 
@@ -211,7 +267,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn month(&self) -> u8 {
+    pub const fn month(&self) -> u8 {
         self.month
     }
 
@@ -220,7 +276,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn day(&self) -> u8 {
+    pub const fn day(&self) -> u8 {
         self.day
     }
 
@@ -229,7 +285,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn hour(&self) -> u8 {
+    pub const fn hour(&self) -> u8 {
         self.hour
     }
 
@@ -238,7 +294,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn minute(&self) -> u8 {
+    pub const fn minute(&self) -> u8 {
         self.minute
     }
 
@@ -247,7 +303,7 @@ impl DateTime {
     /// # Warning
     ///
     /// When read from a zip file, this may not be a reasonable value
-    pub fn second(&self) -> u8 {
+    pub const fn second(&self) -> u8 {
         self.second
     }
 }
@@ -259,8 +315,8 @@ impl TryFrom<OffsetDateTime> for DateTime {
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
-                year: (dt.year()) as u16,
-                month: (dt.month()) as u8,
+                year: (dt.year()).try_into()?,
+                month: dt.month().into(),
                 day: dt.day(),
                 hour: dt.hour(),
                 minute: dt.minute(),
@@ -282,7 +338,7 @@ pub const DEFAULT_VERSION: u8 = 46;
 pub struct AtomicU64(atomic::AtomicU64);
 
 impl AtomicU64 {
-    pub fn new(v: u64) -> Self {
+    pub const fn new(v: u64) -> Self {
         Self(atomic::AtomicU64::new(v))
     }
 
@@ -333,7 +389,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Vec<u8>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Vec<u8>,
+    pub extra_field: Arc<Vec<u8>>,
+    /// Extra field only written to central directory
+    pub central_extra_field: Arc<Vec<u8>>,
     /// File comment
     pub file_comment: String,
     /// Specifies where the local header of the file starts
@@ -353,7 +411,7 @@ pub struct ZipFileData {
 }
 
 impl ZipFileData {
-    pub fn file_name_sanitized(&self) -> ::std::path::PathBuf {
+    pub fn file_name_sanitized(&self) -> PathBuf {
         let no_null_filename = match self.file_name.find('\0') {
             Some(index) => &self.file_name[0..index],
             None => &self.file_name,
@@ -363,7 +421,7 @@ impl ZipFileData {
         // zip files can contain both / and \ as separators regardless of the OS
         // and as we want to return a sanitized PathBuf that only supports the
         // OS separator let's convert incompatible separators to compatible ones
-        let separator = ::std::path::MAIN_SEPARATOR;
+        let separator = path::MAIN_SEPARATOR;
         let opposite_separator = match separator {
             '/' => '\\',
             _ => '/',
@@ -371,34 +429,34 @@ impl ZipFileData {
         let filename =
             no_null_filename.replace(&opposite_separator.to_string(), &separator.to_string());
 
-        ::std::path::Path::new(&filename)
+        Path::new(&filename)
             .components()
-            .filter(|component| matches!(*component, ::std::path::Component::Normal(..)))
-            .fold(::std::path::PathBuf::new(), |mut path, ref cur| {
+            .filter(|component| matches!(*component, path::Component::Normal(..)))
+            .fold(PathBuf::new(), |mut path, ref cur| {
                 path.push(cur.as_os_str());
                 path
             })
     }
 
-    pub(crate) fn enclosed_name(&self) -> Option<&path::Path> {
+    pub(crate) fn enclosed_name(&self) -> Option<&Path> {
         if self.file_name.contains('\0') {
             return None;
         }
-        let path = path::Path::new(&self.file_name);
+        let path = Path::new(&self.file_name);
         let mut depth = 0usize;
         for component in path.components() {
             match component {
-                path::Component::Prefix(_) | path::Component::RootDir => return None,
-                path::Component::ParentDir => depth = depth.checked_sub(1)?,
-                path::Component::Normal(_) => depth += 1,
-                path::Component::CurDir => (),
+                Component::Prefix(_) | Component::RootDir => return None,
+                Component::ParentDir => depth = depth.checked_sub(1)?,
+                Component::Normal(_) => depth += 1,
+                Component::CurDir => (),
             }
         }
         Some(path)
     }
 
     /// Get unix mode for the file
-    pub(crate) fn unix_mode(&self) -> Option<u32> {
+    pub(crate) const fn unix_mode(&self) -> Option<u32> {
         if self.external_attributes == 0 {
             return None;
         }
@@ -422,13 +480,13 @@ impl ZipFileData {
         }
     }
 
-    pub fn zip64_extension(&self) -> bool {
+    pub const fn zip64_extension(&self) -> bool {
         self.uncompressed_size > 0xFFFFFFFF
             || self.compressed_size > 0xFFFFFFFF
             || self.header_start > 0xFFFFFFFF
     }
 
-    pub fn version_needed(&self) -> u16 {
+    pub const fn version_needed(&self) -> u16 {
         // higher versions matched first
         match (self.zip64_extension(), self.compression_method) {
             #[cfg(feature = "bzip2")]
@@ -459,11 +517,11 @@ pub enum AesMode {
 
 #[cfg(feature = "aes-crypto")]
 impl AesMode {
-    pub fn salt_length(&self) -> usize {
+    pub const fn salt_length(&self) -> usize {
         self.key_length() / 2
     }
 
-    pub fn key_length(&self) -> usize {
+    pub const fn key_length(&self) -> usize {
         match self {
             Self::Aes128 => 16,
             Self::Aes192 => 24,
@@ -500,7 +558,8 @@ mod test {
             uncompressed_size: 0,
             file_name: file_name.clone(),
             file_name_raw: file_name.into_bytes(),
-            extra_field: Vec::new(),
+            extra_field: Arc::new(vec![]),
+            central_extra_field: Arc::new(vec![]),
             file_comment: String::new(),
             header_start: 0,
             data_start: AtomicU64::new(0),
@@ -509,10 +568,7 @@ mod test {
             large_file: false,
             aes_mode: None,
         };
-        assert_eq!(
-            data.file_name_sanitized(),
-            ::std::path::PathBuf::from("path/etc/passwd")
-        );
+        assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
     }
 
     #[test]

@@ -190,7 +190,7 @@ impl Read for Zip64File {
 #[test]
 fn zip64_large() {
     let zipfile = Zip64File::new();
-    let mut archive = zip::ZipArchive::new(zipfile).unwrap();
+    let mut archive = zip_next::ZipArchive::new(zipfile).unwrap();
     let mut buf = [0u8; 32];
 
     for i in 0..archive.len() {

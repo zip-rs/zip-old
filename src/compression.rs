@@ -11,6 +11,7 @@ use std::fmt;
 /// When creating ZIP files, you may choose the method to use with
 /// [`crate::write::FileOptions::compression_method`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub enum CompressionMethod {
     /// Store the file as is
@@ -19,7 +20,9 @@ pub enum CompressionMethod {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
+        feature = "deflate-zopfli"
     ))]
     Deflated,
     /// Compress the file using Deflate64.
@@ -39,7 +42,10 @@ pub enum CompressionMethod {
     #[cfg(feature = "zstd")]
     Zstd,
     /// Unsupported compression method
-    #[deprecated(since = "0.5.7", note = "use the constants instead")]
+    #[cfg_attr(
+        not(fuzzing),
+        deprecated(since = "0.5.7", note = "use the constants instead")
+    )]
     Unsupported(u16),
 }
 #[allow(deprecated, missing_docs)]
@@ -55,13 +61,17 @@ impl CompressionMethod {
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
+        feature = "deflate-zopfli"
     ))]
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
+        feature = "deflate-zopfli"
     )))]
     pub const DEFLATE: Self = CompressionMethod::Unsupported(8);
     #[cfg(feature = "deflate64")]
@@ -97,14 +107,16 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "use a constant to construct a compression method"
     )]
-    pub fn from_u16(val: u16) -> CompressionMethod {
+    pub const fn from_u16(val: u16) -> CompressionMethod {
         #[allow(deprecated)]
         match val {
             0 => CompressionMethod::Stored,
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli"
             ))]
             8 => CompressionMethod::Deflated,
             #[cfg(feature = "deflate64")]
@@ -125,14 +137,16 @@ impl CompressionMethod {
         since = "0.5.7",
         note = "to match on other compression methods, use a constant"
     )]
-    pub fn to_u16(self) -> u16 {
+    pub const fn to_u16(self) -> u16 {
         #[allow(deprecated)]
         match self {
             CompressionMethod::Stored => 0,
             #[cfg(any(
                 feature = "deflate",
                 feature = "deflate-miniz",
-                feature = "deflate-zlib"
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli"
             ))]
             CompressionMethod::Deflated => 8,
             #[cfg(feature = "deflate64")]
@@ -149,6 +163,55 @@ impl CompressionMethod {
     }
 }
 
+impl Default for CompressionMethod {
+    fn default() -> Self {
+        #[cfg(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib",
+            feature = "deflate-zlib-ng",
+            feature = "deflate-zopfli"
+        ))]
+        return CompressionMethod::Deflated;
+
+        #[cfg(all(
+            not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli"
+            )),
+            feature = "bzip2"
+        ))]
+        return CompressionMethod::Bzip2;
+
+        #[cfg(all(
+            not(any(
+                feature = "deflate",
+                feature = "deflate-miniz",
+                feature = "deflate-zlib",
+                feature = "deflate-zlib-ng",
+                feature = "deflate-zopfli",
+                feature = "bzip2"
+            )),
+            feature = "zstd"
+        ))]
+        return CompressionMethod::Zstd;
+
+        #[cfg(not(any(
+            feature = "deflate",
+            feature = "deflate-miniz",
+            feature = "deflate-zlib",
+            feature = "deflate-zlib-ng",
+            feature = "deflate-zopfli",
+            feature = "bzip2",
+            feature = "zstd"
+        )))]
+        return CompressionMethod::Stored;
+    }
+}
+
 impl fmt::Display for CompressionMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Just duplicate what the Debug format looks like, i.e, the enum key:
@@ -162,7 +225,9 @@ pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     #[cfg(any(
         feature = "deflate",
         feature = "deflate-miniz",
-        feature = "deflate-zlib"
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng",
+        feature = "deflate-zopfli"
     ))]
     CompressionMethod::Deflated,
     #[cfg(feature = "deflate64")]

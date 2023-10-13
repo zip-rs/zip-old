@@ -3,18 +3,40 @@
 //! The following paper was used to implement the ZipCrypto algorithm:
 //! [https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf](https://courses.cs.ut.ee/MTAT.07.022/2015_fall/uploads/Main/dmitri-report-f15-16.pdf)
 
+use std::fmt::{Debug, Formatter};
+use std::hash::Hash;
 use std::num::Wrapping;
 
 /// A container to hold the current key state
-#[derive(Clone, Copy)]
+#[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+#[derive(Clone, Copy, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct ZipCryptoKeys {
     key_0: Wrapping<u32>,
     key_1: Wrapping<u32>,
     key_2: Wrapping<u32>,
 }
 
+impl Debug for ZipCryptoKeys {
+    #[allow(unreachable_code)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        #[cfg(not(any(test, fuzzing)))]
+        {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::Hasher;
+            let mut t = DefaultHasher::new();
+            self.hash(&mut t);
+            return f.write_fmt(format_args!("ZipCryptoKeys(hash {})", t.finish()));
+        }
+        #[cfg(any(test, fuzzing))]
+        return f.write_fmt(format_args!(
+            "ZipCryptoKeys({:#10x},{:#10x},{:#10x})",
+            self.key_0, self.key_1, self.key_2
+        ));
+    }
+}
+
 impl ZipCryptoKeys {
-    fn new() -> ZipCryptoKeys {
+    const fn new() -> ZipCryptoKeys {
         ZipCryptoKeys {
             key_0: Wrapping(0x12345678),
             key_1: Wrapping(0x23456789),
@@ -123,12 +145,14 @@ impl<R: std::io::Read> ZipCryptoReader<R> {
         Ok(Some(ZipCryptoReaderValid { reader: self }))
     }
 }
+#[allow(unused)]
 pub(crate) struct ZipCryptoWriter<W> {
     pub(crate) writer: W,
     pub(crate) buffer: Vec<u8>,
     pub(crate) keys: ZipCryptoKeys,
 }
 impl<W: std::io::Write> ZipCryptoWriter<W> {
+    #[allow(unused)]
     pub(crate) fn finish(mut self, crc32: u32) -> std::io::Result<W> {
         self.buffer[11] = (crc32 >> 24) as u8;
         for byte in self.buffer.iter_mut() {

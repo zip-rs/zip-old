@@ -3,6 +3,8 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
+use std::io::IntoInnerError;
+use std::num::TryFromIntError;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
@@ -41,6 +43,12 @@ impl From<io::Error> for ZipError {
     }
 }
 
+impl<W> From<IntoInnerError<W>> for ZipError {
+    fn from(value: IntoInnerError<W>) -> Self {
+        ZipError::Io(value.into_error())
+    }
+}
+
 impl fmt::Display for ZipError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -65,8 +73,8 @@ impl ZipError {
     /// The text used as an error when a password is required and not supplied
     ///
     /// ```rust,no_run
-    /// # use zip::result::ZipError;
-    /// # let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
+    /// # use zip_next::result::ZipError;
+    /// # let mut archive = zip_next::ZipArchive::new(std::io::Cursor::new(&[])).unwrap();
     /// match archive.by_index(1) {
     ///     Err(ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)) => eprintln!("a password is needed to unzip this file"),
     ///     _ => (),
@@ -85,6 +93,13 @@ impl From<ZipError> for io::Error {
 /// Error type for time parsing
 #[derive(Debug)]
 pub struct DateTimeRangeError;
+
+// TryFromIntError is also an out-of-range error.
+impl From<TryFromIntError> for DateTimeRangeError {
+    fn from(_value: TryFromIntError) -> Self {
+        DateTimeRangeError
+    }
+}
 
 impl fmt::Display for DateTimeRangeError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {

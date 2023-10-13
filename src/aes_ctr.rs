@@ -5,7 +5,6 @@
 //! See [AesCtrZipKeyStream] for more information.
 
 use aes::cipher::generic_array::GenericArray;
-// use aes::{BlockEncrypt, NewBlockCipher};
 use aes::cipher::{BlockEncrypt, KeyInit};
 use byteorder::WriteBytesExt;
 use std::{any, fmt};
@@ -28,7 +27,7 @@ pub trait AesKind {
     /// Key type.
     type Key: AsRef<[u8]>;
     /// Cipher used to decrypt.
-    type Cipher;
+    type Cipher: KeyInit;
 }
 
 impl AesKind for Aes128 {
