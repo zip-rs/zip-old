@@ -13,7 +13,7 @@ use zip_next::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 fn end_to_end() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         if method == CompressionMethod::DEFLATE64 {
-            continue
+            continue;
         }
         let file = &mut Cursor::new(Vec::new());
 
@@ -32,7 +32,7 @@ fn end_to_end() {
 fn copy() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         if method == CompressionMethod::DEFLATE64 {
-            continue
+            continue;
         }
         let src_file = &mut Cursor::new(Vec::new());
         write_test_archive(src_file, method, false);
@@ -74,7 +74,7 @@ fn copy() {
 fn append() {
     for &method in SUPPORTED_COMPRESSION_METHODS {
         if method == CompressionMethod::DEFLATE64 {
-            continue
+            continue;
         }
         for shallow_copy in &[false, true] {
             println!("Writing file with {method} compression, shallow_copy {shallow_copy}");
