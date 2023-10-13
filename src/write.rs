@@ -1275,9 +1275,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(feature = "deflate64")]
                 CompressionMethod::Deflate64 => {
-                    return Err(ZipError::UnsupportedArchive(
+                    Err(ZipError::UnsupportedArchive(
                         "Compressing Deflate64 is not supported",
-                    ));
+                    ))
                 }
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
