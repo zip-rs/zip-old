@@ -56,38 +56,9 @@ pub trait CopyFileRangeHandle {
     fn as_args(self: Pin<&mut Self>) -> RawArgs<'_>;
 }
 
-/* #[derive(Debug)] */
-/* pub enum OperationRequest { */
-/*     Read, */
-/*     Write, */
-/*     Seek, */
-/* } */
-
-/* #[derive(Debug)] */
-/* pub enum FileOperation { */
-/*     Read(io::Result<()>), */
-/*     Write(io::Result<usize>), */
-/*     Seek(io::Result<u64>), */
-/* } */
-
-/* #[derive(Debug)] */
-/* pub struct BusyState { */
-/*     req: OperationRequest, */
-/*     handle: task::JoinHandle<FileOperation>, */
-/*     other_wakers: Vec<Waker>, */
-/* } */
-
-/* #[derive(Debug, Default)] */
-/* pub enum PendingAction { */
-/*     #[default] */
-/*     Idle, */
-/*     Busy(BusyState), */
-/* } */
-
 pub struct MutateInnerOffset {
     role: Role,
     owned_fd: OwnedFd,
-    /* state: PendingAction, */
     offset: u64,
 }
 
@@ -103,7 +74,6 @@ impl MutateInnerOffset {
             role,
             owned_fd,
             offset: offset as u64,
-            /* state: PendingAction::Idle, */
         })
     }
 
@@ -151,29 +121,9 @@ impl io::AsyncRead for MutateInnerOffset {
                 buf.remaining(),
             ))
         }?;
-        assert!(num_read > 0);
+        assert!(num_read >= 0);
         buf.set_filled(buf.filled().len() + num_read as usize);
         Poll::Ready(Ok(()))
-        /* match self.state { */
-        /*     PendingAction::Busy(BusyState { req, handle, mut other_wakers }) => { */
-        /*         other_wakers.push(cx.waker().clone()); */
-        /*         Poll::Pending */
-        /*     } */
-        /*     PendingAction::Idle => { */
-        /*         let fd = self.owned_fd.as_raw_fd(); */
-        /*         let mut handle = task::spawn_blocking(move || unsafe { */
-        /*             let num_read = cvt!(libc::read( */
-        /*                 fd, */
-        /*                 mem::transmute(buf.initialize_unfilled().as_mut_ptr()), */
-        /*                 buf.remaining(), */
-        /*             ))?; */
-        /*             assert!(num_read > 0); */
-        /*             buf.set_filled(buf.filled().len() + num_read as usize); */
-        /*             Ok::<_, io::Error>(()) */
-        /*         }); */
-        /*         Poll::Ready(ready!(Pin::new(&mut handle).poll(cx)).unwrap()) */
-        /*     } */
-        /* } */
     }
 }
 
@@ -781,10 +731,73 @@ mod test {
         use tokio::io::AsyncWrite;
 
         let f = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
-        /* FIXME: provide a File object with vectored async write via writev! */
         assert!(!f.is_write_vectored());
 
         let f = std::io::Cursor::new(Vec::new());
         assert!(f.is_write_vectored());
+    }
+
+    #[tokio::test]
+    async fn test_wrappers_have_vectored_write() {
+        use tokio::io::AsyncWrite;
+
+        let f = tempfile::tempfile().unwrap();
+        let f = MutateInnerOffset::new(f, Role::Writable).await.unwrap();
+        assert!(f.is_write_vectored());
+
+        let f = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        assert!(!f.is_write_vectored());
+        let f = FromGivenOffset::new(&f, Role::Writable, 0).unwrap();
+        assert!(f.is_write_vectored());
+    }
+
+    #[tokio::test]
+    async fn test_io_copy_for_owned_wrapper() {
+        use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+        let mut f = MutateInnerOffset::new(tempfile::tempfile().unwrap(), Role::Writable)
+            .await
+            .unwrap();
+        f.write_all(b"hello").await.unwrap();
+        f.seek(io::SeekFrom::Start(0)).await.unwrap();
+        let mut f_in = MutateInnerOffset::new(f, Role::Readable).await.unwrap();
+
+        let mut f_out = MutateInnerOffset::new(tempfile::tempfile().unwrap(), Role::Writable)
+            .await
+            .unwrap();
+
+        io::copy(&mut Pin::new(&mut f_in), &mut Pin::new(&mut f_out))
+            .await
+            .unwrap();
+
+        let f: std::fs::File = f_out.into();
+        let mut f = tokio::fs::File::from_std(f);
+        f.seek(io::SeekFrom::Start(0)).await.unwrap();
+        let mut s = String::new();
+        f.read_to_string(&mut s).await.unwrap();
+        assert_eq!(&s, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_io_copy_for_non_owned_wrapper() {
+        use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+        let in_backing_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        let mut f_in = FromGivenOffset::new(&in_backing_file, Role::Writable, 0).unwrap();
+        f_in.write_all(b"hello").await.unwrap();
+        let mut f_in = FromGivenOffset::new(&in_backing_file, Role::Readable, 0).unwrap();
+
+        let out_backing_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        let mut f_out = FromGivenOffset::new(&out_backing_file, Role::Writable, 0).unwrap();
+
+        io::copy(&mut Pin::new(&mut f_in), &mut Pin::new(&mut f_out))
+            .await
+            .unwrap();
+
+        f_out.seek(io::SeekFrom::Start(0)).await.unwrap();
+
+        let mut s = String::new();
+        f_out.read_to_string(&mut s).await.unwrap();
+        assert_eq!(&s, "hello");
     }
 }
