@@ -328,7 +328,7 @@ pub mod mapped_archive {
 
         inner.seek(io::SeekFrom::Start(shared.offset())).await?;
 
-        let in_handle = MutateInnerOffset::new(inner.into_std().await, Role::Readable)?;
+        let in_handle = MutateInnerOffset::new(inner.into_std().await, Role::Readable).await?;
 
         let split_chunks: Vec<SharedSubset> =
             SharedSubset::split_contiguous_chunks(shared, num_chunks).into();

@@ -9,12 +9,13 @@ use tokio::{io, task};
 use tokio_pipe::{PipeRead, PipeWrite};
 
 use std::{
+    future::Future,
     io::IoSlice,
-    mem::MaybeUninit,
+    mem::{self, MaybeUninit},
     os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
     pin::Pin,
     ptr,
-    task::{ready, Context, Poll},
+    task::{ready, Context, Poll, Waker},
 };
 
 fn invalid_copy_file_range() -> io::Error {
@@ -55,16 +56,55 @@ pub trait CopyFileRangeHandle {
     fn as_args(self: Pin<&mut Self>) -> RawArgs<'_>;
 }
 
+/* #[derive(Debug)] */
+/* pub enum OperationRequest { */
+/*     Read, */
+/*     Write, */
+/*     Seek, */
+/* } */
+
+/* #[derive(Debug)] */
+/* pub enum FileOperation { */
+/*     Read(io::Result<()>), */
+/*     Write(io::Result<usize>), */
+/*     Seek(io::Result<u64>), */
+/* } */
+
+/* #[derive(Debug)] */
+/* pub struct BusyState { */
+/*     req: OperationRequest, */
+/*     handle: task::JoinHandle<FileOperation>, */
+/*     other_wakers: Vec<Waker>, */
+/* } */
+
+/* #[derive(Debug, Default)] */
+/* pub enum PendingAction { */
+/*     #[default] */
+/*     Idle, */
+/*     Busy(BusyState), */
+/* } */
+
 pub struct MutateInnerOffset {
-    pub role: Role,
-    pub owned_fd: OwnedFd,
+    role: Role,
+    owned_fd: OwnedFd,
+    /* state: PendingAction, */
+    offset: u64,
 }
 
 impl MutateInnerOffset {
-    pub fn new(f: impl IntoRawFd, role: Role) -> io::Result<Self> {
+    pub async fn new(f: impl IntoRawFd, role: Role) -> io::Result<Self> {
         let raw_fd = validate_raw_fd(f.into_raw_fd(), role)?;
+        let offset: libc::off64_t =
+            task::spawn_blocking(move || unsafe { cvt!(libc::lseek(raw_fd, 0, libc::SEEK_CUR)) })
+                .await
+                .unwrap()?;
         let owned_fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
-        Ok(Self { role, owned_fd })
+        Ok(Self {
+            role,
+            owned_fd,
+            offset: offset as u64,
+            /* state: PendingAction::Idle, */
+        })
     }
 
     pub fn into_owned(self) -> OwnedFd {
@@ -93,6 +133,109 @@ impl CopyFileRangeHandle for MutateInnerOffset {
             fd: self.owned_fd.as_raw_fd(),
             off: None,
         }
+    }
+}
+
+impl io::AsyncRead for MutateInnerOffset {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &mut io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let fd = self.owned_fd.as_raw_fd();
+        /* FIXME: make this truly async instead of sync, perf permitting! */
+        let num_read = unsafe {
+            cvt!(libc::read(
+                fd,
+                mem::transmute(buf.initialize_unfilled().as_mut_ptr()),
+                buf.remaining(),
+            ))
+        }?;
+        assert!(num_read > 0);
+        buf.set_filled(buf.filled().len() + num_read as usize);
+        Poll::Ready(Ok(()))
+        /* match self.state { */
+        /*     PendingAction::Busy(BusyState { req, handle, mut other_wakers }) => { */
+        /*         other_wakers.push(cx.waker().clone()); */
+        /*         Poll::Pending */
+        /*     } */
+        /*     PendingAction::Idle => { */
+        /*         let fd = self.owned_fd.as_raw_fd(); */
+        /*         let mut handle = task::spawn_blocking(move || unsafe { */
+        /*             let num_read = cvt!(libc::read( */
+        /*                 fd, */
+        /*                 mem::transmute(buf.initialize_unfilled().as_mut_ptr()), */
+        /*                 buf.remaining(), */
+        /*             ))?; */
+        /*             assert!(num_read > 0); */
+        /*             buf.set_filled(buf.filled().len() + num_read as usize); */
+        /*             Ok::<_, io::Error>(()) */
+        /*         }); */
+        /*         Poll::Ready(ready!(Pin::new(&mut handle).poll(cx)).unwrap()) */
+        /*     } */
+        /* } */
+    }
+}
+
+impl io::AsyncSeek for MutateInnerOffset {
+    fn start_seek(mut self: Pin<&mut Self>, arg: io::SeekFrom) -> io::Result<()> {
+        let (offset, whence): (libc::off64_t, libc::c_int) = match arg {
+            io::SeekFrom::Start(pos) => (pos as libc::off64_t, libc::SEEK_SET),
+            io::SeekFrom::Current(diff) => (diff, libc::SEEK_CUR),
+            io::SeekFrom::End(diff) => (diff, libc::SEEK_END),
+        };
+        let fd = self.owned_fd.as_raw_fd();
+        /* FIXME: make this async/pollable! */
+        let new_offset = cvt!(unsafe { libc::lseek(fd, offset, whence) })?;
+        self.offset = new_offset as u64;
+        Ok(())
+    }
+
+    fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+        Poll::Ready(Ok(self.offset))
+    }
+}
+
+impl io::AsyncWrite for MutateInnerOffset {
+    #[inline]
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let fd = self.owned_fd.as_raw_fd();
+        let num_written = cvt!(unsafe {
+            /* FIXME: make this async/pollable! */
+            libc::writev(fd, mem::transmute(bufs.as_ptr()), bufs.len() as libc::c_int)
+        })?;
+        assert!(num_written > 0);
+        Poll::Ready(Ok(num_written as usize))
+    }
+
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let fd = self.owned_fd.as_raw_fd();
+        /* FIXME: make this async/pollable! */
+        let num_written =
+            cvt!(unsafe { libc::write(fd, mem::transmute(buf.as_ptr()), buf.len()) })?;
+        assert!(num_written > 0);
+        Poll::Ready(Ok(num_written as usize))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let _ = cvt!(unsafe { libc::fdatasync(self.owned_fd.as_raw_fd()) })?;
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_flush(cx)
     }
 }
 
@@ -141,95 +284,109 @@ impl FromGivenOffset {
     }
 }
 
-/* impl io::AsyncRead for FromGivenOffset { */
-/*     fn poll_read( */
-/*         self: Pin<&mut Self>, */
-/*         cx: &mut Context<'_>, */
-/*         buf: &mut io::ReadBuf<'_>, */
-/*     ) -> Poll<io::Result<()>> { */
-/*         debug_assert!(buf.remaining() > 0); */
+impl io::AsyncRead for FromGivenOffset {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &mut io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        debug_assert!(buf.remaining() > 0);
 
-/*         let prev_filled = buf.filled().len(); */
-/*         /\* FIXME: don't block here! *\/ */
-/*         let num_read = try_libc!(unsafe { */
-/*             libc::pread( */
-/*                 self.fd, */
-/*                 buf.initialize_unfilled() as *mut libc::c_void, */
-/*                 buf.remaining(), */
-/*                 self.offset, */
-/*             ) */
-/*         }); */
-/*         self.offset += num_read as i64; */
-/*         buf.set_filled(prev_filled + num_read as usize); */
+        let prev_filled = buf.filled().len();
+        /* FIXME: don't block here! */
+        let num_read = cvt!(unsafe {
+            libc::pread(
+                self.fd,
+                mem::transmute(buf.initialize_unfilled().as_mut_ptr()),
+                buf.remaining(),
+                self.offset,
+            )
+        })?;
+        self.offset += num_read as i64;
+        buf.set_filled(prev_filled + num_read as usize);
 
-/*         Ok(()) */
-/*     } */
-/* } */
+        Poll::Ready(Ok(()))
+    }
+}
 
-/* impl io::AsyncSeek for FromGivenOffset { */
-/*     fn start_seek(self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> { */
-/*         self.offset = match op { */
-/*             io::SeekFrom::Start(from_start) => from_start as i64, */
-/*             io::SeekFrom::Current(diff) => self.offset + diff, */
-/*             io::SeekFrom::End(from_end) => { */
-/*                 assert!(from_end <= 0); */
-/*                 let full_len = self.len_sync()?; */
-/*                 full_len + from_end */
-/*             } */
-/*         }; */
-/*         Ok(()) */
-/*     } */
+impl io::AsyncSeek for FromGivenOffset {
+    fn start_seek(mut self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> {
+        self.offset = match op {
+            io::SeekFrom::Start(from_start) => from_start as i64,
+            io::SeekFrom::Current(diff) => self.offset + diff,
+            io::SeekFrom::End(from_end) => {
+                assert!(from_end <= 0);
+                let full_len = self.len_sync()?;
+                full_len + from_end
+            }
+        };
+        Ok(())
+    }
 
-/*     fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> { */
-/*         assert!(self.offset >= 0); */
-/*         Poll::Ready(Ok(self.offset as u64)) */
-/*     } */
-/* } */
+    fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+        assert!(self.offset >= 0);
+        Poll::Ready(Ok(self.offset as u64))
+    }
+}
 
-/* impl io::AsyncWrite for FromGivenOffset { */
-/*     fn poll_write( */
-/*         self: Pin<&mut Self>, */
-/*         cx: &mut Context<'_>, */
-/*         buf: &[u8], */
-/*     ) -> Poll<io::Result<usize>> { */
-/*         debug_assert!(buf.len() > 0); */
+impl io::AsyncWrite for FromGivenOffset {
+    #[inline]
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
 
-/*         /\* FIXME: don't block here! *\/ */
-/*         let num_written = try_libc!(unsafe { */
-/*             libc::pwrite( */
-/*                 self.fd, */
-/*                 buf.as_ptr() as *const libc::c_void, */
-/*                 buf.len(), */
-/*                 self.offset, */
-/*             ) */
-/*         }); */
-/*         self.offset += num_written as i64; */
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        /* FIXME: don't block here! */
+        let num_written = cvt!(unsafe {
+            libc::pwritev(
+                self.fd,
+                mem::transmute(bufs.as_ptr()),
+                bufs.len() as libc::c_int,
+                self.offset,
+            )
+        })?;
+        assert!(num_written > 0);
+        self.offset += num_written as i64;
 
-/*         Ok(num_written) */
-/*     } */
+        Poll::Ready(Ok(num_written as usize))
+    }
 
-/*     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-/*         try_libc!(unsafe { libc::fdatasync(self.fd) }); */
-/*         Poll::Ready(Ok(())) */
-/*     } */
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        debug_assert!(buf.len() > 0);
 
-/*     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
-/*         ready!(self.poll_flush(cx))?; */
-/*         Poll::Ready(Ok(())) */
-/*     } */
+        /* FIXME: don't block here! */
+        let num_written = cvt!(unsafe {
+            libc::pwrite(
+                self.fd,
+                buf.as_ptr() as *const libc::c_void,
+                buf.len(),
+                self.offset,
+            )
+        })?;
+        assert!(num_written > 0);
+        self.offset += num_written as i64;
 
-/*     fn is_write_vectored(&self) -> bool { */
-/*         true */
-/*     } */
+        Poll::Ready(Ok(num_written as usize))
+    }
 
-/*     fn poll_write_vectored( */
-/*         self: Pin<&mut Self>, */
-/*         cx: &mut Context<'_>, */
-/*         bufs: &[IoSlice<'_>], */
-/*     ) -> Poll<io::Result<usize>> { */
-/*         todo!() */
-/*     } */
-/* } */
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let _ = cvt!(unsafe { libc::fdatasync(self.fd) })?;
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        ready!(self.poll_flush(cx))?;
+        Poll::Ready(Ok(()))
+    }
+}
 
 impl AsRawFd for FromGivenOffset {
     fn as_raw_fd(&self) -> RawFd {
@@ -548,7 +705,9 @@ mod test {
             .read(true)
             .open(&p2)
             .unwrap();
-        let mut dst = MutateInnerOffset::new(out_file, Role::Writable).unwrap();
+        let mut dst = MutateInnerOffset::new(out_file, Role::Writable)
+            .await
+            .unwrap();
         let dp = Pin::new(&mut dst);
 
         /* Explicit offset begins at 0. */
@@ -577,7 +736,9 @@ mod test {
         let mut in_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
         in_file.write_all(b"hello").await.unwrap();
         in_file.rewind().await.unwrap();
-        let mut in_file = MutateInnerOffset::new(in_file.into_std().await, Role::Readable).unwrap();
+        let mut in_file = MutateInnerOffset::new(in_file.into_std().await, Role::Readable)
+            .await
+            .unwrap();
 
         let mut out_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
         let mut out_file_handle = FromGivenOffset::new(&out_file, Role::Writable, 0).unwrap();
