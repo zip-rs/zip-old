@@ -2,6 +2,7 @@
 
 pub mod buf_reader;
 pub mod buf_writer;
+pub mod channels;
 pub mod combinators;
 pub(crate) mod crc32;
 pub(crate) mod extraction;

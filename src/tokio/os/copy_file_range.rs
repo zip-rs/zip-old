@@ -5,14 +5,16 @@ use cfg_if::cfg_if;
 use displaydoc::Display;
 use libc;
 use once_cell::sync::Lazy;
-use tokio::task;
+use tokio::{io, task};
 use tokio_pipe::{PipeRead, PipeWrite};
 
 use std::{
-    io, mem,
+    io::IoSlice,
+    mem::MaybeUninit,
     os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
     pin::Pin,
     ptr,
+    task::{ready, Context, Poll},
 };
 
 fn invalid_copy_file_range() -> io::Error {
@@ -110,7 +112,124 @@ impl FromGivenOffset {
             offset: init as i64,
         })
     }
+
+    fn stat_sync(&self) -> io::Result<libc::stat> {
+        let mut stat = MaybeUninit::<libc::stat>::uninit();
+
+        try_libc!(unsafe { libc::fstat(self.fd, stat.as_mut_ptr()) });
+
+        Ok(unsafe { stat.assume_init() })
+    }
+
+    fn len_sync(&self) -> io::Result<libc::off_t> {
+        Ok(self.stat_sync()?.st_size)
+    }
+
+    pub async fn stat(&self) -> io::Result<libc::stat> {
+        let mut stat = MaybeUninit::<libc::stat>::uninit();
+
+        let fd = self.fd;
+        task::spawn_blocking(move || cvt!(unsafe { libc::fstat(fd, stat.as_mut_ptr()) }))
+            .await
+            .unwrap()?;
+
+        Ok(unsafe { stat.assume_init() })
+    }
+
+    pub async fn len(&self) -> io::Result<libc::off_t> {
+        Ok(self.stat().await?.st_size)
+    }
 }
+
+/* impl io::AsyncRead for FromGivenOffset { */
+/*     fn poll_read( */
+/*         self: Pin<&mut Self>, */
+/*         cx: &mut Context<'_>, */
+/*         buf: &mut io::ReadBuf<'_>, */
+/*     ) -> Poll<io::Result<()>> { */
+/*         debug_assert!(buf.remaining() > 0); */
+
+/*         let prev_filled = buf.filled().len(); */
+/*         /\* FIXME: don't block here! *\/ */
+/*         let num_read = try_libc!(unsafe { */
+/*             libc::pread( */
+/*                 self.fd, */
+/*                 buf.initialize_unfilled() as *mut libc::c_void, */
+/*                 buf.remaining(), */
+/*                 self.offset, */
+/*             ) */
+/*         }); */
+/*         self.offset += num_read as i64; */
+/*         buf.set_filled(prev_filled + num_read as usize); */
+
+/*         Ok(()) */
+/*     } */
+/* } */
+
+/* impl io::AsyncSeek for FromGivenOffset { */
+/*     fn start_seek(self: Pin<&mut Self>, op: io::SeekFrom) -> io::Result<()> { */
+/*         self.offset = match op { */
+/*             io::SeekFrom::Start(from_start) => from_start as i64, */
+/*             io::SeekFrom::Current(diff) => self.offset + diff, */
+/*             io::SeekFrom::End(from_end) => { */
+/*                 assert!(from_end <= 0); */
+/*                 let full_len = self.len_sync()?; */
+/*                 full_len + from_end */
+/*             } */
+/*         }; */
+/*         Ok(()) */
+/*     } */
+
+/*     fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>> { */
+/*         assert!(self.offset >= 0); */
+/*         Poll::Ready(Ok(self.offset as u64)) */
+/*     } */
+/* } */
+
+/* impl io::AsyncWrite for FromGivenOffset { */
+/*     fn poll_write( */
+/*         self: Pin<&mut Self>, */
+/*         cx: &mut Context<'_>, */
+/*         buf: &[u8], */
+/*     ) -> Poll<io::Result<usize>> { */
+/*         debug_assert!(buf.len() > 0); */
+
+/*         /\* FIXME: don't block here! *\/ */
+/*         let num_written = try_libc!(unsafe { */
+/*             libc::pwrite( */
+/*                 self.fd, */
+/*                 buf.as_ptr() as *const libc::c_void, */
+/*                 buf.len(), */
+/*                 self.offset, */
+/*             ) */
+/*         }); */
+/*         self.offset += num_written as i64; */
+
+/*         Ok(num_written) */
+/*     } */
+
+/*     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
+/*         try_libc!(unsafe { libc::fdatasync(self.fd) }); */
+/*         Poll::Ready(Ok(())) */
+/*     } */
+
+/*     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> { */
+/*         ready!(self.poll_flush(cx))?; */
+/*         Poll::Ready(Ok(())) */
+/*     } */
+
+/*     fn is_write_vectored(&self) -> bool { */
+/*         true */
+/*     } */
+
+/*     fn poll_write_vectored( */
+/*         self: Pin<&mut Self>, */
+/*         cx: &mut Context<'_>, */
+/*         bufs: &[IoSlice<'_>], */
+/*     ) -> Poll<io::Result<usize>> { */
+/*         todo!() */
+/*     } */
+/* } */
 
 impl AsRawFd for FromGivenOffset {
     fn as_raw_fd(&self) -> RawFd {
@@ -259,7 +378,7 @@ pub async fn copy_file_range(
 }
 
 fn check_regular_file(fd: RawFd) -> io::Result<()> {
-    let mut stat = mem::MaybeUninit::<libc::stat>::uninit();
+    let mut stat = MaybeUninit::<libc::stat>::uninit();
 
     try_libc!(unsafe { libc::fstat(fd, stat.as_mut_ptr()) });
 
@@ -411,7 +530,7 @@ mod test {
 
     #[tokio::test]
     async fn read_ref_into_write_owned() {
-        use io::{Read, Seek};
+        use std::io::{Read, Seek};
 
         let td = tempfile::tempdir().unwrap();
         let p = td.path().join("asdf.txt");
@@ -504,7 +623,7 @@ mod test {
         /* FIXME: provide a File object with vectored async write via writev! */
         assert!(!f.is_write_vectored());
 
-        let f = io::Cursor::new(Vec::new());
+        let f = std::io::Cursor::new(Vec::new());
         assert!(f.is_write_vectored());
     }
 }
