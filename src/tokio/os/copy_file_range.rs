@@ -189,6 +189,7 @@ impl io::AsyncWrite for MutateInnerOffset {
     }
 }
 
+#[derive(Clone)]
 pub struct FromGivenOffset {
     fd: RawFd,
     pub offset: i64,
@@ -798,6 +799,29 @@ mod test {
 
         let mut s = String::new();
         f_out.read_to_string(&mut s).await.unwrap();
+        assert_eq!(&s, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_cloneable_wrapper() {
+        use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+        let backing_file = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+        let mut f1 = FromGivenOffset::new(&backing_file, Role::Writable, 0).unwrap();
+        let mut f1b = f1.clone();
+        f1.write_all(b"hell").await.unwrap();
+        f1b.seek(io::SeekFrom::Current(4)).await.unwrap();
+        f1b.write_all(b"o").await.unwrap();
+
+        let mut f2 = FromGivenOffset::new(&backing_file, Role::Readable, 0).unwrap();
+        let mut f3 = f2.clone();
+
+        let mut s = String::new();
+        f2.read_to_string(&mut s).await.unwrap();
+        assert_eq!(&s, "hello");
+        s.clear();
+        assert_eq!(&s, "");
+        f3.read_to_string(&mut s).await.unwrap();
         assert_eq!(&s, "hello");
     }
 }
