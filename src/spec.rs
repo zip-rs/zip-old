@@ -160,40 +160,48 @@ impl Zip64CentralDirectoryEnd {
     ) -> ZipResult<(Zip64CentralDirectoryEnd, u64)> {
         let mut pos = nominal_offset;
 
+        const HEADER_SIZE: usize = 56; /* does not include comment */
+
+        let mut buffer = Vec::new();
         while pos <= search_upper_bound {
             reader.seek(io::SeekFrom::Start(pos))?;
 
-            if reader.read_u32::<LittleEndian>()? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
-                let archive_offset = pos - nominal_offset;
+            buffer.resize(std::cmp::min(4096, HEADER_SIZE + (search_upper_bound-pos) as usize), 0u8);
+            reader.read_exact(&mut buffer)?;
+            for i in 0..=buffer.len() - HEADER_SIZE {
+                let mut bufreader = &buffer[i..];
 
-                let _record_size = reader.read_u64::<LittleEndian>()?;
-                // We would use this value if we did anything with the "zip64 extensible data sector".
+                if bufreader.read_u32::<LittleEndian>()? == ZIP64_CENTRAL_DIRECTORY_END_SIGNATURE {
+                    let archive_offset = pos + i as u64 - nominal_offset;
 
-                let version_made_by = reader.read_u16::<LittleEndian>()?;
-                let version_needed_to_extract = reader.read_u16::<LittleEndian>()?;
-                let disk_number = reader.read_u32::<LittleEndian>()?;
-                let disk_with_central_directory = reader.read_u32::<LittleEndian>()?;
-                let number_of_files_on_this_disk = reader.read_u64::<LittleEndian>()?;
-                let number_of_files = reader.read_u64::<LittleEndian>()?;
-                let central_directory_size = reader.read_u64::<LittleEndian>()?;
-                let central_directory_offset = reader.read_u64::<LittleEndian>()?;
+                    let _record_size = bufreader.read_u64::<LittleEndian>()?;
+                    // We would use this value if we did anything with the "zip64 extensible data sector".
 
-                return Ok((
-                    Zip64CentralDirectoryEnd {
-                        version_made_by,
-                        version_needed_to_extract,
-                        disk_number,
-                        disk_with_central_directory,
-                        number_of_files_on_this_disk,
-                        number_of_files,
-                        central_directory_size,
-                        central_directory_offset,
-                    },
-                    archive_offset,
-                ));
+                    let version_made_by = bufreader.read_u16::<LittleEndian>()?;
+                    let version_needed_to_extract = bufreader.read_u16::<LittleEndian>()?;
+                    let disk_number = bufreader.read_u32::<LittleEndian>()?;
+                    let disk_with_central_directory = bufreader.read_u32::<LittleEndian>()?;
+                    let number_of_files_on_this_disk = bufreader.read_u64::<LittleEndian>()?;
+                    let number_of_files = bufreader.read_u64::<LittleEndian>()?;
+                    let central_directory_size = bufreader.read_u64::<LittleEndian>()?;
+                    let central_directory_offset = bufreader.read_u64::<LittleEndian>()?;
+
+                    return Ok((
+                        Zip64CentralDirectoryEnd {
+                            version_made_by,
+                            version_needed_to_extract,
+                            disk_number,
+                            disk_with_central_directory,
+                            number_of_files_on_this_disk,
+                            number_of_files,
+                            central_directory_size,
+                            central_directory_offset,
+                        },
+                        archive_offset,
+                    ));
+                }
             }
-
-            pos += 1;
+            pos += buffer.len() as u64 - HEADER_SIZE as u64 + 1; /* subtract the HEADER_SIZE in case header spans a chunk boundary */
         }
 
         Err(ZipError::InvalidArchive(
@@ -255,5 +263,58 @@ mod test {
         let v = [0; 256]; // something smaller than 65536 but larger CDE size
         let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v));
         assert!(cde.is_err());
+    }
+
+    fn zip64_cde_search(cde_start_pos: usize, total_size: usize) -> u64 {
+        use super::Zip64CentralDirectoryEnd;
+        use std::io;
+
+        // 56 byte zip64 Central Directory End (extracted manually from tests/data/zip64_demo.zip)
+        let cde64 = vec![0x50, 0x4b, 0x06, 0x06, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x03, 0x2d, 0x00,
+                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                         0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                         0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+        let mut haystack = vec![];
+        haystack.resize(cde_start_pos, 0u8);
+        haystack.extend_from_slice(&cde64);
+        haystack.resize(total_size, 0u8);
+        let (_, offset) = Zip64CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&haystack), 0, haystack.len() as u64 - 56).expect("find_and_parse");
+        offset
+    }
+
+    #[test]
+    fn zip64_cde_search_less_than_chunk_at_start() {
+        assert_eq!(0, zip64_cde_search(0, 100));
+    }
+
+    #[test]
+    fn zip64_cde_search_less_than_chunk_in_middle() {
+        assert_eq!(100, zip64_cde_search(100, 300));
+    }
+
+    #[test]
+    fn zip64_cde_search_less_than_chunk_at_end() {
+        assert_eq!(100, zip64_cde_search(100, 156));
+    }
+
+    #[test]
+    fn zip64_cde_search_more_than_chunk_at_chunk_start() {
+        assert_eq!(4096, zip64_cde_search(4096, 4200));
+    }
+
+    #[test]
+    fn zip64_cde_search_more_than_chunk_mid_chunk() {
+        assert_eq!(5000, zip64_cde_search(5000, 9000));
+    }
+
+    #[test]
+    fn zip64_cde_search_more_than_chunk_at_chunk_end() {
+        assert_eq!(8192-56, zip64_cde_search(8192-56, 8192));
+    }
+
+    #[test]
+    fn zip64_cde_search_more_than_chunk_straddling_chunk_end() {
+        assert_eq!(4096-30, zip64_cde_search(4096-30, 4200));
     }
 }
