@@ -64,25 +64,23 @@ impl CentralDirectoryEnd {
     pub fn find_and_parse<T: Read + io::Seek>(
         reader: &mut T,
     ) -> ZipResult<(CentralDirectoryEnd, u64)> {
-        const HEADER_SIZE: u64 = 22;
-        const BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE: u64 = HEADER_SIZE - 6;
+        const HEADER_SIZE: usize = 22;
+
         let file_length = reader.seek(io::SeekFrom::End(0))?;
 
-        let search_upper_bound = file_length.saturating_sub(HEADER_SIZE + ::std::u16::MAX as u64);
+        let last_chunk_start = reader.seek(io::SeekFrom::End(-(std::cmp::min(file_length as usize, HEADER_SIZE + ::std::u16::MAX as usize) as i64)))?;
+        let mut last_chunk = Vec::with_capacity(HEADER_SIZE + ::std::u16::MAX as usize);
+        reader.read_to_end(&mut last_chunk)?;
 
-        if file_length < HEADER_SIZE {
+        if last_chunk.len() < HEADER_SIZE {
             return Err(ZipError::InvalidArchive("Invalid zip header"));
         }
 
-        let mut pos = file_length - HEADER_SIZE;
-        while pos >= search_upper_bound {
-            reader.seek(io::SeekFrom::Start(pos))?;
-            if reader.read_u32::<LittleEndian>()? == CENTRAL_DIRECTORY_END_SIGNATURE {
-                reader.seek(io::SeekFrom::Current(
-                    BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
-                ))?;
-                let cde_start_pos = reader.seek(io::SeekFrom::Start(pos))?;
-                return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
+        let mut pos = last_chunk.len() - HEADER_SIZE;
+        loop {
+            if (&last_chunk[pos..]).read_u32::<LittleEndian>()? == CENTRAL_DIRECTORY_END_SIGNATURE {
+                let cde_start_pos = last_chunk_start + pos as u64;
+                return CentralDirectoryEnd::parse(&mut &last_chunk[pos..]).map(|cde| (cde, cde_start_pos));
             }
             pos = match pos.checked_sub(1) {
                 Some(p) => p,
