@@ -217,3 +217,45 @@ impl Zip64CentralDirectoryEnd {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn zero_length_zip() {
+        use super::CentralDirectoryEnd;
+        use std::io;
+
+        let v = vec![];
+        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v));
+        assert!(cde.is_err());
+    }
+
+    #[test]
+    fn invalid_cde_too_small() {
+        use super::CentralDirectoryEnd;
+        use std::io;
+
+        // This is a valid CDE that _just_ fits (though there's nothing in front of it, so the offsets are wrong)
+        let v = vec![0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xe5, 0x00, 0x00, 0x00, 0xd3, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v));
+        assert!(cde.is_ok()); // This is ok, the offsets are checked elsewhere.
+
+        // This is the same except the CDE is truncated by 4 bytes
+        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v[0..v.len()-4]));
+        assert!(cde.is_err());
+    }
+
+    #[test]
+    fn invalid_cde_missing() {
+        use super::CentralDirectoryEnd;
+        use std::io;
+
+        let v = [0; 70000]; // something larger than 65536 + CDE size
+        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v));
+        assert!(cde.is_err());
+
+        let v = [0; 256]; // something smaller than 65536 but larger CDE size
+        let cde = CentralDirectoryEnd::find_and_parse(&mut io::Cursor::new(&v));
+        assert!(cde.is_err());
+    }
+}
