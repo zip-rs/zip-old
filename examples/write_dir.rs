@@ -35,91 +35,62 @@ fn main() {
     std::process::exit(real_main());
 }
 
-const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
-
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib"
-))]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
-#[cfg(not(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib"
-)))]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
-
-#[cfg(feature = "bzip2")]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
-#[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
-
-#[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
-#[cfg(not(feature = "zstd"))]
-const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
-
 fn real_main() -> i32 {
-    // let args: Vec<_> = std::env::args().collect();
-    // if args.len() < 3 {
-    //     println!(
-    //         "Usage: {} <source_directory> <destination_zipfile>",
-    //         args[0]
-    //     );
-    //     return 1;
-    // }
-
     let args = Args::parse();
     let src_dir = &args.source_directory;
     let dst_file = &args.destination_zipfile;
-    let method: Option<zip::CompressionMethod> = match args.compression_method {
-        CompressionMethod::MethodStored => Some(zip::CompressionMethod::Stored),
+    let method = match args.compression_method {
+        CompressionMethod::MethodStored => zip::CompressionMethod::Stored,
         CompressionMethod::MethodDeflated => {
             #[cfg(not(feature = "deflate"))]
-            println!("The `deflate` feature is not enabled");
-            None;
+            {
+                println!("The `deflate` feature is not enabled");
+                return 1;
+            }
             #[cfg(feature = "deflate")]
-            Some(zip::CompressionMethod::Deflated)
+            zip::CompressionMethod::Deflated
         },
         CompressionMethod::MethodDeflatedMiniz => {
             #[cfg(not(feature = "deflate-miniz"))]
-            println!("The `deflate-miniz` feature is not enabled");
-            None;
+            {
+                println!("The `deflate-miniz` feature is not enabled");
+                return 1;
+            }
             #[cfg(feature = "deflate-miniz")]
-            Some(zip::CompressionMethod::Deflated)
+            zip::CompressionMethod::Deflated
         },
         CompressionMethod::MethodDeflatedZlib => {
             #[cfg(not(feature = "deflate-zlib"))]
-            println!("The `deflate-zlib` feature is not enabled");
-            None;
+            {
+                println!("The `deflate-zlib` feature is not enabled");
+                return 1;
+            }
             #[cfg(feature = "deflate-zlib")]
-            Some(zip::CompressionMethod::Deflated)
+            zip::CompressionMethod::Deflated
         },
         CompressionMethod::MethodBzip2 => {
             #[cfg(not(feature = "bzip2"))]
-            println!("The `bzip2` feature is not enabled");
-            None;
+            {
+                println!("The `bzip2` feature is not enabled");
+                return 1;
+            }
             #[cfg(feature = "bzip2")]
-            Some(zip::CompressionMethod::Bzip2)
+            zip::CompressionMethod::Bzip2
         },
         CompressionMethod::MethodZstd => {
             #[cfg(not(feature = "zstd"))]
-            println!("The `zstd` feature is not enabled");
-            None;
+            {
+                println!("The `zstd` feature is not enabled");
+                return 1;
+            }
             #[cfg(feature = "zstd")]
-            Some(zip::CompressionMethod::Zstd)
+            zip::CompressionMethod::Zstd
         }
     };
-    // for &method in [METHOD_STORED, METHOD_DEFLATED, METHOD_BZIP2, METHOD_ZSTD].iter() {
-    // if method.is_none() {
-    //     continue;
-    // }
     match doit(src_dir, dst_file, method) {
         Ok(_) => println!("done: {src_dir} written to {dst_file}"),
         Err(e) => println!("Error: {e:?}"),
     }
-    //}
 
     0
 }
