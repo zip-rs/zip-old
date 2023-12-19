@@ -6,16 +6,16 @@ use zip::result::ZipError;
 use zip::write::FileOptions;
 
 use std::fs::File;
-use std::path::Path;
+use std::path::{PathBuf, Path};
 use walkdir::{DirEntry, WalkDir};
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
 struct Args {
     // Source directory
-    source_directory: String,
+    source: PathBuf,
     // Destination zipfile 
-    destination_zipfile: String,
+    destination: PathBuf,
     // Compression method 
     #[arg(value_enum)]
     compression_method: CompressionMethod,
@@ -37,8 +37,8 @@ fn main() {
 
 fn real_main() -> i32 {
     let args = Args::parse();
-    let src_dir = &args.source_directory;
-    let dst_file = &args.destination_zipfile;
+    let src_dir = &args.source;
+    let dst_file = &args.destination;
     let method = match args.compression_method {
         CompressionMethod::MethodStored => zip::CompressionMethod::Stored,
         CompressionMethod::MethodDeflated => {
@@ -88,7 +88,7 @@ fn real_main() -> i32 {
         }
     };
     match doit(src_dir, dst_file, method) {
-        Ok(_) => println!("done: {src_dir} written to {dst_file}"),
+        Ok(_) => println!("done: {:?} written to {:?}", src_dir, dst_file),
         Err(e) => println!("Error: {e:?}"),
     }
 
@@ -97,7 +97,7 @@ fn real_main() -> i32 {
 
 fn zip_dir<T>(
     it: &mut dyn Iterator<Item = DirEntry>,
-    prefix: &str,
+    prefix: &Path,
     writer: T,
     method: zip::CompressionMethod,
 ) -> zip::result::ZipResult<()>
@@ -138,8 +138,8 @@ where
 }
 
 fn doit(
-    src_dir: &str,
-    dst_file: &str,
+    src_dir: &Path,
+    dst_file: &Path,
     method: zip::CompressionMethod,
 ) -> zip::result::ZipResult<()> {
     if !Path::new(src_dir).is_dir() {
