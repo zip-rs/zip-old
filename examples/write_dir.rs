@@ -6,7 +6,7 @@ use zip::result::ZipError;
 use zip::write::FileOptions;
 
 use std::fs::File;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 #[derive(Parser)]
