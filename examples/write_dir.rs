@@ -23,12 +23,12 @@ struct Args {
 
 #[derive(Clone, ValueEnum)]
 enum CompressionMethod {
-    MethodStored,
-    MethodDeflated,
-    MethodDeflatedMiniz,
-    MethodDeflatedZlib,
-    MethodBzip2,
-    MethodZstd,
+    Stored,
+    Deflated,
+    DeflatedMiniz,
+    DeflatedZlib,
+    Bzip2,
+    Zstd,
 }
 
 fn main() {
@@ -40,8 +40,8 @@ fn real_main() -> i32 {
     let src_dir = &args.source;
     let dst_file = &args.destination;
     let method = match args.compression_method {
-        CompressionMethod::MethodStored => zip::CompressionMethod::Stored,
-        CompressionMethod::MethodDeflated => {
+        CompressionMethod::Stored => zip::CompressionMethod::Stored,
+        CompressionMethod::Deflated => {
             #[cfg(not(feature = "deflate"))]
             {
                 println!("The `deflate` feature is not enabled");
@@ -50,7 +50,7 @@ fn real_main() -> i32 {
             #[cfg(feature = "deflate")]
             zip::CompressionMethod::Deflated
         },
-        CompressionMethod::MethodDeflatedMiniz => {
+        CompressionMethod::DeflatedMiniz => {
             #[cfg(not(feature = "deflate-miniz"))]
             {
                 println!("The `deflate-miniz` feature is not enabled");
@@ -59,7 +59,7 @@ fn real_main() -> i32 {
             #[cfg(feature = "deflate-miniz")]
             zip::CompressionMethod::Deflated
         },
-        CompressionMethod::MethodDeflatedZlib => {
+        CompressionMethod::DeflatedZlib => {
             #[cfg(not(feature = "deflate-zlib"))]
             {
                 println!("The `deflate-zlib` feature is not enabled");
@@ -68,7 +68,7 @@ fn real_main() -> i32 {
             #[cfg(feature = "deflate-zlib")]
             zip::CompressionMethod::Deflated
         },
-        CompressionMethod::MethodBzip2 => {
+        CompressionMethod::Bzip2 => {
             #[cfg(not(feature = "bzip2"))]
             {
                 println!("The `bzip2` feature is not enabled");
@@ -77,7 +77,7 @@ fn real_main() -> i32 {
             #[cfg(feature = "bzip2")]
             zip::CompressionMethod::Bzip2
         },
-        CompressionMethod::MethodZstd => {
+        CompressionMethod::Zstd => {
             #[cfg(not(feature = "zstd"))]
             {
                 println!("The `zstd` feature is not enabled");
