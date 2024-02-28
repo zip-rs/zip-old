@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [stable, 1.66.0]
+        rust: [stable, 1.67.0, nightly]
 
     steps:
     - uses: actions/checkout@master
@@ -81,13 +81,15 @@ jobs:
 
   fuzz_read:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        rust: [stable, 1.67.0, nightly]
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: ${{ matrix.rust }}
           override: true
 
       - run: cargo install cargo-fuzz
@@ -107,13 +109,15 @@ jobs:
 
   fuzz_write:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        rust: [stable, 1.67.0, nightly]
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: ${{ matrix.rust }}
           override: true
 
       - run: cargo install cargo-fuzz
@@ -133,13 +137,15 @@ jobs:
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        rust: [stable, 1.67.0, nightly]
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: ${{ matrix.rust }}
           override: true
 
       - run: cargo install cargo-fuzz
