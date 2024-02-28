@@ -17,6 +17,7 @@ Supported compression formats:
 
 * stored (i.e. none)
 * deflate
+* deflate64 (decompression only)
 * bzip2
 * zstd
 
@@ -52,6 +53,7 @@ The features available are:
   This is the fastest `deflate` implementation available.
 * `deflate-zopfli`: Enables deflating files with the `zopfli` library (used when compression quality is 10..=264). This
   is the most effective `deflate` implementation available.
+* `deflate64`: Enables the deflate64 compression algorithm. Decompression is only supported.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 * `chrono`: Enables converting last-modified `zip_next::DateTime` to and from `chrono::NaiveDateTime`.

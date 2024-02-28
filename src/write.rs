@@ -1273,6 +1273,12 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                     }
                     unreachable!()
                 }
+                #[cfg(feature = "deflate64")]
+                CompressionMethod::Deflate64 => {
+                    Err(ZipError::UnsupportedArchive(
+                        "Compressing Deflate64 is not supported",
+                    ))
+                }
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
                     let level = clamp_opt(

@@ -24,6 +24,9 @@ use std::sync::Arc;
 ))]
 use flate2::read::DeflateDecoder;
 
+#[cfg(feature = "deflate64")]
+use deflate64::Deflate64Decoder;
+
 #[cfg(feature = "bzip2")]
 use bzip2::read::BzDecoder;
 
@@ -132,6 +135,8 @@ pub(crate) enum ZipFileReader<'a> {
         feature = "deflate-zlib-ng"
     ))]
     Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a>>>),
+    #[cfg(feature = "deflate64")]
+    Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
     #[cfg(feature = "bzip2")]
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "zstd")]
@@ -151,6 +156,8 @@ impl<'a> Read for ZipFileReader<'a> {
                 feature = "deflate-zlib-ng"
             ))]
             ZipFileReader::Deflated(r) => r.read(buf),
+            #[cfg(feature = "deflate64")]
+            ZipFileReader::Deflate64(r) => r.read(buf),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
@@ -173,6 +180,8 @@ impl<'a> ZipFileReader<'a> {
                 feature = "deflate-zlib-ng"
             ))]
             ZipFileReader::Deflated(r) => r.into_inner().into_inner().into_inner(),
+            #[cfg(feature = "deflate64")]
+            ZipFileReader::Deflate64(r) => r.into_inner().into_inner().into_inner().into_inner(),
             #[cfg(feature = "bzip2")]
             ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "zstd")]
@@ -282,6 +291,11 @@ pub(crate) fn make_reader(
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
             ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, crc32, ae2_encrypted))
+        }
+        #[cfg(feature = "deflate64")]
+        CompressionMethod::Deflate64 => {
+            let deflate64_reader = Deflate64Decoder::new(reader);
+            ZipFileReader::Deflate64(Crc32Reader::new(deflate64_reader, crc32, ae2_encrypted))
         }
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 => {
