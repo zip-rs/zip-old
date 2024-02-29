@@ -9,8 +9,6 @@ fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let mut zip = zip_next::ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
-        let file = zip.by_index(i)?;
-        let expected_bytes = file.size().min(MAX_BYTES_TO_READ);
         let file = zip.by_index(i)?.take(MAX_BYTES_TO_READ);
         std::io::copy(&mut file, &mut std::io::sink())?;
     }
