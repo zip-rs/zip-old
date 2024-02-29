@@ -96,7 +96,7 @@ jobs:
           cargo fuzz build fuzz_read
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_read -- -timeout=10s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000
+          cargo fuzz run fuzz_read -- -timeout=10s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000 -dict=fuzz/fuzz_read.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -122,7 +122,7 @@ jobs:
           cargo fuzz build --no-default-features fuzz_read
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_read -- -timeout=10s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000
+          cargo fuzz run fuzz_read -- -timeout=10s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000 -dict=fuzz/fuzz_read.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -148,7 +148,7 @@ jobs:
           cargo fuzz build fuzz_write
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000
+          cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=50000 -max_len=5000000000
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -174,7 +174,7 @@ jobs:
           cargo fuzz build --no-default-features fuzz_write
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000
+          cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=50000 -max_len=5000000000
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
