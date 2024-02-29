@@ -105,6 +105,32 @@ jobs:
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
 
+  fuzz_read_with_no_features:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - run: cargo install cargo-fuzz
+      - name: compile fuzz
+        run: |
+          cargo fuzz build --no-default-features fuzz_read
+      - name: run fuzz
+        run: |
+          cargo fuzz run fuzz_read -- -timeout=5s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000
+      - name: Upload any failure inputs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz_read_bad_inputs
+          path: fuzz/artifacts/fuzz_read/crash-*
+          if-no-files-found: ignore
+
   fuzz_write:
     runs-on: ubuntu-latest
 
