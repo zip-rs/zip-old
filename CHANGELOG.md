@@ -228,3 +228,9 @@
 ### Changed
 
  - Updated dependencies.
+
+## [0.10.4]
+
+### Added
+
+- Support for `DEFLATE64` (decompression only).
