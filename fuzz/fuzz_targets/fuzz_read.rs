@@ -7,7 +7,7 @@ fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
-        if file.size() < 1 << 20 {
+        if file.size() <= 1 << 24 {
             let _ = std::io::copy(&mut file, &mut std::io::sink());
         }
     }
