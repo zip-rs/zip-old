@@ -22,7 +22,7 @@ use std::mem;
     feature = "bzip2",
     feature = "zstd",
 ))]
-use std::num::NonZeroU8;
+use core::num::NonZeroU64;
 use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
@@ -152,7 +152,7 @@ struct ZipRawValues {
 #[derive(Clone, Debug)]
 pub struct FileOptions {
     pub(crate) compression_method: CompressionMethod,
-    pub(crate) compression_level: Option<i32>,
+    pub(crate) compression_level: Option<i64>,
     pub(crate) last_modified_time: DateTime,
     pub(crate) permissions: Option<u32>,
     pub(crate) large_file: bool,
@@ -240,7 +240,7 @@ impl FileOptions {
     /// * `Zstd`: -7 - 22, with zero being mapped to default level. Default is 3
     /// * others: only `None` is allowed
     #[must_use]
-    pub const fn compression_level(mut self, level: Option<i32>) -> FileOptions {
+    pub const fn compression_level(mut self, level: Option<i64>) -> FileOptions {
         self.compression_level = level;
         self
     }
@@ -351,7 +351,7 @@ impl FileOptions {
     }
 
     /// Returns the compression level currently set.
-    pub const fn get_compression_level(&self) -> Option<i32> {
+    pub const fn get_compression_level(&self) -> Option<i64> {
         self.compression_level
     }
 }
@@ -1168,7 +1168,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     fn prepare_next_writer(
         &self,
         compression: CompressionMethod,
-        compression_level: Option<i32>,
+        compression_level: Option<i64>,
         #[cfg(feature = "deflate-zopfli")] zopfli_buffer_size: Option<usize>,
     ) -> ZipResult<SwitchWriterFunction<W>> {
         if let Closed = self {
@@ -1203,7 +1203,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         || cfg!(feature = "deflate-zlib")
                         || cfg!(feature = "deflate-zlib-ng")
                     {
-                        Compression::default().level() as i32
+                        Compression::default().level() as i64
                     } else {
                         24
                     };
@@ -1221,8 +1221,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         let best_non_zopfli = Compression::best().level();
                         if level > best_non_zopfli {
                             let options = Options {
-                                iteration_count: NonZeroU8::try_from(
-                                    (level - best_non_zopfli) as u8,
+                                iteration_count: NonZeroU64::try_from(
+                                    (level - best_non_zopfli) as u64,
                                 )
                                 .unwrap(),
                                 ..Default::default()
@@ -1268,7 +1268,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 #[cfg(feature = "bzip2")]
                 CompressionMethod::Bzip2 => {
                     let level = clamp_opt(
-                        compression_level.unwrap_or(bzip2::Compression::default().level() as i32),
+                        compression_level.unwrap_or(bzip2::Compression::default().level() as i64),
                         bzip2_compression_level_range(),
                     )
                     .ok_or(ZipError::UnsupportedArchive(
@@ -1287,14 +1287,14 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 #[cfg(feature = "zstd")]
                 CompressionMethod::Zstd => {
                     let level = clamp_opt(
-                        compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL),
+                        compression_level.unwrap_or(zstd::DEFAULT_COMPRESSION_LEVEL as i64),
                         zstd::compression_level_range(),
                     )
                     .ok_or(ZipError::UnsupportedArchive(
                         "Unsupported compression level",
                     ))?;
                     Ok(Box::new(move |bare| {
-                        GenericZipWriter::Zstd(ZstdEncoder::new(bare, level).unwrap())
+                        GenericZipWriter::Zstd(ZstdEncoder::new(bare, level as i32).unwrap())
                     }))
                 }
                 CompressionMethod::Unsupported(..) => {
@@ -1382,20 +1382,20 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     feature = "deflate-zlib-ng",
     feature = "deflate-zopfli"
 ))]
-fn deflate_compression_level_range() -> std::ops::RangeInclusive<i32> {
+fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
     let min = if cfg!(feature = "deflate")
         || cfg!(feature = "deflate-miniz")
         || cfg!(feature = "deflate-zlib")
         || cfg!(feature = "deflate-zlib-ng")
     {
-        Compression::none().level() as i32
+        Compression::none().level() as i64
     } else {
-        Compression::best().level() as i32 + 1
+        Compression::best().level() as i64 + 1
     };
 
-    let max = Compression::best().level() as i32
+    let max = Compression::best().level() as i64
         + if cfg!(feature = "deflate-zopfli") {
-            u8::MAX as i32
+            u8::MAX as i64
         } else {
             0
         };
@@ -1404,9 +1404,9 @@ fn deflate_compression_level_range() -> std::ops::RangeInclusive<i32> {
 }
 
 #[cfg(feature = "bzip2")]
-fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i32> {
-    let min = bzip2::Compression::fast().level() as i32;
-    let max = bzip2::Compression::best().level() as i32;
+fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
+    let min = bzip2::Compression::fast().level() as i64;
+    let max = bzip2::Compression::best().level() as i64;
     min..=max
 }
 
@@ -1419,8 +1419,8 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i32> {
     feature = "bzip2",
     feature = "zstd"
 ))]
-fn clamp_opt<T: Ord + Copy>(value: T, range: std::ops::RangeInclusive<T>) -> Option<T> {
-    if range.contains(&value) {
+fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(value: T, range: std::ops::RangeInclusive<U>) -> Option<T> {
+    if range.contains(&value.try_into().ok()?) {
         Some(value)
     } else {
         None

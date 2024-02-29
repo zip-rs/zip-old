@@ -375,7 +375,7 @@ pub struct ZipFileData {
     /// Compression method used to store the file
     pub compression_method: crate::compression::CompressionMethod,
     /// Compression level to store the file
-    pub compression_level: Option<i32>,
+    pub compression_level: Option<i64>,
     /// Last modified time. This will only have a 2 second precision.
     pub last_modified_time: DateTime,
     /// CRC32 checksum
