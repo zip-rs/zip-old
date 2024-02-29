@@ -95,6 +95,7 @@ jobs:
         run: |
           cargo fuzz build fuzz_read
       - name: run fuzz
+        timeout-minutes: 330
         run: |
           cargo fuzz run fuzz_read -- -timeout=10s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
@@ -121,6 +122,7 @@ jobs:
         run: |
           cargo fuzz build --no-default-features fuzz_read
       - name: run fuzz
+        timeout-minutes: 330
         run: |
           cargo fuzz run fuzz_read -- -timeout=10s -jobs=100 -workers=2 -runs=1000000 -max_len=5000000000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
@@ -147,6 +149,7 @@ jobs:
         run: |
           cargo fuzz build fuzz_write
       - name: run fuzz
+        timeout-minutes: 330
         run: |
           cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=50000 -max_len=5000000000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
@@ -173,6 +176,7 @@ jobs:
         run: |
           cargo fuzz build --no-default-features fuzz_write
       - name: run fuzz
+        timeout-minutes: 330
         run: |
           cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
