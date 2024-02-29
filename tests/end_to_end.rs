@@ -1,8 +1,7 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use std::collections::HashSet;
 use std::io::prelude::*;
-use std::io::{Cursor, Seek};
-use std::iter::FromIterator;
+use std::io::{Cursor};
 use zip_next::result::ZipResult;
 use zip_next::write::FileOptions;
 use zip_next::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};

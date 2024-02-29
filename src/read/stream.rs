@@ -213,7 +213,6 @@ impl ZipStreamFileMetadata {
 mod test {
     use super::*;
     use std::collections::BTreeSet;
-    use std::io;
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {

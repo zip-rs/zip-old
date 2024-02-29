@@ -1,6 +1,4 @@
 use std::io::prelude::*;
-use std::io::{Seek, Write};
-use std::iter::Iterator;
 use zip_next::result::ZipError;
 use zip_next::write::FileOptions;
 

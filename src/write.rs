@@ -8,17 +8,6 @@ use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSIO
 use byteorder::{LittleEndian, WriteBytesExt};
 use crc32fast::Hasher;
 use std::collections::HashMap;
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng",
-    feature = "deflate-zopfli",
-    feature = "bzip2",
-    feature = "zstd",
-    feature = "time"
-))]
-use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -101,7 +90,6 @@ enum GenericZipWriter<W: Write + Seek> {
 // Put the struct declaration in a private module to convince rustdoc to display ZipWriter nicely
 pub(crate) mod zip_writer {
     use super::*;
-    use std::collections::HashMap;
     /// ZIP archive generator
     ///
     /// Handles the bookkeeping involved in building an archive, and provides an
