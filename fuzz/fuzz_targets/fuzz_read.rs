@@ -10,7 +10,7 @@ fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 
     for i in 0..zip.len() {
         let file = zip.by_index(i)?;
-        let expected_bytes = file.size().max(MAX_BYTES_TO_READ);
+        let expected_bytes = file.size().min(MAX_BYTES_TO_READ);
         let result = std::io::copy(&mut file.take(MAX_BYTES_TO_READ), &mut std::io::sink());
         if let Ok(bytes) = result {
             assert!(bytes <= expected_bytes)
