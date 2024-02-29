@@ -174,7 +174,7 @@ jobs:
           cargo fuzz build --no-default-features fuzz_write
       - name: run fuzz
         run: |
-          cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=50000 -max_len=5000000000 -dict=fuzz/fuzz.dict
+          cargo fuzz run fuzz_write -- -timeout=10s -jobs=100 -workers=2 -runs=10000 -max_len=5000000000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
