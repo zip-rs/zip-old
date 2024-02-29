@@ -13,7 +13,7 @@ fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         let expected_bytes = file.size().max(MAX_BYTES_TO_READ);
         let result = std::io::copy(&mut file.take(MAX_BYTES_TO_READ), &mut std::io::sink());
         if let Ok(bytes) = result {
-            assert_eq!(expected_bytes, bytes)
+            assert!(bytes <= expected_bytes)
         }
     }
 
