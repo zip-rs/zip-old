@@ -187,7 +187,7 @@ mod test {
     }
 
     #[test]
-    #[allow(unknown_lints)] // invalid_from_utf8 was added in rust 1.72 
+    #[allow(unknown_lints)] // invalid_from_utf8 was added in rust 1.72
     #[allow(invalid_from_utf8)]
     fn example_slice() {
         use super::FromCp437;
