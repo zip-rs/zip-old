@@ -233,4 +233,9 @@
 
 ### Added
 
-- Support for `DEFLATE64` (decompression only).
+ - Support for `DEFLATE64` (decompression only).
+ - Support for Zopfli compression levels up to `i64::MAX`.
+
+### Changed
+
+- Updated dependencies.
