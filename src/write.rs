@@ -6,13 +6,6 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, WriteBytesExt};
-use crc32fast::Hasher;
-use std::collections::HashMap;
-use std::default::Default;
-use std::io;
-use std::io::prelude::*;
-use std::io::{BufReader, SeekFrom};
-use std::mem;
 #[cfg(any(
     feature = "deflate",
     feature = "deflate-miniz",
@@ -23,6 +16,13 @@ use std::mem;
     feature = "zstd",
 ))]
 use core::num::NonZeroU64;
+use crc32fast::Hasher;
+use std::collections::HashMap;
+use std::default::Default;
+use std::io;
+use std::io::prelude::*;
+use std::io::{BufReader, SeekFrom};
+use std::mem;
 use std::str::{from_utf8, Utf8Error};
 use std::sync::Arc;
 
@@ -1419,7 +1419,10 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
     feature = "bzip2",
     feature = "zstd"
 ))]
-fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(value: T, range: std::ops::RangeInclusive<U>) -> Option<T> {
+fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
+    value: T,
+    range: std::ops::RangeInclusive<U>,
+) -> Option<T> {
     if range.contains(&value.try_into().ok()?) {
         Some(value)
     } else {
