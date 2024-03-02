@@ -935,8 +935,7 @@ impl<'a> ZipFile<'a> {
     pub fn is_dir(&self) -> bool {
         self.name()
             .chars()
-            .rev()
-            .next()
+            .next_back()
             .map_or(false, |c| c == '/' || c == '\\')
     }
 
