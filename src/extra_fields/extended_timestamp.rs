@@ -25,16 +25,20 @@ impl ExtendedTimestamp {
     {
         let flags = reader.read_u8()?;
 
+        // the `flags` field refers to the local headers and might not correspond
+        // to the len field. If the length field is 1+4, we assume that only
+        // the modification time has been set
+
         // > Those times that are present will appear in the order indicated, but
         // > any combination of times may be omitted.  (Creation time may be
         // > present without access time, for example.)  TSize should equal
         // > (1 + 4*(number of set bits in Flags)), as the block is currently
         // > defined.
-        if len as u32 != 1 + 4 * flags.count_ones() {
-            panic!("found len {len} and flags {flags:08b}");
-            //return Err(ZipError::UnsupportedArchive(
-            //    "flags and len don't match in extended timestamp field",
-            //));
+        if len != 5 && len as u32 != 1 + 4 * flags.count_ones() {
+            //panic!("found len {len} and flags {flags:08b}");
+            return Err(ZipError::UnsupportedArchive(
+                "flags and len don't match in extended timestamp field",
+            ));
         }
 
         if flags & 0b11111000 != 0 {
@@ -43,19 +47,19 @@ impl ExtendedTimestamp {
             ));
         }
 
-        let mod_time = if flags & 0b00000001u8 == 0b00000001u8 {
+        let mod_time = if (flags & 0b00000001u8 == 0b00000001u8) || len == 5 {
             Some(reader.read_u32::<LittleEndian>()?)
         } else {
             None
         };
 
-        let ac_time = if flags & 0b00000010u8 == 0b00000010u8 {
+        let ac_time = if flags & 0b00000010u8 == 0b00000010u8 && len > 5 {
             Some(reader.read_u32::<LittleEndian>()?)
         } else {
             None
         };
 
-        let cr_time = if flags & 0b00000100u8 == 0b00000100u8 {
+        let cr_time = if flags & 0b00000100u8 == 0b00000100u8 && len > 5 {
             Some(reader.read_u32::<LittleEndian>()?)
         } else {
             None
