@@ -42,6 +42,7 @@ mod spec;
 mod types;
 pub mod write;
 mod zipcrypto;
+pub mod extra_fields;
 
 /// Unstable APIs
 ///

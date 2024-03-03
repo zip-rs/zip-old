@@ -5,6 +5,7 @@ use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
+use crate::extra_fields::ExtendedTimestamp;
 use crate::result::{InvalidPassword, ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
@@ -802,6 +803,32 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                     #[allow(deprecated)]
                     CompressionMethod::from_u16(compression_method)
                 };
+            }
+            0x5455 => {
+                // extended timestamp
+                // https://libzip.org/specifications/extrafld.txt
+
+                match len {
+                    9 => /* central header version */ {
+                        let flags = reader.read_u8()?;
+                        let mod_time = reader.read_u32::<LittleEndian>()?;
+                        let extra_data = ExtendedTimestamp::new_central(flags, mod_time);
+                    }
+
+                    17 => /* local header version */ {
+                        let flags = reader.read_u8()?;
+                        let mod_time = reader.read_u32::<LittleEndian>()?;
+                        let ac_time = reader.read_u32::<LittleEndian>()?;
+                        let cr_time = reader.read_u32::<LittleEndian>()?;
+                        let extra_data = ExtendedTimestamp::new_local(flags, mod_time, ac_time, cr_time);
+
+                    }
+                    _ => {
+                        return Err(ZipError::UnsupportedArchive(
+                            "Extended timestamp extra data field has an unsupported length",
+                        ));
+                    }
+                }
             }
             _ => {
                 // Other fields are ignored
