@@ -397,6 +397,7 @@ impl<W: Write + io::Seek> ZipWriter<W> {
                 external_attributes: permissions << 16,
                 large_file: options.large_file,
                 aes_mode: None,
+                extra_fields: Vec::new(),
             };
             write_local_file_header(writer, &file)?;
 

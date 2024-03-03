@@ -5,7 +5,7 @@ use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
-use crate::extra_fields::ExtendedTimestamp;
+use crate::extra_fields::{ExtendedTimestamp, ExtraField};
 use crate::result::{InvalidPassword, ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
@@ -725,6 +725,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
+        extra_fields: Vec::new(),
     };
 
     match parse_extra_field(&mut result) {
@@ -808,27 +809,9 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 // extended timestamp
                 // https://libzip.org/specifications/extrafld.txt
 
-                match len {
-                    9 => /* central header version */ {
-                        let flags = reader.read_u8()?;
-                        let mod_time = reader.read_u32::<LittleEndian>()?;
-                        let extra_data = ExtendedTimestamp::new_central(flags, mod_time);
-                    }
-
-                    17 => /* local header version */ {
-                        let flags = reader.read_u8()?;
-                        let mod_time = reader.read_u32::<LittleEndian>()?;
-                        let ac_time = reader.read_u32::<LittleEndian>()?;
-                        let cr_time = reader.read_u32::<LittleEndian>()?;
-                        let extra_data = ExtendedTimestamp::new_local(flags, mod_time, ac_time, cr_time);
-
-                    }
-                    _ => {
-                        return Err(ZipError::UnsupportedArchive(
-                            "Extended timestamp extra data field has an unsupported length",
-                        ));
-                    }
-                }
+                file.extra_fields.push(ExtraField::ExtendedTimestamp(
+                    ExtendedTimestamp::try_from_reader(&mut reader, len)?,
+                ));
             }
             _ => {
                 // Other fields are ignored
@@ -1117,6 +1100,7 @@ pub fn read_zipfile_from_stream<'a, R: io::Read>(
         external_attributes: 0,
         large_file: false,
         aes_mode: None,
+        extra_fields: Vec::new(),
     };
 
     match parse_extra_field(&mut result) {

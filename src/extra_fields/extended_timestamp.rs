@@ -1,55 +1,84 @@
-use std::marker::PhantomData;
+use std::io::Read;
 
-use super::{CentralHeaderVersion, ExtraFieldVersion, LocalHeaderVersion};
+use byteorder::LittleEndian;
+use byteorder::ReadBytesExt;
 
-pub struct ExtendedTimestamp<V: ExtraFieldVersion> {
-    flags: u8,
-    mod_time: u32,
+use crate::result::{ZipError, ZipResult};
+
+/// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
+
+#[derive(Debug, Clone)]
+pub struct ExtendedTimestamp {
+    mod_time: Option<u32>,
     ac_time: Option<u32>,
     cr_time: Option<u32>,
-    _version: PhantomData<V>,
 }
 
-impl<V> ExtendedTimestamp<V> where V: ExtraFieldVersion {
-    pub fn flags(&self) -> u8 {
-        self.flags
-    }
+impl ExtendedTimestamp {
+    /// creates an extended timestamp struct by reading the required bytes from the reader.
+    ///
+    /// This method assumes that the length has already been read, therefore 
+    /// it must be passed as an argument
+    pub fn try_from_reader<R>(reader: &mut R, len: u16) -> ZipResult<Self>
+    where
+        R: Read,
+    {
+        let flags = reader.read_u8()?;
 
-    pub fn mod_time(&self) -> u32 {
-        self.mod_time
-    }
-}
-
-impl ExtendedTimestamp<CentralHeaderVersion> {
-    pub fn new_central(flags: u8, mod_time: u32) -> Self {
-        Self {
-            flags,
-            mod_time,
-            ac_time: None,
-            cr_time: None,
-            _version: PhantomData
+        // > Those times that are present will appear in the order indicated, but
+        // > any combination of times may be omitted.  (Creation time may be
+        // > present without access time, for example.)  TSize should equal
+        // > (1 + 4*(number of set bits in Flags)), as the block is currently
+        // > defined.
+        if len as u32 != 1 + 4 * flags.count_ones() {
+            panic!("found len {len} and flags {flags:08b}");
+            //return Err(ZipError::UnsupportedArchive(
+            //    "flags and len don't match in extended timestamp field",
+            //));
         }
-    }
-}
 
-
-impl ExtendedTimestamp<LocalHeaderVersion> {
-    pub fn new_local(flags: u8, mod_time: u32, ac_time: u32, cr_time: u32) -> Self {
-        Self {
-            flags,
-            mod_time,
-            ac_time: Some(ac_time),
-            cr_time: Some(cr_time),
-            _version: PhantomData
+        if flags & 0b11111000 != 0 {
+            return Err(ZipError::UnsupportedArchive(
+                "found unsupported timestamps in the extended timestamp header",
+            ));
         }
+
+        let mod_time = if flags & 0b00000001u8 == 0b00000001u8 {
+            Some(reader.read_u32::<LittleEndian>()?)
+        } else {
+            None
+        };
+
+        let ac_time = if flags & 0b00000010u8 == 0b00000010u8 {
+            Some(reader.read_u32::<LittleEndian>()?)
+        } else {
+            None
+        };
+
+        let cr_time = if flags & 0b00000100u8 == 0b00000100u8 {
+            Some(reader.read_u32::<LittleEndian>()?)
+        } else {
+            None
+        };
+        Ok(Self {
+            mod_time,
+            ac_time,
+            cr_time,
+        })
     }
 
-    pub fn ac_time(&self) -> u32 {
-        self.ac_time.unwrap()
+    /// returns the last modification timestamp
+    pub fn mod_time(&self) -> Option<&u32> {
+        self.mod_time.as_ref()
     }
 
+    /// returns the last access timestamp
+    pub fn ac_time(&self) -> Option<&u32> {
+        self.ac_time.as_ref()
+    }
 
-    pub fn cr_time(&self) -> u32 {
-        self.cr_time.unwrap()
+    /// returns the creation timestamp
+    pub fn cr_time(&self) -> Option<&u32> {
+        self.cr_time.as_ref()
     }
 }
