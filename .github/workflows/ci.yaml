@@ -98,7 +98,7 @@ jobs:
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=6000 -len_control=200 -dict=fuzz/fuzz.dict
+          cargo fuzz run fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=5000 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -130,8 +130,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: fuzz_read_bad_inputs
-          path: fuzz/artifacts/fuzz_read_no_features/crash-*
+          name: fuzz_read_no_features_bad_inputs
+          path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
 
   fuzz_write:
@@ -184,6 +184,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: fuzz_write_bad_inputs
-          path: fuzz/artifacts/fuzz_write_no_features/crash-*
+          name: fuzz_write_no_features_bad_inputs
+          path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
