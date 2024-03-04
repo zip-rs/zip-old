@@ -1,3 +1,5 @@
+"PK"
+"KP"
 central_directory_end_signature_be="PK\x05\x06"
 zip64_central_directory_end_signature_be="PK\x06\x06"
 zip64_central_directory_end_locator_signature_be="PK\x06\x07"
