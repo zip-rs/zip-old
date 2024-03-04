@@ -1362,6 +1362,7 @@ mod test {
         assert!(reader.is_err());
     }
 
+    #[cfg(feature = "deflate64")]
     #[test]
     fn deflate64_index_out_of_bounds() -> std::io::Result<()> {
         let file: [u8; 815] = [
