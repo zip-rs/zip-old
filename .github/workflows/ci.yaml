@@ -131,7 +131,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: fuzz_read_bad_inputs
-          path: fuzz/artifacts/fuzz_read/crash-*
+          path: fuzz/artifacts/fuzz_read_no_features/crash-*
           if-no-files-found: ignore
 
   fuzz_write:
@@ -185,5 +185,5 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: fuzz_write_bad_inputs
-          path: fuzz/artifacts/fuzz_write/crash-*
+          path: fuzz/artifacts/fuzz_write_no_features/crash-*
           if-no-files-found: ignore
