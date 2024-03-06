@@ -985,6 +985,11 @@ impl<'a> ZipFile<'a> {
     pub fn central_header_start(&self) -> u64 {
         self.data.central_header_start
     }
+    
+    /// iterate through all extra fields
+    pub fn extra_data_fields(&self) -> impl Iterator<Item=&ExtraField> {
+        self.data.extra_fields.iter()
+    }
 }
 
 impl<'a> Read for ZipFile<'a> {
