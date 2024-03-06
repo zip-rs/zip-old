@@ -812,6 +812,9 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                 file.extra_fields.push(ExtraField::ExtendedTimestamp(
                     ExtendedTimestamp::try_from_reader(&mut reader, len)?,
                 ));
+
+                // the reader for ExtendedTimestamp consumes `len` bytes
+                len_left = 0;
             }
             _ => {
                 // Other fields are ignored
