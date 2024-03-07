@@ -101,7 +101,7 @@ jobs:
           cargo fuzz run fuzz_read -- -timeout=10s -fork=2 -runs=100000000 -max_len=2048 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
@@ -128,7 +128,7 @@ jobs:
           cargo fuzz run --no-default-features fuzz_read -- -timeout=10s -fork=2 -runs=100000000 -max_len=16384 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read_no_features/crash-*
@@ -155,7 +155,7 @@ jobs:
           cargo fuzz run fuzz_write -- -timeout=10s -fork=2 -runs=5000000 -max_len=2000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
@@ -182,7 +182,7 @@ jobs:
           cargo fuzz run --no-default-features fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=10000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_bad_inputs
           path: fuzz/artifacts/fuzz_write_no_features/crash-*
