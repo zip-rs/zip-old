@@ -14,7 +14,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::Arc;
 
 #[cfg(any(
@@ -39,7 +38,7 @@ pub(crate) mod stream;
 
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
@@ -47,7 +46,6 @@ pub(crate) mod zip_archive {
         pub(crate) files: Vec<super::ZipFileData>,
         pub(crate) names_map: super::HashMap<String, usize>,
         pub(super) offset: u64,
-        pub(super) comment: Rc<Vec<u8>>,
         pub(super) dir_start: u64,
         pub(super) dir_end: u64,
     }
@@ -75,7 +73,8 @@ pub(crate) mod zip_archive {
     #[derive(Clone, Debug)]
     pub struct ZipArchive<R> {
         pub(super) reader: R,
-        pub(super) shared: super::Arc<Shared>,
+        pub(super) shared: Arc<Shared>,
+        pub(super) comment: Vec<u8>,
     }
 }
 
@@ -426,17 +425,16 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// separate function to ease the control flow design.
     pub(crate) fn get_metadata(
         reader: &mut R,
-        footer: spec::CentralDirectoryEnd,
+        footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
     ) -> ZipResult<Shared> {
         // Check if file has a zip64 footer
-        let mut results = Self::get_directory_info_zip64(reader, &footer, cde_start_pos)
+        let mut results = Self::get_directory_info_zip64(reader, footer, cde_start_pos)
             .unwrap_or_else(|e| vec![Err(e)]);
-        let zip32_result = Self::get_directory_info_zip32(&footer, cde_start_pos);
+        let zip32_result = Self::get_directory_info_zip32(footer, cde_start_pos);
         let mut invalid_errors = Vec::new();
         let mut unsupported_errors = Vec::new();
         let mut ok_results = Vec::new();
-        let comment = Rc::new(footer.zip_file_comment);
         results.iter_mut().for_each(|result| {
             if let Ok(central_dir) = result {
                 if let Ok(zip32_central_dir) = &zip32_result {
@@ -464,7 +462,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                         *result = Err(ZipError::InvalidArchive(
                             "ZIP32 and ZIP64 last-disk numbers don't match",
                         ));
-                        return;
                     }
                 }
             }
@@ -499,7 +496,6 @@ impl<R: Read + Seek> ZipArchive<R> {
                         files,
                         names_map,
                         offset: dir_info.archive_offset,
-                        comment: comment.clone(),
                         dir_start: dir_info.directory_start,
                         dir_end,
                     })
@@ -531,10 +527,11 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// This uses the central directory record of the ZIP file, and ignores local file headers
     pub fn new(mut reader: R) -> ZipResult<ZipArchive<R>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut reader)?;
-        let shared = Self::get_metadata(&mut reader, footer, cde_start_pos)?;
+        let shared = Self::get_metadata(&mut reader, &footer, cde_start_pos)?;
         Ok(ZipArchive {
             reader,
             shared: Arc::new(shared),
+            comment: footer.zip_file_comment,
         })
     }
     /// Extract a Zip archive into a directory, overwriting files if they
@@ -596,7 +593,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Get the comment of the zip archive.
     pub fn comment(&self) -> &[u8] {
-        &self.shared.comment
+        &self.comment
     }
 
     /// Returns an iterator over all the file and directory names in this archive.

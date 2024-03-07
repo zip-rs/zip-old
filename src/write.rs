@@ -435,8 +435,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-        let comment = footer.zip_file_comment.to_owned();
-        let metadata = ZipArchive::get_metadata(&mut readwriter, footer, cde_start_pos)?;
+        let metadata = ZipArchive::get_metadata(&mut readwriter, &footer, cde_start_pos)?;
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
@@ -444,7 +443,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
             files_by_name: metadata.names_map,
             stats: Default::default(),
             writing_to_file: false,
-            comment,
+            comment: footer.zip_file_comment,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
         })
