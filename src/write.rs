@@ -1,7 +1,7 @@
 //! Types for creating ZIP archives
 
 use crate::compression::CompressionMethod;
-use crate::read::{central_header_to_zip_file, find_content, ZipArchive, ZipFile, ZipFileReader};
+use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
@@ -435,42 +435,16 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Initializes the archive from an existing ZIP archive, making it ready for append.
     pub fn new_append(mut readwriter: A) -> ZipResult<ZipWriter<A>> {
         let (footer, cde_start_pos) = spec::CentralDirectoryEnd::find_and_parse(&mut readwriter)?;
-
-        let counts = ZipArchive::get_directory_counts(&mut readwriter, &footer, cde_start_pos)?;
-
-        if counts.disk_number != counts.disk_with_central_directory {
-            return Err(ZipError::UnsupportedArchive(
-                "Support for multi-disk files is not implemented",
-            ));
-        }
-
-        if readwriter
-            .seek(SeekFrom::Start(counts.directory_start))
-            .is_err()
-        {
-            return Err(InvalidArchive(
-                "Could not seek to start of central directory",
-            ));
-        }
-
-        let files = (0..counts.number_of_files)
-            .map(|_| central_header_to_zip_file(&mut readwriter, counts.archive_offset))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut files_by_name = HashMap::new();
-        for (index, file) in files.iter().enumerate() {
-            files_by_name.insert(file.file_name.to_owned(), index);
-        }
-
-        let _ = readwriter.seek(SeekFrom::Start(counts.directory_start)); // seek directory_start to overwrite it
+        let comment = footer.zip_file_comment.to_owned();
+        let metadata = ZipArchive::get_metadata(&mut readwriter, footer, cde_start_pos)?;
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files,
-            files_by_name,
+            files: metadata.files,
+            files_by_name: metadata.names_map,
             stats: Default::default(),
             writing_to_file: false,
-            comment: footer.zip_file_comment,
+            comment,
             writing_raw: true, // avoid recomputing the last file's header
             flush_on_finish_file: false,
         })
@@ -2075,6 +2049,22 @@ mod test {
         writer.start_file("", options).unwrap();
         writer.write_all(&[]).unwrap();
         writer.write_all(&[]).unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn crash_with_no_features() -> ZipResult<()> {
+        const ORIGINAL_FILE_NAME: &str = "PK\u{6}\u{6}\0\0\0\0\0\0\0\0\0\u{2}g\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\u{1}\0\0\0\0\0\0\0\0\0\0PK\u{6}\u{7}\0\0\0\0\0\0\0\0\0\0\0\0\u{7}\0\t'";
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let mut options = FileOptions::default();
+        options = options
+            .with_alignment(3584)
+            .compression_method(CompressionMethod::Stored);
+        writer.start_file(ORIGINAL_FILE_NAME, options)?;
+        let archive = writer.finish()?;
+        let mut writer = ZipWriter::new_append(archive)?;
+        writer.shallow_copy_file(ORIGINAL_FILE_NAME, "\u{6}\\")?;
+        writer.finish()?;
         Ok(())
     }
 }
