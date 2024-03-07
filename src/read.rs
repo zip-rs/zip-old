@@ -5,6 +5,7 @@ use crate::aes::{AesReader, AesReaderValid};
 use crate::compression::CompressionMethod;
 use crate::cp437::FromCp437;
 use crate::crc32::Crc32Reader;
+use crate::read::zip_archive::Shared;
 use crate::result::{InvalidPassword, ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
@@ -74,11 +75,10 @@ pub(crate) mod zip_archive {
     pub struct ZipArchive<R> {
         pub(super) reader: R,
         pub(super) shared: Arc<Shared>,
-        pub(super) comment: Vec<u8>,
+        pub(super) comment: Arc<Vec<u8>>,
     }
 }
 
-use crate::read::zip_archive::Shared;
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -381,43 +381,45 @@ impl<R: Read + Seek> ZipArchive<R> {
             .ok_or(ZipError::InvalidArchive(
                 "File cannot contain ZIP64 central directory end",
             ))?;
-        while let Ok((footer64, archive_offset)) = spec::Zip64CentralDirectoryEnd::find_and_parse(
+        let search_results = spec::Zip64CentralDirectoryEnd::find_and_parse(
             reader,
             locator64.end_of_central_directory_offset,
             search_upper_bound,
-        ) {
+        )?;
+        search_results.into_iter().for_each(|(footer64, archive_offset)| {
             results.push({
-                let directory_start = footer64
+                let directory_start_result = footer64
                     .central_directory_offset
                     .checked_add(archive_offset)
                     .ok_or(ZipError::InvalidArchive(
                         "Invalid central directory size or offset",
-                    ))?;
-                if directory_start > search_upper_bound {
-                    return Err(ZipError::InvalidArchive(
-                        "Invalid central directory size or offset",
                     ));
-                }
-                if footer64.number_of_files_on_this_disk > footer64.number_of_files {
-                    return Err(ZipError::InvalidArchive(
-                        "ZIP64 footer indicates more files on this disk than in the whole archive",
-                    ));
-                }
-                if footer64.version_needed_to_extract > footer64.version_made_by {
-                    return Err(ZipError::InvalidArchive(
-                        "ZIP64 footer indicates a new version is needed to extract this archive than the \
+                directory_start_result.and_then(|directory_start| {
+                    if directory_start > search_upper_bound {
+                        Err(ZipError::InvalidArchive(
+                            "Invalid central directory size or offset",
+                        ))
+                    } else if footer64.number_of_files_on_this_disk > footer64.number_of_files {
+                        Err(ZipError::InvalidArchive(
+                            "ZIP64 footer indicates more files on this disk than in the whole archive",
+                        ))
+                    } else if footer64.version_needed_to_extract > footer64.version_made_by {
+                        Err(ZipError::InvalidArchive(
+                            "ZIP64 footer indicates a new version is needed to extract this archive than the \
     version that wrote it",
-                    ));
-                }
-                Ok(CentralDirectoryInfo {
-                    archive_offset,
-                    directory_start,
-                    number_of_files: footer64.number_of_files as usize,
-                    disk_number: footer64.disk_number,
-                    disk_with_central_directory: footer64.disk_with_central_directory,
+                        ))
+                    } else {
+                        Ok(CentralDirectoryInfo {
+                            archive_offset,
+                            directory_start,
+                            number_of_files: footer64.number_of_files as usize,
+                            disk_number: footer64.disk_number,
+                            disk_with_central_directory: footer64.disk_with_central_directory,
+                        })
+                    }
                 })
             });
-        }
+        });
         Ok(results)
     }
 
@@ -480,25 +482,23 @@ impl<R: Read + Seek> ZipArchive<R> {
                     };
                     let mut files = Vec::with_capacity(file_capacity);
                     let mut names_map = HashMap::with_capacity(file_capacity);
-
+                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
                         names_map.insert(file.file_name.clone(), files.len());
                         files.push(file);
                     }
-                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
-                        return unsupported_zip_error(
-                            "Support for multi-disk files is not implemented",
-                        );
+                        unsupported_zip_error("Support for multi-disk files is not implemented")
+                    } else {
+                        Ok(Shared {
+                            files,
+                            names_map,
+                            offset: dir_info.archive_offset,
+                            dir_start: dir_info.directory_start,
+                            dir_end,
+                        })
                     }
-                    Ok(Shared {
-                        files,
-                        names_map,
-                        offset: dir_info.archive_offset,
-                        dir_start: dir_info.directory_start,
-                        dir_end,
-                    })
                 })
             })
             .for_each(|result| match result {
@@ -530,8 +530,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         let shared = Self::get_metadata(&mut reader, &footer, cde_start_pos)?;
         Ok(ZipArchive {
             reader,
-            shared: Arc::new(shared),
-            comment: footer.zip_file_comment,
+            shared: shared.into(),
+            comment: footer.zip_file_comment.into(),
         })
     }
     /// Extract a Zip archive into a directory, overwriting files if they
