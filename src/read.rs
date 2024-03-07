@@ -482,12 +482,13 @@ impl<R: Read + Seek> ZipArchive<R> {
                     };
                     let mut files = Vec::with_capacity(file_capacity);
                     let mut names_map = HashMap::with_capacity(file_capacity);
-                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
+                    reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
                         names_map.insert(file.file_name.clone(), files.len());
                         files.push(file);
                     }
+                    let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
                         unsupported_zip_error("Support for multi-disk files is not implemented")
                     } else {
