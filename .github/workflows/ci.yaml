@@ -82,7 +82,8 @@ jobs:
 
   fuzz_read:
     runs-on: ubuntu-latest
-
+    env:
+      RUSTFLAGS: --profile=release-with-debug
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -109,7 +110,8 @@ jobs:
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
-
+    env:
+      RUSTFLAGS: --profile=release-with-debug
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -136,7 +138,8 @@ jobs:
 
   fuzz_write:
     runs-on: ubuntu-latest
-
+    env:
+      RUSTFLAGS: --profile=release-with-debug
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -163,7 +166,8 @@ jobs:
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
-
+    env:
+      RUSTFLAGS: --profile=release-with-debug
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
