@@ -95,11 +95,11 @@ jobs:
       - run: cargo install cargo-fuzz
       - name: compile fuzz
         run: |
-          cargo fuzz build fuzz_read
+          cargo fuzz build --profile=release-with-debug fuzz_read
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=5000 -len_control=10000 -dict=fuzz/fuzz.dict
+          cargo fuzz run --profile=release-with-debug fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=5000 -len_control=10000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -123,11 +123,11 @@ jobs:
       - run: cargo install cargo-fuzz
       - name: compile fuzz
         run: |
-          cargo fuzz build --no-default-features fuzz_read
+          cargo fuzz build --profile=release-with-debug --no-default-features fuzz_read
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run --no-default-features fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=16384 -len_control=10000 -dict=fuzz/fuzz.dict
+          cargo fuzz run --profile=release-with-debug --no-default-features fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=16384 -len_control=10000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -138,8 +138,6 @@ jobs:
 
   fuzz_write:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: --profile=release-with-debug
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -151,11 +149,11 @@ jobs:
       - run: cargo install cargo-fuzz
       - name: compile fuzz
         run: |
-          cargo fuzz build fuzz_write
+          cargo fuzz build --profile=release-with-debug fuzz_write
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=2000 -len_control=200 -dict=fuzz/fuzz.dict
+          cargo fuzz run --profile=release-with-debug fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=2000 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -166,8 +164,6 @@ jobs:
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: --profile=release-with-debug
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -179,11 +175,11 @@ jobs:
       - run: cargo install cargo-fuzz
       - name: compile fuzz
         run: |
-          cargo fuzz build --no-default-features fuzz_write
+          cargo fuzz build --profile=release-with-debug --no-default-features fuzz_write
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run --no-default-features fuzz_write -- -timeout=10s -fork=2 -runs=20000000 -max_len=10000 -len_control=200 -dict=fuzz/fuzz.dict
+          cargo fuzz run --profile=release-with-debug --no-default-features fuzz_write -- -timeout=10s -fork=2 -runs=20000000 -max_len=10000 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
