@@ -1403,11 +1403,9 @@ mod test {
 
     #[cfg(feature = "deflate64")]
     #[test]
-    fn deflate64_not_enough_space() -> std::io::Result<()> {
+    fn deflate64_not_enough_space() {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/deflate64_issue_25.zip"));
-        let mut reader = ZipArchive::new(Cursor::new(v))?;
-        std::io::copy(&mut reader.by_index(0)?, &mut std::io::sink()).expect_err("Invalid file");
-        Ok(())
+        ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
     }
 }
