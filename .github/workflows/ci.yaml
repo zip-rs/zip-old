@@ -98,7 +98,7 @@ jobs:
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=25000000 -max_len=1300 -len_control=500 -dict=fuzz/fuzz.dict
+          cargo fuzz run fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=25000000 -max_len=2100 -len_control=500 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
