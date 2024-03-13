@@ -98,7 +98,7 @@ jobs:
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run fuzz_read -- -timeout=10s -fork=2 -runs=200000000 -max_len=600 -len_control=500 -dict=fuzz/fuzz.dict
+          cargo fuzz run fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=200000000 -max_len=600 -len_control=500 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
@@ -125,7 +125,7 @@ jobs:
       - name: run fuzz
         timeout-minutes: 330
         run: |
-          cargo fuzz run --no-default-features fuzz_read -- -timeout=10s -fork=2 -runs=1000000000 -max_len=16384 -len_control=10000 -dict=fuzz/fuzz.dict
+          cargo fuzz run --no-default-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=1000000000 -max_len=16384 -len_control=10000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v3
