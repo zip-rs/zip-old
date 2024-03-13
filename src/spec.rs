@@ -145,7 +145,8 @@ impl Zip64CentralDirectoryEnd {
         reader: &mut T,
         nominal_offset: u64,
         search_upper_bound: u64,
-    ) -> ZipResult<(Zip64CentralDirectoryEnd, u64)> {
+    ) -> ZipResult<Vec<(Zip64CentralDirectoryEnd, u64)>> {
+        let mut results = Vec::new();
         let mut pos = search_upper_bound;
 
         while pos >= nominal_offset {
@@ -166,7 +167,7 @@ impl Zip64CentralDirectoryEnd {
                 let central_directory_size = reader.read_u64::<LittleEndian>()?;
                 let central_directory_offset = reader.read_u64::<LittleEndian>()?;
 
-                return Ok((
+                results.push((
                     Zip64CentralDirectoryEnd {
                         version_made_by,
                         version_needed_to_extract,
@@ -186,10 +187,13 @@ impl Zip64CentralDirectoryEnd {
                 break;
             }
         }
-
-        Err(ZipError::InvalidArchive(
-            "Could not find ZIP64 central directory end",
-        ))
+        if results.is_empty() {
+            Err(ZipError::InvalidArchive(
+                "Could not find ZIP64 central directory end",
+            ))
+        } else {
+            Ok(results)
+        }
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> ZipResult<()> {
