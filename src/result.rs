@@ -9,20 +9,9 @@ use std::num::TryFromIntError;
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
-/// The given password is wrong
-#[derive(Debug)]
-pub struct InvalidPassword;
-
-impl fmt::Display for InvalidPassword {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "invalid password for file in archive")
-    }
-}
-
-impl Error for InvalidPassword {}
-
 /// Error type for Zip
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ZipError {
     /// An Error caused by I/O
     Io(io::Error),
@@ -35,6 +24,9 @@ pub enum ZipError {
 
     /// The requested file could not be found in the archive
     FileNotFound,
+
+    /// The password provided is incorrect
+    InvalidPassword,
 }
 
 impl From<io::Error> for ZipError {
@@ -56,6 +48,7 @@ impl fmt::Display for ZipError {
             ZipError::InvalidArchive(err) => write!(fmt, "invalid Zip archive: {err}"),
             ZipError::UnsupportedArchive(err) => write!(fmt, "unsupported Zip archive: {err}"),
             ZipError::FileNotFound => write!(fmt, "specified file not found in archive"),
+            ZipError::InvalidPassword => write!(fmt, "incorrect password for encrypted file"),
         }
     }
 }

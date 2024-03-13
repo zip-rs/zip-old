@@ -18,7 +18,7 @@
 // 000000c5
 
 use std::io::Cursor;
-use std::io::Read;
+use zip_next::result::ZipError;
 
 #[test]
 fn encrypting_file() {
@@ -36,13 +36,14 @@ fn encrypting_file() {
     archive.finish().unwrap();
     drop(archive);
     let mut archive = zip_next::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
-    let mut file = archive.by_index_decrypt(0, b"password").unwrap().unwrap();
+    let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
     assert_eq!(buf, b"test");
 }
 #[test]
 fn encrypted_file() {
+    use std::io::Read;
     let zip_file_bytes = &mut Cursor::new(vec![
         0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0x54, 0xbd, 0xb5, 0x50, 0x2f,
         0x20, 0x79, 0x55, 0x2f, 0x00, 0x00, 0x00, 0x23, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
@@ -82,20 +83,17 @@ fn encrypted_file() {
         // Wrong password
         let file = archive.by_index_decrypt(0, b"wrong password");
         match file {
-            Ok(Err(zip_next::result::InvalidPassword)) => (),
+            Err(ZipError::InvalidPassword) => (),
             Err(_) => panic!(
                 "Expected InvalidPassword error when opening encrypted file with wrong password"
             ),
-            Ok(Ok(_)) => panic!("Error: Successfully opened encrypted file with wrong password?!"),
+            Ok(_) => panic!("Error: Successfully opened encrypted file with wrong password?!"),
         }
     }
 
     {
         // Correct password, read contents
-        let mut file = archive
-            .by_index_decrypt(0, "test".as_bytes())
-            .unwrap()
-            .unwrap();
+        let mut file = archive.by_index_decrypt(0, "test".as_bytes()).unwrap();
         let file_name = file.enclosed_name().unwrap();
         assert_eq!(file_name, std::path::PathBuf::from("test.txt"));
 

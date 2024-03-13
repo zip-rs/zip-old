@@ -229,7 +229,7 @@
 
  - Updated dependencies.
 
-## [0.10.4]
+## [0.11.0]
 
 ### Added
 
@@ -238,4 +238,9 @@
 
 ### Changed
 
-- Updated dependencies.
+ - `InvalidPassword` is now a kind of `ZipError` to eliminate the need for nested `Result` structs.
+ - Updated dependencies.
+
+### Fixed
+
+ - Fixed some rare bugs that could cause panics when trying to read an invalid ZIP file or using an incorrect password.
