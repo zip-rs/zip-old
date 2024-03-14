@@ -123,7 +123,7 @@ jobs:
         run: |
           cargo fuzz build --no-default-features fuzz_read
       - name: run fuzz
-        timeout-minutes: 330
+        timeout-minutes: 331
         run: |
           cargo fuzz run --no-default-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=250000000 -max_total_time=330m -max_len=16384 -len_control=10000 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
