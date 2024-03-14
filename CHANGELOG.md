@@ -228,6 +228,7 @@
 ### Changed
 
  - Updated dependencies.
+ - MSRV increased to `1.67`.
 
 ## [0.11.0]
 
