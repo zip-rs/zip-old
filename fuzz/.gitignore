@@ -1,3 +1,4 @@
 target
-corpus/fuzz_*
+corpus
+!corpus/seed
 artifacts
