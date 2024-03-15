@@ -90,15 +90,21 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-
-      - run: cargo install cargo-fuzz
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-fuzz
       - name: compile fuzz
-        run: |
-          cargo fuzz build fuzz_read
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: build fuzz_read
       - name: run fuzz
         timeout-minutes: 330
-        run: |
-          cargo fuzz run fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=50000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: run fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=50000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,15 +123,21 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-
-      - run: cargo install cargo-fuzz
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-fuzz
       - name: compile fuzz
-        run: |
-          cargo fuzz build --no-default-features fuzz_read
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: build --no-default-features fuzz_read
       - name: run fuzz
         timeout-minutes: 331
-        run: |
-          cargo fuzz run --no-default-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=250000000 -max_total_time=19800 -max_len=16384 -len_control=0 -dict=fuzz/fuzz.dict
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: run --no-default-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=250000000 -max_total_time=19800 -max_len=16384 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -144,15 +156,21 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-
-      - run: cargo install cargo-fuzz
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-fuzz
       - name: compile fuzz
-        run: |
-          cargo fuzz build fuzz_write
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: build fuzz_write
       - name: run fuzz
-        timeout-minutes: 330
-        run: |
-          cargo fuzz run fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
+        timeout-minutes: 331
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: run fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -171,15 +189,21 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-
-      - run: cargo install cargo-fuzz
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-fuzz
       - name: compile fuzz
-        run: |
-          cargo fuzz build --no-default-features fuzz_write
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: build --no-default-features fuzz_write
       - name: run fuzz
-        timeout-minutes: 330
-        run: |
-          cargo fuzz run --no-default-features fuzz_write -- -timeout=10s -fork=2 -runs=20000000 -max_len=10000 -len_control=200 -dict=fuzz/fuzz.dict
+        timeout-minutes: 331
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: run --no-default-features fuzz_write -- -timeout=10s -fork=2 -runs=20000000 -max_len=10000 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
