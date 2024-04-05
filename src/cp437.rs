@@ -189,7 +189,7 @@ mod test {
     #[test]
     fn example_slice() {
         use super::FromCp437;
-        let data = b"Cura\x87ao";
+        let data = std::convert::identity(b"Cura\x87ao"); // identity to avoid a lint from rustc
         assert!(::std::str::from_utf8(data).is_err());
         assert_eq!(data.from_cp437(), "Curaçao");
     }

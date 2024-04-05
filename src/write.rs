@@ -7,7 +7,6 @@ use crate::spec;
 use crate::types::{AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
-use std::convert::TryInto;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -410,8 +409,12 @@ impl<W: Write + io::Seek> ZipWriter<W> {
             self.files.push(file);
         }
         if let Some(keys) = options.encrypt_with {
-            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter { writer: core::mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(), buffer: vec![], keys };
-            let mut crypto_header = [0u8; 12];
+            let mut zipwriter = crate::zipcrypto::ZipCryptoWriter {
+                writer: core::mem::replace(&mut self.inner, GenericZipWriter::Closed).unwrap(),
+                buffer: vec![],
+                keys,
+            };
+            let crypto_header = [0u8; 12];
 
             zipwriter.write_all(&crypto_header)?;
             self.inner = GenericZipWriter::Storer(MaybeEncrypted::Encrypted(zipwriter));
@@ -428,10 +431,11 @@ impl<W: Write + io::Seek> ZipWriter<W> {
         match core::mem::replace(&mut self.inner, GenericZipWriter::Closed) {
             GenericZipWriter::Storer(MaybeEncrypted::Encrypted(writer)) => {
                 let crc32 = self.stats.hasher.clone().finalize();
-                self.inner = GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
+                self.inner =
+                    GenericZipWriter::Storer(MaybeEncrypted::Unencrypted(writer.finish(crc32)?))
             }
             GenericZipWriter::Storer(w) => self.inner = GenericZipWriter::Storer(w),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
         let writer = self.inner.get_plain();
 

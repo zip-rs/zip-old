@@ -16,77 +16,50 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [stable, 1.59.0]
+        rust: [stable, 1.59]
 
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
 
     - name: Install ${{ matrix.rust }}
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        override: true
+      run: rustup install ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
 
-    - name: check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --all --bins --examples
+    - name: Downgrade dependencies for MSRV
+      if: ${{ matrix.rust == '1.59' }}
+      run: |
+        cargo update -p byteorder --precise 1.4.3
+        cargo update -p jobserver --precise 0.1.26
+        cargo update -p base64ct --precise 1.5.3
 
-    - name: tests
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all
+    - run: cargo check --all --bins --examples
+    - run: cargo test --all
 
   clippy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: clippy
-
-      - name: clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets --all-features
 
   check_fmt_and_docs:
     name: Checking fmt and docs
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@master
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        components: rustfmt, clippy
-        override: true
+    - uses: actions/checkout@v4
 
-    - name: fmt
-      run: cargo fmt --all -- --check
-
-    - name: Docs
-      run: cargo doc
+    - run: cargo fmt --all -- --check
+    - run: cargo doc
 
   fuzz:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-
+      - uses: actions/checkout@v4
+      - run: rustup install nightly --profile minimal && rustup default nightly
       - run: cargo install cargo-fuzz
+
       - name: compile fuzz
         run: |
           cargo fuzz build fuzz_read
