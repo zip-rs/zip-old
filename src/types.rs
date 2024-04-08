@@ -560,7 +560,7 @@ mod test {
             file_name_raw: file_name.into_bytes(),
             extra_field: Arc::new(vec![]),
             central_extra_field: Arc::new(vec![]),
-            file_comment: Box::new("".into()),
+            file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
             data_start: AtomicU64::new(0),
             central_header_start: 0,
