@@ -486,7 +486,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-                        names_map.insert(file.file_name.clone().into(), files.len());
+                        names_map.insert(file.file_name.clone(), files.len());
                         files.push(file);
                     }
                     let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
