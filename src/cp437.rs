@@ -31,7 +31,8 @@ impl FromCp437 for Box<[u8]> {
             String::from_utf8(self.into()).unwrap()
         } else {
             self.iter().copied().map(to_char).collect()
-        }.into_boxed_str()
+        }
+        .into_boxed_str()
     }
 }
 
