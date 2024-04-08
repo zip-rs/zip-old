@@ -387,7 +387,7 @@ pub struct ZipFileData {
     /// Name of the file
     pub file_name: Box<str>,
     /// Raw file name. To be used when file_name was incorrectly decoded.
-    pub file_name_raw: Vec<u8>,
+    pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
     pub extra_field: Arc<Vec<u8>>,
     /// Extra field only written to central directory
@@ -557,7 +557,7 @@ mod test {
             compressed_size: 0,
             uncompressed_size: 0,
             file_name: file_name.clone().into_boxed_str(),
-            file_name_raw: file_name.into_bytes(),
+            file_name_raw: file_name.into_bytes().into_boxed_slice(),
             extra_field: Arc::new(vec![]),
             central_extra_field: Arc::new(vec![]),
             file_comment: String::with_capacity(0).into_boxed_str(),

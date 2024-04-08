@@ -81,7 +81,7 @@ impl<R: Read> AesReader<R> {
         // derive a key from the password and salt
         // the length depends on the aes key length
         let derived_key_len = 2 * key_length + PWD_VERIFY_LENGTH;
-        let mut derived_key: Vec<u8> = vec![0; derived_key_len];
+        let mut derived_key: Box<[u8]> = vec![0; derived_key_len].into_boxed_slice();
 
         // use PBKDF2 with HMAC-Sha1 to derive the key
         pbkdf2::pbkdf2::<Hmac<Sha1>>(password, &salt, ITERATION_COUNT, &mut derived_key)

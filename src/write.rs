@@ -439,7 +439,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: metadata.files,
+            files: metadata.files.into(),
             files_by_name: metadata.names_map,
             stats: Default::default(),
             writing_to_file: false,
@@ -609,7 +609,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
                 file_name: name.into(),
-                file_name_raw: Vec::new(), // Never used for saving
+                file_name_raw: vec![].into_boxed_slice(), // Never used for saving
                 extra_field: options.extra_data,
                 central_extra_field: options.central_extra_data,
                 file_comment: String::with_capacity(0).into_boxed_str(),

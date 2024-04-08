@@ -161,14 +161,14 @@ mod tests {
     {
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
 
-        let mut plaintext: Vec<u8> = ciphertext.to_vec();
-        key_stream.crypt_in_place(plaintext.as_mut_slice());
-        assert_eq!(plaintext, expected_plaintext.to_vec());
+        let mut plaintext = ciphertext.to_vec().into_boxed_slice();
+        key_stream.crypt_in_place(&mut plaintext);
+        assert_eq!(*plaintext, *expected_plaintext);
 
         // Round-tripping should yield the ciphertext again.
         let mut key_stream = AesCtrZipKeyStream::<Aes>::new(key);
         key_stream.crypt_in_place(&mut plaintext);
-        assert_eq!(plaintext, ciphertext.to_vec());
+        assert_eq!(*plaintext, *ciphertext);
     }
 
     #[test]

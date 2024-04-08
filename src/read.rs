@@ -44,7 +44,7 @@ pub(crate) mod zip_archive {
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
     pub(crate) struct Shared {
-        pub(crate) files: Vec<super::ZipFileData>,
+        pub(crate) files: Box<[super::ZipFileData]>,
         pub(crate) names_map: super::HashMap<Box<str>, usize>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
@@ -75,7 +75,7 @@ pub(crate) mod zip_archive {
     pub struct ZipArchive<R> {
         pub(super) reader: R,
         pub(super) shared: Arc<Shared>,
-        pub(super) comment: Arc<Vec<u8>>,
+        pub(super) comment: Arc<[u8]>,
     }
 }
 
@@ -494,7 +494,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                         unsupported_zip_error("Support for multi-disk files is not implemented")
                     } else {
                         Ok(Shared {
-                            files,
+                            files: files.into(),
                             names_map,
                             offset: dir_info.archive_offset,
                             dir_start: dir_info.directory_start,
@@ -779,11 +779,11 @@ fn central_header_to_zip_file_inner<R: Read>(
 
     let file_name: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.clone().from_cp437().into_boxed_str(),
+        false => file_name_raw.from_cp437().into(),
     };
-    let file_comment = match is_utf8 {
+    let file_comment: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_comment_raw).into(),
-        false => file_comment_raw.from_cp437().into_boxed_str(),
+        false => file_comment_raw.from_cp437().into(),
     };
 
     // Construct the result
@@ -802,7 +802,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
         file_name,
-        file_name_raw,
+        file_name_raw: file_name_raw.into(),
         extra_field: Arc::new(extra_field),
         central_extra_field: Arc::new(vec![]),
         file_comment,
@@ -961,7 +961,7 @@ impl<'a> ZipFile<'a> {
         note = "by stripping `..`s from the path, the meaning of paths can change.
                 `mangled_name` can be used if this behaviour is desirable"
     )]
-    pub fn sanitized_name(&self) -> std::path::PathBuf {
+    pub fn sanitized_name(&self) -> PathBuf {
         self.mangled_name()
     }
 
@@ -977,7 +977,7 @@ impl<'a> ZipFile<'a> {
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
     ///
     /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> std::path::PathBuf {
+    pub fn mangled_name(&self) -> PathBuf {
         self.data.file_name_sanitized()
     }
 
@@ -1147,7 +1147,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 
     let file_name: Box<str> = match is_utf8 {
         true => String::from_utf8_lossy(&file_name_raw).into(),
-        false => file_name_raw.clone().from_cp437().into_boxed_str(),
+        false => file_name_raw.clone().from_cp437().into(),
     };
 
     let mut result = ZipFileData {
@@ -1162,7 +1162,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
         file_name,
-        file_name_raw,
+        file_name_raw: file_name_raw.into(),
         extra_field: Arc::new(extra_field),
         central_extra_field: Arc::new(vec![]),
         file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
