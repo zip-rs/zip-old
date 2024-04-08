@@ -245,3 +245,9 @@
 ### Fixed
 
  - Fixed some rare bugs that could cause panics when trying to read an invalid ZIP file or using an incorrect password.
+
+## [1.0.0]
+
+### Changed
+
+ - Now uses `Box<str>` rather than `String` for metadata.

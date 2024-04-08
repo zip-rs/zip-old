@@ -121,7 +121,7 @@ pub(crate) mod zip_writer {
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
         pub(super) files: Vec<ZipFileData>,
-        pub(super) files_by_name: HashMap<String, usize>,
+        pub(super) files_by_name: HashMap<Box<str>, usize>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -583,7 +583,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         raw_values: Option<ZipRawValues>,
     ) -> ZipResult<()>
     where
-        S: Into<String>,
+        S: Into<Box<str>>,
     {
         self.finish_file()?;
 
@@ -595,7 +595,6 @@ impl<W: Write + Seek> ZipWriter<W> {
 
         {
             let header_start = self.inner.get_plain().stream_position()?;
-            let name = name.into();
 
             let permissions = options.permissions.unwrap_or(0o100644);
             let file = ZipFileData {
@@ -609,11 +608,11 @@ impl<W: Write + Seek> ZipWriter<W> {
                 crc32: raw_values.crc32,
                 compressed_size: raw_values.compressed_size,
                 uncompressed_size: raw_values.uncompressed_size,
-                file_name: name,
+                file_name: name.into(),
                 file_name_raw: Vec::new(), // Never used for saving
                 extra_field: options.extra_data,
                 central_extra_field: options.central_extra_data,
-                file_comment: String::new(),
+                file_comment: String::with_capacity(0).into_boxed_str(),
                 header_start,
                 data_start: AtomicU64::new(0),
                 central_header_start: 0,
@@ -818,7 +817,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// The data should be written using the [`Write`] implementation on this [`ZipWriter`]
     pub fn start_file<S>(&mut self, name: S, mut options: FileOptions) -> ZipResult<()>
     where
-        S: Into<String>,
+        S: Into<Box<str>>,
     {
         Self::normalize_options(&mut options);
         let make_new_self = self.inner.prepare_next_writer(
@@ -890,7 +889,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// ```
     pub fn raw_copy_file_rename<S>(&mut self, mut file: ZipFile, name: S) -> ZipResult<()>
     where
-        S: Into<String>,
+        S: Into<Box<str>>,
     {
         let mut options = FileOptions::default()
             .large_file(file.compressed_size().max(file.size()) > spec::ZIP64_BYTES_THR)
@@ -1015,8 +1014,8 @@ impl<W: Write + Seek> ZipWriter<W> {
         mut options: FileOptions,
     ) -> ZipResult<()>
     where
-        N: Into<String>,
-        T: Into<String>,
+        N: Into<Box<str>>,
+        T: Into<Box<str>>,
     {
         if options.permissions.is_none() {
             options.permissions = Some(0o777);
@@ -1303,7 +1302,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 .into());
             }
         };
-        *self = (make_new_self)(bare);
+        *self = make_new_self(bare);
         Ok(())
     }
 

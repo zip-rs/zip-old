@@ -315,7 +315,7 @@ impl TryFrom<OffsetDateTime> for DateTime {
     fn try_from(dt: OffsetDateTime) -> Result<Self, Self::Error> {
         if dt.year() >= 1980 && dt.year() <= 2107 {
             Ok(DateTime {
-                year: (dt.year()).try_into()?,
+                year: dt.year().try_into()?,
                 month: dt.month().into(),
                 day: dt.day(),
                 hour: dt.hour(),
@@ -385,7 +385,7 @@ pub struct ZipFileData {
     /// Size of the file when extracted
     pub uncompressed_size: u64,
     /// Name of the file
-    pub file_name: String,
+    pub file_name: Box<str>,
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Vec<u8>,
     /// Extra field usually used for storage expansion
@@ -393,7 +393,7 @@ pub struct ZipFileData {
     /// Extra field only written to central directory
     pub central_extra_field: Arc<Vec<u8>>,
     /// File comment
-    pub file_comment: String,
+    pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
     pub header_start: u64,
     /// Specifies where the central header of the file starts
@@ -431,18 +431,18 @@ impl ZipFileData {
 
         Path::new(&filename)
             .components()
-            .filter(|component| matches!(*component, path::Component::Normal(..)))
+            .filter(|component| matches!(*component, Component::Normal(..)))
             .fold(PathBuf::new(), |mut path, ref cur| {
                 path.push(cur.as_os_str());
                 path
             })
     }
 
-    pub(crate) fn enclosed_name(&self) -> Option<&Path> {
+    pub(crate) fn enclosed_name(&self) -> Option<PathBuf> {
         if self.file_name.contains('\0') {
             return None;
         }
-        let path = Path::new(&self.file_name);
+        let path = PathBuf::from(self.file_name.to_string());
         let mut depth = 0usize;
         for component in path.components() {
             match component {
@@ -556,11 +556,11 @@ mod test {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
-            file_name: file_name.clone(),
+            file_name: file_name.clone().into_boxed_str(),
             file_name_raw: file_name.into_bytes(),
             extra_field: Arc::new(vec![]),
             central_extra_field: Arc::new(vec![]),
-            file_comment: String::new(),
+            file_comment: Box::new("".into()),
             header_start: 0,
             data_start: AtomicU64::new(0),
             central_header_start: 0,

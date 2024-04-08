@@ -176,7 +176,7 @@ impl ZipStreamFileMetadata {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<&Path> {
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.0.enclosed_name()
     }
 

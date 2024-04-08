@@ -11,10 +11,10 @@ use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[cfg(any(
@@ -45,7 +45,7 @@ pub(crate) mod zip_archive {
     #[derive(Debug)]
     pub(crate) struct Shared {
         pub(crate) files: Vec<super::ZipFileData>,
-        pub(crate) names_map: super::HashMap<String, usize>,
+        pub(crate) names_map: super::HashMap<Box<str>, usize>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
         pub(super) dir_end: u64,
@@ -486,7 +486,7 @@ impl<R: Read + Seek> ZipArchive<R> {
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-                        names_map.insert(file.file_name.clone(), files.len());
+                        names_map.insert(file.file_name.clone().into(), files.len());
                         files.push(file);
                     }
                     let dir_end = reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
@@ -600,7 +600,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.names_map.keys().map(|s| s.as_str())
+        self.shared.names_map.keys().map(Box::borrow)
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -777,13 +777,13 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut file_comment_raw = vec![0; file_comment_length];
     reader.read_exact(&mut file_comment_raw)?;
 
-    let file_name = match is_utf8 {
-        true => String::from_utf8_lossy(&file_name_raw).into_owned(),
-        false => file_name_raw.clone().from_cp437(),
+    let file_name: Box<str> = match is_utf8 {
+        true => String::from_utf8_lossy(&file_name_raw).into(),
+        false => file_name_raw.clone().from_cp437().into_boxed_str(),
     };
     let file_comment = match is_utf8 {
-        true => String::from_utf8_lossy(&file_comment_raw).into_owned(),
-        false => file_comment_raw.from_cp437(),
+        true => String::from_utf8_lossy(&file_comment_raw).into(),
+        false => file_comment_raw.from_cp437().into_boxed_str(),
     };
 
     // Construct the result
@@ -991,7 +991,7 @@ impl<'a> ZipFile<'a> {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<&Path> {
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.data.enclosed_name()
     }
 
@@ -1145,9 +1145,9 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
     let mut extra_field = vec![0; extra_field_length];
     reader.read_exact(&mut extra_field)?;
 
-    let file_name = match is_utf8 {
-        true => String::from_utf8_lossy(&file_name_raw).into_owned(),
-        false => file_name_raw.clone().from_cp437(),
+    let file_name: Box<str> = match is_utf8 {
+        true => String::from_utf8_lossy(&file_name_raw).into(),
+        false => file_name_raw.clone().from_cp437().into_boxed_str(),
     };
 
     let mut result = ZipFileData {
@@ -1161,11 +1161,11 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
-        file_name,
+        file_name: file_name.into(),
         file_name_raw,
         extra_field: Arc::new(extra_field),
         central_extra_field: Arc::new(vec![]),
-        file_comment: String::new(), // file comment is only available in the central directory
+        file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
         header_start: 0,
