@@ -1161,7 +1161,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         crc32,
         compressed_size: compressed_size as u64,
         uncompressed_size: uncompressed_size as u64,
-        file_name: file_name.into(),
+        file_name,
         file_name_raw,
         extra_field: Arc::new(extra_field),
         central_extra_field: Arc::new(vec![]),
