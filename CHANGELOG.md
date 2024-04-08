@@ -250,4 +250,4 @@
 
 ### Changed
 
- - Now uses `Box<str>` rather than `String` for metadata.
+ - Now uses boxed slices rather than `String` or `Vec` for metadata fields that aren't likely to grow.
