@@ -251,3 +251,9 @@
 ### Changed
 
  - Now uses boxed slices rather than `String` or `Vec` for metadata fields that aren't likely to grow.
+
+## [1.0.1]
+
+### Changed
+
+ - The package no longer includes tests or examples.
