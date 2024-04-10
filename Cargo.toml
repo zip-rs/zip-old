@@ -1,6 +1,6 @@
 [package]
 name = "zip_next"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>",
 "Chris Hennick <hennickc@amazon.com>"]
 license = "MIT"
@@ -11,7 +11,7 @@ rust-version = "1.67.0"
 Library to support the reading and writing of zip files.
 """
 edition = "2021"
-exclude = ["tests/**", "benches/**", "examples/**", ".github/**"]
+exclude = ["tests/**", "examples/**", ".github/**"]
 
 [dependencies]
 aes = { version = "0.8.4", optional = true }
