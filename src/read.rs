@@ -82,10 +82,10 @@ pub(crate) mod zip_archive {
     }
 }
 
+#[cfg(feature = "lzma")]
+use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::InvalidPassword;
 pub use zip_archive::ZipArchive;
-#[cfg(feature = "lzma")]
-use crate::read::lzma::LzmaReader;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
@@ -153,7 +153,7 @@ pub(crate) enum ZipFileReader<'a> {
     #[cfg(feature = "zstd")]
     Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
     #[cfg(feature = "lzma")]
-    Lzma(Crc32Reader<LzmaReader<CryptoReader<'a>>>),
+    Lzma(Crc32Reader<Box<LzmaDecoder<CryptoReader<'a>>>>),
 }
 
 impl<'a> Read for ZipFileReader<'a> {
@@ -176,7 +176,7 @@ impl<'a> Read for ZipFileReader<'a> {
             #[cfg(feature = "zstd")]
             ZipFileReader::Zstd(r) => r.read(buf),
             #[cfg(feature = "lzma")]
-            ZipFileReader::Lzma(r) => r.read(buf)
+            ZipFileReader::Lzma(r) => r.read(buf),
         }
     }
 }
@@ -329,8 +329,8 @@ pub(crate) fn make_reader(
         }
         #[cfg(feature = "lzma")]
         CompressionMethod::Lzma => {
-            let reader = LzmaReader::new(reader);
-            ZipFileReader::Lzma(Crc32Reader::new(reader, crc32, ae2_encrypted))
+            let reader = LzmaDecoder::new(reader);
+            ZipFileReader::Lzma(Crc32Reader::new(Box::new(reader), crc32, ae2_encrypted))
         }
         _ => panic!("Compression method not supported"),
     }

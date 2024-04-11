@@ -1,6 +1,6 @@
+use lzma_rs::decompress::{Options, Stream, UnpackedSize};
 use std::collections::VecDeque;
 use std::io::{copy, Error, Read, Result, Write};
-use lzma_rs::decompress::{Options, Stream, UnpackedSize};
 
 const COMPRESSED_BYTES_TO_BUFFER: usize = 4096;
 
@@ -11,26 +11,26 @@ const OPTIONS: Options = Options {
 };
 
 #[derive(Debug)]
-pub struct LzmaReader<R> {
+pub struct LzmaDecoder<R> {
     compressed_reader: R,
-    stream: Stream<VecDeque<u8>>
+    stream: Stream<VecDeque<u8>>,
 }
 
-impl <R: Read> LzmaReader<R> {
+impl<R: Read> LzmaDecoder<R> {
     pub fn new(inner: R) -> Self {
-        LzmaReader {
+        LzmaDecoder {
             compressed_reader: inner,
-            stream: Stream::new_with_options(&OPTIONS, VecDeque::new())
+            stream: Stream::new_with_options(&OPTIONS, VecDeque::new()),
         }
     }
-    
+
     pub fn finish(mut self) -> Result<VecDeque<u8>> {
         copy(&mut self.compressed_reader, &mut self.stream)?;
         self.stream.finish().map_err(Error::from)
     }
 }
 
-impl <R: Read> Read for LzmaReader<R> {
+impl<R: Read> Read for LzmaDecoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut bytes_read = self.stream.get_output_mut().unwrap().read(buf)?;
         while bytes_read < buf.len() {
@@ -39,8 +39,13 @@ impl <R: Read> Read for LzmaReader<R> {
             if compressed_bytes_read == 0 {
                 break;
             }
-            self.stream.write_all(&next_compressed[..compressed_bytes_read])?;
-            bytes_read += self.stream.get_output_mut().unwrap().read(&mut buf[bytes_read..])?;
+            self.stream
+                .write_all(&next_compressed[..compressed_bytes_read])?;
+            bytes_read += self
+                .stream
+                .get_output_mut()
+                .unwrap()
+                .read(&mut buf[bytes_read..])?;
         }
         Ok(bytes_read)
     }
