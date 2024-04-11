@@ -98,13 +98,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: build fuzz_read
+          args: build --all-features fuzz_read
       - name: run fuzz
         timeout-minutes: 330
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=50000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
+          args: run --all-features fuzz_read -- fuzz/corpus/seed -timeout=10s -fork=2 -runs=50000000 -max_len=1300 -len_control=0 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,7 +117,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --no-default-features fuzz_read -- fuzz/corpus/seed
+          args: cmin --all-features fuzz_read -- fuzz/corpus/seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -188,13 +188,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: build fuzz_write
+          args: build --all-features fuzz_write
       - name: run fuzz
         timeout-minutes: 331
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: run fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
+          args: run --all-features fuzz_write -- -timeout=10s -fork=2 -runs=10000000 -max_len=1100 -len_control=200 -dict=fuzz/fuzz.dict
       - name: Upload any failure inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -207,7 +207,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin fuzz_write -- fuzz/corpus/seed
+          args: cmin --all-features fuzz_write -- fuzz/corpus/seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
