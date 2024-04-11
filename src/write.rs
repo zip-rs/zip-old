@@ -129,7 +129,9 @@ pub(crate) mod zip_writer {
         pub(super) flush_on_finish_file: bool,
     }
 }
-use crate::result::ZipError::{InvalidArchive, UnsupportedArchive};
+use crate::result::ZipError::{InvalidArchive};
+#[cfg(feature = "lzma")]
+use crate::result::ZipError::UnsupportedArchive;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
 use crate::CompressionMethod::Stored;
