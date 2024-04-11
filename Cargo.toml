@@ -11,7 +11,7 @@ rust-version = "1.67.0"
 Library to support the reading and writing of zip files.
 """
 edition = "2021"
-exclude = ["tests/**", "examples/**", ".github/**"]
+exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**"]
 
 [dependencies]
 aes = { version = "0.8.4", optional = true }

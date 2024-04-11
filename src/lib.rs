@@ -20,6 +20,7 @@
 //! | Deflate | ✅ [->](`crate::ZipArchive::by_name`)      | ✅ [->](`crate::write::FileOptions::compression_method`) |
 //! | Deflate64 | ✅ | |
 //! | Bzip2 | ✅ | ✅ |
+//! | LZMA | ✅ | |
 //! | AES encryption | ✅ | ✅ |
 //! | ZipCrypto deprecated encryption | ✅ | ✅ |
 //!
