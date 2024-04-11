@@ -112,6 +112,12 @@ jobs:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
+      - name: Upload updated seed corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_read_corpus
+          path: fuzz/corpus/seed/*
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
@@ -145,6 +151,12 @@ jobs:
           name: fuzz_read_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
+      - name: Upload updated seed corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_read_no_features_corpus
+          path: fuzz/corpus/seed/*
 
   fuzz_write:
     runs-on: ubuntu-latest
@@ -178,6 +190,12 @@ jobs:
           name: fuzz_write_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
+      - name: Upload updated seed corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_write_corpus
+          path: fuzz/corpus/seed/*
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
@@ -211,3 +229,9 @@ jobs:
           name: fuzz_write_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
+      - name: Upload updated seed corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz_write_no_features_corpus
+          path: fuzz/corpus/seed/*
