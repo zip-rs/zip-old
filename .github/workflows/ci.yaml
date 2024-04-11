@@ -112,6 +112,12 @@ jobs:
           name: fuzz_read_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
+      - name: Minimize seed corpus
+        if: always()
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: cmin --no-default-features fuzz_read -- fuzz/corpus/seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -151,6 +157,12 @@ jobs:
           name: fuzz_read_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_read/crash-*
           if-no-files-found: ignore
+      - name: Minimize seed corpus
+        if: always()
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: cmin --no-default-features fuzz_read -- fuzz/corpus/seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -190,6 +202,12 @@ jobs:
           name: fuzz_write_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
+      - name: Minimize seed corpus
+        if: always()
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: cmin fuzz_write -- fuzz/corpus/seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -229,6 +247,12 @@ jobs:
           name: fuzz_write_no_features_bad_inputs
           path: fuzz/artifacts/fuzz_write/crash-*
           if-no-files-found: ignore
+      - name: Minimize seed corpus
+        if: always()
+        uses: actions-rs/cargo@v1
+        with:
+          command: fuzz
+          args: cmin --no-default-features fuzz_write -- fuzz/corpus/seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
