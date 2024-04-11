@@ -129,7 +129,7 @@ pub(crate) mod zip_writer {
         pub(super) flush_on_finish_file: bool,
     }
 }
-use crate::result::ZipError::InvalidArchive;
+use crate::result::ZipError::{InvalidArchive, UnsupportedArchive};
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
 use crate::CompressionMethod::Stored;
@@ -1269,6 +1269,8 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         GenericZipWriter::Zstd(ZstdEncoder::new(bare, level as i32).unwrap())
                     }))
                 }
+                #[cfg(feature = "lzma")]
+                CompressionMethod::Lzma => Err(UnsupportedArchive("LZMA isn't supported for compression")),
                 CompressionMethod::Unsupported(..) => {
                     Err(ZipError::UnsupportedArchive("Unsupported compression"))
                 }

@@ -37,6 +37,9 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 /// Provides high level API for reading from a stream.
 pub(crate) mod stream;
 
+#[cfg(feature = "lzma")]
+pub(crate) mod lzma;
+
 // Put the struct declaration in a private module to convince rustdoc to display ZipArchive nicely
 pub(crate) mod zip_archive {
     use std::sync::Arc;
@@ -81,6 +84,8 @@ pub(crate) mod zip_archive {
 
 use crate::result::ZipError::InvalidPassword;
 pub use zip_archive::ZipArchive;
+#[cfg(feature = "lzma")]
+use crate::read::lzma::LzmaReader;
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum CryptoReader<'a> {
@@ -147,6 +152,8 @@ pub(crate) enum ZipFileReader<'a> {
     Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "zstd")]
     Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
+    #[cfg(feature = "lzma")]
+    Lzma(Crc32Reader<LzmaReader<CryptoReader<'a>>>),
 }
 
 impl<'a> Read for ZipFileReader<'a> {
@@ -168,6 +175,8 @@ impl<'a> Read for ZipFileReader<'a> {
             ZipFileReader::Bzip2(r) => r.read(buf),
             #[cfg(feature = "zstd")]
             ZipFileReader::Zstd(r) => r.read(buf),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => r.read(buf)
         }
     }
 }
@@ -192,6 +201,11 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::Bzip2(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "zstd")]
             ZipFileReader::Zstd(r) => r.into_inner().finish().into_inner().into_inner(),
+            #[cfg(feature = "lzma")]
+            ZipFileReader::Lzma(r) => {
+                let inner: Box<_> = r.into_inner().finish().unwrap().into();
+                Read::take(Box::leak(inner), u64::MAX)
+            }
         }
     }
 }
@@ -312,6 +326,11 @@ pub(crate) fn make_reader(
         CompressionMethod::Zstd => {
             let zstd_reader = ZstdDecoder::new(reader).unwrap();
             ZipFileReader::Zstd(Crc32Reader::new(zstd_reader, crc32, ae2_encrypted))
+        }
+        #[cfg(feature = "lzma")]
+        CompressionMethod::Lzma => {
+            let reader = LzmaReader::new(reader);
+            ZipFileReader::Lzma(Crc32Reader::new(reader, crc32, ae2_encrypted))
         }
         _ => panic!("Compression method not supported"),
     }

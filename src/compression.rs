@@ -41,6 +41,9 @@ pub enum CompressionMethod {
     /// Compress the file using ZStandard
     #[cfg(feature = "zstd")]
     Zstd,
+    /// Compress the file using LZMA
+    #[cfg(feature = "lzma")]
+    Lzma,
     /// Unsupported compression method
     #[cfg_attr(
         not(fuzzing),
@@ -83,7 +86,10 @@ impl CompressionMethod {
     pub const BZIP2: Self = CompressionMethod::Bzip2;
     #[cfg(not(feature = "bzip2"))]
     pub const BZIP2: Self = CompressionMethod::Unsupported(12);
+    #[cfg(not(feature = "lzma"))]
     pub const LZMA: Self = CompressionMethod::Unsupported(14);
+    #[cfg(feature = "lzma")]
+    pub const LZMA: Self = CompressionMethod::Lzma;
     pub const IBM_ZOS_CMPSC: Self = CompressionMethod::Unsupported(16);
     pub const IBM_TERSE: Self = CompressionMethod::Unsupported(18);
     pub const ZSTD_DEPRECATED: Self = CompressionMethod::Unsupported(20);
@@ -123,6 +129,8 @@ impl CompressionMethod {
             9 => CompressionMethod::Deflate64,
             #[cfg(feature = "bzip2")]
             12 => CompressionMethod::Bzip2,
+            #[cfg(feature = "lzma")]
+            14 => CompressionMethod::Lzma,
             #[cfg(feature = "zstd")]
             93 => CompressionMethod::Zstd,
             #[cfg(feature = "aes-crypto")]
@@ -157,6 +165,8 @@ impl CompressionMethod {
             CompressionMethod::Aes => 99,
             #[cfg(feature = "zstd")]
             CompressionMethod::Zstd => 93,
+            #[cfg(feature = "lzma")]
+            CompressionMethod::Lzma => 14,
 
             CompressionMethod::Unsupported(v) => v,
         }

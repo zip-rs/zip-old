@@ -28,6 +28,7 @@ time = { version = "0.3.34", optional = true, default-features = false, features
 zstd = { version = "0.13.1", optional = true, default-features = false }
 zopfli = { version = "0.8.0", optional = true }
 deflate64 = { version = "0.1.8", optional = true }
+lzma-rs = { version = "0.3.0", optional = true }
 
 [target.'cfg(any(all(target_arch = "arm", target_pointer_width = "32"), target_arch = "mips", target_arch = "powerpc"))'.dependencies]
 crossbeam-utils = "0.8.19"
@@ -49,8 +50,9 @@ deflate-miniz = ["flate2/default"]
 deflate-zlib = ["flate2/zlib"]
 deflate-zlib-ng = ["flate2/zlib-ng"]
 deflate-zopfli = ["zopfli"]
+lzma = ["lzma-rs/stream"]
 unreserved = []
-default = ["aes-crypto", "bzip2", "deflate", "deflate64", "deflate-zlib-ng", "deflate-zopfli", "time", "zstd"]
+default = ["aes-crypto", "bzip2", "deflate", "deflate64", "deflate-zlib-ng", "deflate-zopfli", "lzma", "time", "zstd"]
 
 [[bench]]
 name = "read_entry"
