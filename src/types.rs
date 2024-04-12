@@ -1,11 +1,7 @@
 //! Types that specify what is contained in a ZIP.
 use std::path;
 
-#[cfg(not(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-)))]
+#[cfg(target_has_atomic = "64")]
 use std::sync::atomic;
 #[cfg(not(feature = "time"))]
 use std::time::SystemTime;
@@ -17,11 +13,7 @@ mod ffi {
     pub const S_IFREG: u32 = 0o0100000;
 }
 
-#[cfg(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-))]
+#[cfg(not(target_has_atomic = "64"))]
 mod atomic {
     use crossbeam_utils::sync::ShardedLock;
     pub use std::sync::atomic::Ordering;
