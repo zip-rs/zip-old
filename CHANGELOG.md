@@ -257,3 +257,9 @@
 ### Changed
 
  - The package no longer includes tests or examples.
+
+## [1.1.0]
+
+### Changed
+
+ - Eliminated a custom `AtomicU64` type by replacing it with `OnceLock` in the only place it's used.
