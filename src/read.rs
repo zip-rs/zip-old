@@ -233,13 +233,14 @@ pub(crate) fn find_content<'a>(
             let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
             let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
             let magic_and_header = 4 + 22 + 2 + 2;
-            let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+            let data_start =
+                data.header_start + magic_and_header + file_name_length + extra_field_length;
             data.data_start.get_or_init(|| data_start);
             data_start
         }
-        Some(start) => *start
+        Some(start) => *start,
     };
-    
+
     reader.seek(io::SeekFrom::Start(data_start))?;
     Ok((reader as &mut dyn Read).take(data.compressed_size))
 }
