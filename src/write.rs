@@ -801,13 +801,15 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
         // overwrite a valid file and corrupt the archive
-        let last_file_start = last_file.data_start.get().unwrap();
-        if self
-            .files
-            .iter()
-            .flat_map(|file| file.data_start.get())
-            .all(|start| start < last_file_start)
-        {
+        let rewind_safe: bool = match last_file.data_start.get() {
+            None => self.files.is_empty(),
+            Some(last_file_start) => self.files.iter().all(|file| {
+                file.data_start
+                    .get()
+                    .is_some_and(|start| start < last_file_start)
+            }),
+        };
+        if rewind_safe {
             self.inner
                 .get_plain()
                 .seek(SeekFrom::Start(last_file.header_start))?;
