@@ -1,16 +1,10 @@
 //! Types that specify what is contained in a ZIP.
 use path::{Component, Path, PathBuf};
 use std::path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-#[cfg(not(any(
-    all(target_arch = "arm", target_pointer_width = "32"),
-    target_arch = "mips",
-    target_arch = "powerpc"
-)))]
-use std::sync::atomic;
 #[cfg(doc)]
 use {crate::read::ZipFile, crate::write::FileOptions};
 
@@ -330,37 +324,6 @@ impl TryFrom<OffsetDateTime> for DateTime {
 
 pub const DEFAULT_VERSION: u8 = 46;
 
-/// A type like `AtomicU64` except it implements `Clone` and has predefined
-/// ordering.
-///
-/// It uses `Relaxed` ordering because it is not used for synchronisation.
-#[derive(Debug)]
-pub struct AtomicU64(atomic::AtomicU64);
-
-impl AtomicU64 {
-    pub const fn new(v: u64) -> Self {
-        Self(atomic::AtomicU64::new(v))
-    }
-
-    pub fn load(&self) -> u64 {
-        self.0.load(atomic::Ordering::Relaxed)
-    }
-
-    pub fn store(&self, val: u64) {
-        self.0.store(val, atomic::Ordering::Relaxed)
-    }
-
-    pub fn get_mut(&mut self) -> &mut u64 {
-        self.0.get_mut()
-    }
-}
-
-impl Clone for AtomicU64 {
-    fn clone(&self) -> Self {
-        Self(atomic::AtomicU64::new(self.load()))
-    }
-}
-
 /// Structure representing a ZIP file.
 #[derive(Debug, Clone)]
 pub struct ZipFileData {
@@ -401,7 +364,7 @@ pub struct ZipFileData {
     /// Note that when this is not known, it is set to 0
     pub central_header_start: u64,
     /// Specifies where the compressed data of the file starts
-    pub data_start: AtomicU64,
+    pub data_start: OnceLock<u64>,
     /// External file attributes
     pub external_attributes: u32,
     /// Reserve local ZIP64 extra field
@@ -562,7 +525,7 @@ mod test {
             central_extra_field: Arc::new(vec![]),
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
-            data_start: AtomicU64::new(0),
+            data_start: OnceLock::new(),
             central_header_start: 0,
             external_attributes: 0,
             large_file: false,

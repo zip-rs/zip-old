@@ -8,14 +8,14 @@ use crate::crc32::Crc32Reader;
 use crate::read::zip_archive::Shared;
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
-use crate::types::{AesMode, AesVendorVersion, AtomicU64, DateTime, System, ZipFileData};
+use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(any(
     feature = "deflate",
@@ -227,14 +227,19 @@ pub(crate) fn find_content<'a>(
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
-
-    reader.seek(io::SeekFrom::Current(22))?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
-    let magic_and_header = 4 + 22 + 2 + 2;
-    let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
-    data.data_start.store(data_start);
-
+    let data_start = match data.data_start.get() {
+        None => {
+            reader.seek(io::SeekFrom::Current(22))?;
+            let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
+            let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+            let magic_and_header = 4 + 22 + 2 + 2;
+            let data_start = data.header_start + magic_and_header + file_name_length + extra_field_length;
+            data.data_start.get_or_init(|| data_start);
+            data_start
+        }
+        Some(start) => *start
+    };
+    
     reader.seek(io::SeekFrom::Start(data_start))?;
     Ok((reader as &mut dyn Read).take(data.compressed_size))
 }
@@ -827,7 +832,7 @@ fn central_header_to_zip_file_inner<R: Read>(
         file_comment,
         header_start: offset,
         central_header_start,
-        data_start: AtomicU64::new(0),
+        data_start: OnceLock::new(),
         external_attributes: external_file_attributes,
         large_file: false,
         aes_mode: None,
@@ -1068,7 +1073,7 @@ impl<'a> ZipFile<'a> {
 
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
-        self.data.data_start.load()
+        *self.data.data_start.get().unwrap_or(&0)
     }
 
     /// Get the starting offset of the zip header for this file
@@ -1188,7 +1193,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
         header_start: 0,
-        data_start: AtomicU64::new(0),
+        data_start: OnceLock::new(),
         central_header_start: 0,
         // The external_attributes field is only available in the central directory.
         // We set this to zero, which should be valid as the docs state 'If input came

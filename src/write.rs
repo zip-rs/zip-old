@@ -4,7 +4,7 @@ use crate::compression::CompressionMethod;
 use crate::read::{find_content, ZipArchive, ZipFile, ZipFileReader};
 use crate::result::{ZipError, ZipResult};
 use crate::spec;
-use crate::types::{ffi, AtomicU64, DateTime, System, ZipFileData, DEFAULT_VERSION};
+use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, WriteBytesExt};
 #[cfg(any(
     feature = "deflate",
@@ -24,7 +24,7 @@ use std::io::prelude::*;
 use std::io::{BufReader, SeekFrom};
 use std::mem;
 use std::str::{from_utf8, Utf8Error};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(any(
     feature = "deflate",
@@ -477,7 +477,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         let write_position = self.inner.get_plain().stream_position()?;
         let src_index = self.index_by_name(src_name)?;
         let src_data = &self.files[src_index];
-        let data_start = src_data.data_start.load();
+        let data_start = *src_data.data_start.get().unwrap_or(&0);
         let compressed_size = src_data.compressed_size;
         debug_assert!(compressed_size <= write_position - data_start);
         let uncompressed_size = src_data.uncompressed_size;
@@ -616,7 +616,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 central_extra_field: options.central_extra_data,
                 file_comment: String::with_capacity(0).into_boxed_str(),
                 header_start,
-                data_start: AtomicU64::new(0),
+                data_start: OnceLock::new(),
                 central_header_start: 0,
                 external_attributes: permissions << 16,
                 large_file: options.large_file,
@@ -710,7 +710,8 @@ impl<W: Write + Seek> ZipWriter<W> {
                 self.inner = Storer(MaybeEncrypted::Encrypted(zipwriter));
             }
             self.stats.start = header_end;
-            *file.data_start.get_mut() = header_end;
+            debug_assert!(file.data_start.get().is_none());
+            file.data_start.get_or_init(|| header_end);
             self.writing_to_file = true;
             self.stats.bytes_written = 0;
             self.stats.hasher = Hasher::new();
@@ -800,10 +801,12 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.switch_to_non_encrypting_writer()?;
         // Make sure this is the last file, and that no shallow copies of it remain; otherwise we'd
         // overwrite a valid file and corrupt the archive
+        let last_file_start = last_file.data_start.get().unwrap();
         if self
             .files
             .iter()
-            .all(|file| file.data_start.load() < last_file.data_start.load())
+            .flat_map(|file| file.data_start.get())
+            .all(|start| start < last_file_start)
         {
             self.inner
                 .get_plain()

@@ -200,7 +200,7 @@ impl ZipStreamFileMetadata {
 
     /// Get the starting offset of the data of the compressed file
     pub fn data_start(&self) -> u64 {
-        self.0.data_start.load()
+        *self.0.data_start.get().unwrap_or(&0)
     }
 
     /// Get unix mode for the file
