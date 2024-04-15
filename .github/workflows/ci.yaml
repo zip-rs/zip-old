@@ -20,7 +20,7 @@ jobs:
           rust: '1.70'
         - rust-alias: nightly
           rust: nightly
-    name: Build and test (${{ matrix.os }}, ${{ matrix.rust-alias}})
+    name: Build and test (${{ matrix.os }}, ${{ matrix.rust-alias }})
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@master
