@@ -14,13 +14,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         include:
-        - rust-alias: stable
+        - rustalias: stable
           rust: stable
-        - rust-alias: msrv
+        - rustalias: msrv
           rust: '1.70'
-        - rust-alias: nightly
+        - rustalias: nightly
           rust: nightly
-    name: Build and test (${{ matrix.os }}, ${{ matrix.rust-alias }})
+    name: Build and test (${{ matrix.os }}, ${{ matrix.rustalias }})
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@master
