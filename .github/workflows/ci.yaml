@@ -13,12 +13,16 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
+        singleton: [1]
         include:
-        - rustalias: stable
+        - singleton: 1
+          rustalias: stable
           rust: stable
-        - rustalias: msrv
+        - singleton: 1
+          rustalias: msrv
           rust: '1.70'
-        - rustalias: nightly
+        - singleton: 1
+          rustalias: nightly
           rust: nightly
     name: Build and test (${{ matrix.os }}, ${{ matrix.rustalias }})
     runs-on: ${{ matrix.os }}
