@@ -1,6 +1,6 @@
+use anyhow::Context;
 use std::io::prelude::*;
-use zip_next::result::ZipError;
-use zip_next::write::FileOptions;
+use zip_next::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
 use std::path::Path;
@@ -58,7 +58,7 @@ fn real_main() -> i32 {
         }
         match doit(src_dir, dst_file, method.unwrap()) {
             Ok(_) => println!("done: {src_dir} written to {dst_file}"),
-            Err(e) => println!("Error: {e:?}"),
+            Err(e) => eprintln!("Error: {e:?}"),
         }
     }
 
@@ -70,26 +70,30 @@ fn zip_dir<T>(
     prefix: &str,
     writer: T,
     method: zip_next::CompressionMethod,
-) -> zip_next::result::ZipResult<()>
+) -> anyhow::Result<()>
 where
     T: Write + Seek,
 {
     let mut zip = zip_next::ZipWriter::new(writer);
-    let options = FileOptions::default()
+    let options = SimpleFileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
+    let prefix = Path::new(prefix);
     let mut buffer = Vec::new();
     for entry in it {
         let path = entry.path();
-        let name = path.strip_prefix(Path::new(prefix)).unwrap();
+        let name = path.strip_prefix(prefix).unwrap();
+        let path_as_string = name
+            .to_str()
+            .map(str::to_owned)
+            .with_context(|| format!("{name:?} Is a Non UTF-8 Path"))?;
 
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
             println!("adding file {path:?} as {name:?} ...");
-            #[allow(deprecated)]
-            zip.start_file_from_path(name, options.clone())?;
+            zip.start_file(path_as_string, options)?;
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
@@ -98,22 +102,17 @@ where
         } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
-            println!("adding dir {path:?} as {name:?} ...");
-            #[allow(deprecated)]
-            zip.add_directory_from_path(name, options.clone())?;
+            println!("adding dir {path_as_string:?} as {name:?} ...");
+            zip.add_directory(path_as_string, options)?;
         }
     }
     zip.finish()?;
     Ok(())
 }
 
-fn doit(
-    src_dir: &str,
-    dst_file: &str,
-    method: zip_next::CompressionMethod,
-) -> zip_next::result::ZipResult<()> {
+fn doit(src_dir: &str, dst_file: &str, method: zip_next::CompressionMethod) -> anyhow::Result<()> {
     if !Path::new(src_dir).is_dir() {
-        return Err(ZipError::FileNotFound);
+        return Err(ZipError::FileNotFound.into());
     }
 
     let path = Path::new(dst_file);

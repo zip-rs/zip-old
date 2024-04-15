@@ -14,6 +14,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -828,8 +829,8 @@ fn central_header_to_zip_file_inner<R: Read>(
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw: file_name_raw.into(),
-        extra_field: Arc::new(extra_field),
-        central_extra_field: Arc::new(vec![]),
+        extra_field: Some(Arc::new(extra_field)),
+        central_extra_field: None,
         file_comment,
         header_start: offset,
         central_header_start,
@@ -861,9 +862,12 @@ fn central_header_to_zip_file_inner<R: Read>(
 }
 
 fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
-    let mut reader = io::Cursor::new(file.extra_field.as_ref());
+    let Some(extra_field) = &file.extra_field else {
+        return Ok(());
+    };
+    let mut reader = io::Cursor::new(extra_field.as_ref());
 
-    while (reader.position() as usize) < file.extra_field.len() {
+    while (reader.position() as usize) < extra_field.len() {
         let kind = reader.read_u16::<LittleEndian>()?;
         let len = reader.read_u16::<LittleEndian>()?;
         let mut len_left = len as i64;
@@ -1068,8 +1072,8 @@ impl<'a> ZipFile<'a> {
     }
 
     /// Get the extra data of the zip header for this file
-    pub fn extra_data(&self) -> &[u8] {
-        &self.data.extra_field
+    pub fn extra_data(&self) -> Option<&[u8]> {
+        self.data.extra_field.as_ref().map(|v| v.deref().deref())
     }
 
     /// Get the starting offset of the data of the compressed file
@@ -1115,7 +1119,7 @@ impl<'a> Drop for ZipFile<'a> {
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
-                    Ok(_) => (),
+                    Ok(_read) => (),
                     Err(e) => {
                         panic!("Could not consume all of the output of the current ZipFile: {e:?}")
                     }
@@ -1188,8 +1192,8 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         uncompressed_size: uncompressed_size as u64,
         file_name,
         file_name_raw: file_name_raw.into(),
-        extra_field: Arc::new(extra_field),
-        central_extra_field: Arc::new(vec![]),
+        extra_field: Some(Arc::new(extra_field)),
+        central_extra_field: None,
         file_comment: String::with_capacity(0).into_boxed_str(), // file comment is only available in the central directory
         // header_start and data start are not available, but also don't matter, since seeking is
         // not available.
