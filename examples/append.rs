@@ -45,17 +45,13 @@ fn real_main() -> i32 {
     let mut files: Vec<PathBuf> = vec![];
     gather_files(to_append.as_ref(), &mut files);
 
-    let mut buf: Vec<u8> = vec![];
     for file in files {
         append_zip
             .start_file(file.to_string_lossy(), Default::default())
             .unwrap();
 
         let mut f = File::open(file).unwrap();
-        f.read_to_end(&mut buf).unwrap();
-
-        append_zip.write_all(&buf).unwrap();
-        buf.clear();
+        let _ = std::io::copy(&mut f, &mut append_zip);
     }
 
     append_zip.finish().unwrap();
