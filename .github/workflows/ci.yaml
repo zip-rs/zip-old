@@ -24,7 +24,7 @@ jobs:
         - singleton: 1
           rustalias: nightly
           rust: nightly
-    name: Build and test (${{ matrix.os }}, ${{ matrix.rustalias }})
+    name: 'Build and test: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@master
