@@ -1,8 +1,12 @@
 [package]
 name = "zip_next"
 version = "1.0.1"
-authors = ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "Marli Frost <marli@frost.red>", "Ryan Levick <ryan.levick@gmail.com>",
-"Chris Hennick <hennickc@amazon.com>"]
+authors = [
+    "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
+    "Marli Frost <marli@frost.red>",
+    "Ryan Levick <ryan.levick@gmail.com>",
+    "Chris Hennick <hennickc@amazon.com>",
+]
 license = "MIT"
 repository = "https://github.com/Pr0methean/zip-next.git"
 keywords = ["zip", "archive"]
@@ -22,9 +26,11 @@ constant_time_eq = { version = "0.3.0", optional = true }
 crc32fast = "1.4.0"
 flate2 = { version = "1.0.28", default-features = false, optional = true }
 hmac = { version = "0.12.1", optional = true, features = ["reset"] }
-pbkdf2 = {version = "0.12.2", optional = true }
-sha1 = {version = "0.10.6", optional = true }
-time = { version = "0.3.34", optional = true, default-features = false, features = ["std"] }
+pbkdf2 = { version = "0.12.2", optional = true }
+sha1 = { version = "0.10.6", optional = true }
+time = { version = "0.3.34", optional = true, default-features = false, features = [
+    "std",
+] }
 zstd = { version = "0.13.1", optional = true, default-features = false }
 zopfli = { version = "0.8.0", optional = true }
 deflate64 = { version = "0.1.8", optional = true }
@@ -41,9 +47,9 @@ bencher = "0.1.5"
 getrandom = { version = "0.2.14", features = ["js"] }
 walkdir = "2.5.0"
 time = { version = "0.3.34", features = ["formatting", "macros"] }
-
+anyhow = "1"
 [features]
-aes-crypto = [ "aes", "constant_time_eq", "hmac", "pbkdf2", "sha1" ]
+aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1"]
 chrono = ["chrono/default"]
 deflate = ["flate2/rust_backend"]
 deflate-miniz = ["flate2/default"]
@@ -52,7 +58,17 @@ deflate-zlib-ng = ["flate2/zlib-ng"]
 deflate-zopfli = ["zopfli"]
 lzma = ["lzma-rs/stream"]
 unreserved = []
-default = ["aes-crypto", "bzip2", "deflate", "deflate64", "deflate-zlib-ng", "deflate-zopfli", "lzma", "time", "zstd"]
+default = [
+    "aes-crypto",
+    "bzip2",
+    "deflate",
+    "deflate64",
+    "deflate-zlib-ng",
+    "deflate-zopfli",
+    "lzma",
+    "time",
+    "zstd",
+]
 
 [[bench]]
 name = "read_entry"

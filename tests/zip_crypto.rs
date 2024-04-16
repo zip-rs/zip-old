@@ -29,7 +29,7 @@ fn encrypting_file() {
     archive
         .start_file(
             "name",
-            zip_next::write::FileOptions::default().with_deprecated_encryption(b"password"),
+            zip_next::write::SimpleFileOptions::default().with_deprecated_encryption(b"password"),
         )
         .unwrap();
     archive.write_all(b"test").unwrap();

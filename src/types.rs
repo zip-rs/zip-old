@@ -352,9 +352,9 @@ pub struct ZipFileData {
     /// Raw file name. To be used when file_name was incorrectly decoded.
     pub file_name_raw: Box<[u8]>,
     /// Extra field usually used for storage expansion
-    pub extra_field: Arc<Vec<u8>>,
+    pub extra_field: Option<Arc<Vec<u8>>>,
     /// Extra field only written to central directory
-    pub central_extra_field: Arc<Vec<u8>>,
+    pub central_extra_field: Option<Arc<Vec<u8>>>,
     /// File comment
     pub file_comment: Box<str>,
     /// Specifies where the local header of the file starts
@@ -458,6 +458,20 @@ impl ZipFileData {
             _ => 20,
         }
     }
+    #[inline(always)]
+    pub(crate) fn extra_field_len(&self) -> usize {
+        self.extra_field
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or_default()
+    }
+    #[inline(always)]
+    pub(crate) fn central_extra_field_len(&self) -> usize {
+        self.central_extra_field
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or_default()
+    }
 }
 
 /// The encryption specification used to encrypt a file with AES.
@@ -521,8 +535,8 @@ mod test {
             uncompressed_size: 0,
             file_name: file_name.clone().into_boxed_str(),
             file_name_raw: file_name.into_bytes().into_boxed_slice(),
-            extra_field: Arc::new(vec![]),
-            central_extra_field: Arc::new(vec![]),
+            extra_field: None,
+            central_extra_field: None,
             file_comment: String::with_capacity(0).into_boxed_str(),
             header_start: 0,
             data_start: OnceLock::new(),

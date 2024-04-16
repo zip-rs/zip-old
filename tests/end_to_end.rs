@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::Cursor;
 use zip_next::result::ZipResult;
+use zip_next::write::ExtendedFileOptions;
 use zip_next::write::FileOptions;
+use zip_next::write::SimpleFileOptions;
 use zip_next::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
@@ -84,7 +86,7 @@ fn append() {
                 let mut zip = ZipWriter::new_append(&mut file).unwrap();
                 zip.start_file(
                     COPY_ENTRY_NAME,
-                    FileOptions::default()
+                    SimpleFileOptions::default()
                         .compression_method(method)
                         .unix_permissions(0o755),
                 )
@@ -105,9 +107,10 @@ fn append() {
 fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, shallow_copy: bool) {
     let mut zip = ZipWriter::new(file);
 
-    zip.add_directory("test/", Default::default()).unwrap();
+    zip.add_directory("test/", SimpleFileOptions::default())
+        .unwrap();
 
-    let mut options = FileOptions::default()
+    let mut options = FileOptions::<ExtendedFileOptions>::default()
         .compression_method(method)
         .unix_permissions(0o755);
 
@@ -159,7 +162,10 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip_next::ZipArc
         extra_data.write_u16::<LittleEndian>(0xbeef)?;
         extra_data.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
         extra_data.write_all(EXTRA_DATA)?;
-        assert_eq!(file_with_extra_data.extra_data(), extra_data.as_slice());
+        assert_eq!(
+            file_with_extra_data.extra_data(),
+            Some(extra_data.as_slice())
+        );
     }
 
     Ok(archive)
