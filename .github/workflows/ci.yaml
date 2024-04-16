@@ -10,17 +10,23 @@ env:
 
 jobs:
   build_and_test:
-    name: Build and test
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [stable, '1.70', nightly]
-
+        rustalias: [stable, nightly, msrv]
+        include:
+        - rustalias: stable
+          rust: stable
+        - rustalias: msrv
+          rust: '1.70'
+        - rustalias: nightly
+          rust: nightly
+    name: 'Build and test: ${{ matrix.os }}, ${{ matrix.rustalias }}'
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@master
 
-    - name: Install ${{ matrix.rust }}
+    - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
