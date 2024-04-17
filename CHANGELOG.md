@@ -256,10 +256,15 @@
 
 ### Changed
 
- - The package no longer includes tests or examples.
+ - The published package on crates.io no longer includes the tests or examples.
 
 ## [1.1.0]
+
+### Added
+
+ - Support for decoding LZMA.
 
 ### Changed
 
  - Eliminated a custom `AtomicU64` type by replacing it with `OnceLock` in the only place it's used.
+ - `FileOptions` now has the subtype `SimpleFileOptions` which implements `Copy` but has no extra data.
