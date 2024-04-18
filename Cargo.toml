@@ -10,8 +10,8 @@ authors = [
 license = "MIT"
 repository = "https://github.com/Pr0methean/zip-next.git"
 keywords = ["zip", "archive"]
-description = """
 rust-version = "1.70.0"
+description = """
 Library to support the reading and writing of zip files.
 """
 edition = "2021"
