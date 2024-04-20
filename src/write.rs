@@ -600,9 +600,12 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
     /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
     /// root.
-    pub fn deep_copy_file_from_path<T: AsRef<Path>, U: AsRef<Path>>(&mut self, src_path: T, dest_path: U) -> ZipResult<()>
-    {
-        self.deep_copy_file(&*path_to_string(src_path), &*path_to_string(dest_path))
+    pub fn deep_copy_file_from_path<T: AsRef<Path>, U: AsRef<Path>>(
+        &mut self,
+        src_path: T,
+        dest_path: U,
+    ) -> ZipResult<()> {
+        self.deep_copy_file(&path_to_string(src_path), &path_to_string(dest_path))
     }
 }
 
@@ -1012,7 +1015,11 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
     /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
     /// root.
-    pub fn raw_copy_file_to_path<P: AsRef<Path>>(&mut self, file: ZipFile, path: P) -> ZipResult<()> {
+    pub fn raw_copy_file_to_path<P: AsRef<Path>>(
+        &mut self,
+        file: ZipFile,
+        path: P,
+    ) -> ZipResult<()> {
         self.raw_copy_file_rename(file, path_to_string(path))
     }
 
@@ -1244,9 +1251,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
     /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
     /// root.
-    pub fn shallow_copy_file_from_path<T: AsRef<Path>, U: AsRef<Path>>(&mut self, src_path: T, dest_path: U) -> ZipResult<()>
-    {
-        self.shallow_copy_file(&*path_to_string(src_path), &*path_to_string(dest_path))
+    pub fn shallow_copy_file_from_path<T: AsRef<Path>, U: AsRef<Path>>(
+        &mut self,
+        src_path: T,
+        dest_path: U,
+    ) -> ZipResult<()> {
+        self.shallow_copy_file(&path_to_string(src_path), &path_to_string(dest_path))
     }
 }
 
