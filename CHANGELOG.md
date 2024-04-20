@@ -273,5 +273,10 @@
 
 ### Added
 
- - `index_for_name`: get the index of a file given its name, without initializing metadata or needing to mutably borrow
-   the `ZipArchive`.
+ - `index_for_name`, `index_for_path`, `name_for_index`: get the index of a file given its path or vice-versa, without 
+   initializing metadata from the local-file header or needing to mutably borrow the `ZipArchive`.
+ - `add_symlink_from_path`: create a symlink using `AsRef<Path>` arguments
+
+### Changed
+
+ - `add_directory_from_path` and `start_file_from_path` are no longer deprecated.

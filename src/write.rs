@@ -45,6 +45,7 @@ use zopfli::Options;
 
 #[cfg(feature = "deflate-zopfli")]
 use std::io::BufWriter;
+use std::path::Path;
 
 #[cfg(feature = "zstd")]
 use zstd::stream::write::Encoder as ZstdEncoder;
@@ -134,6 +135,7 @@ pub use self::sealed::FileOptionExtension;
 use crate::result::ZipError::InvalidArchive;
 #[cfg(feature = "lzma")]
 use crate::result::ZipError::UnsupportedArchive;
+use crate::spec::path_to_string;
 use crate::write::GenericZipWriter::{Closed, Storer};
 use crate::zipcrypto::ZipCryptoKeys;
 use crate::CompressionMethod::Stored;
@@ -932,13 +934,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
     /// Components, such as a starting '/' or '..' and '.'.
-    #[deprecated(
-        since = "0.5.7",
-        note = "by stripping `..`s from the path, the meaning of paths can change. Use `start_file` instead."
-    )]
-    pub fn start_file_from_path<E: FileOptionExtension>(
+    pub fn start_file_from_path<E: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
-        path: &std::path::Path,
+        path: P,
         options: FileOptions<E>,
     ) -> ZipResult<()> {
         self.start_file(path_to_string(path), options)
@@ -1064,9 +1062,9 @@ impl<W: Write + Seek> ZipWriter<W> {
         since = "0.5.7",
         note = "by stripping `..`s from the path, the meaning of paths can change. Use `add_directory` instead."
     )]
-    pub fn add_directory_from_path<T: FileOptionExtension>(
+    pub fn add_directory_from_path<T: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
-        path: &std::path::Path,
+        path: P,
         options: FileOptions<T>,
     ) -> ZipResult<()> {
         self.add_directory(path_to_string(path), options)
@@ -1121,6 +1119,19 @@ impl<W: Write + Seek> ZipWriter<W> {
         self.finish_file()?;
 
         Ok(())
+    }
+
+    /// Add a symlink entry, taking Paths to the location and target as arguments.
+    ///
+    /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
+    /// Components, such as a starting '/' or '..' and '.'.
+    pub fn add_symlink_from_path<P: AsRef<Path>, T: AsRef<Path>, E: FileOptionExtension>(
+        &mut self,
+        path: P,
+        target: T,
+        options: FileOptions<E>,
+    ) -> ZipResult<()> {
+        self.add_symlink(path_to_string(path), path_to_string(target), options)
     }
 
     fn finalize(&mut self) -> ZipResult<()> {
@@ -1677,19 +1688,6 @@ fn write_central_zip64_extra_field<T: Write>(writer: &mut T, file: &ZipFileData)
     Ok(size)
 }
 
-fn path_to_string(path: &std::path::Path) -> String {
-    let mut path_str = String::new();
-    for component in path.components() {
-        if let std::path::Component::Normal(os_str) = component {
-            if !path_str.is_empty() {
-                path_str.push('/');
-            }
-            path_str.push_str(&os_str.to_string_lossy());
-        }
-    }
-    path_str
-}
-
 #[cfg(not(feature = "unreserved"))]
 const EXTRA_FIELD_MAPPING: [u16; 49] = [
     0x0001, 0x0007, 0x0008, 0x0009, 0x000a, 0x000c, 0x000d, 0x000e, 0x000f, 0x0014, 0x0015, 0x0016,
@@ -1709,6 +1707,7 @@ mod test {
     use crate::ZipArchive;
     use std::io;
     use std::io::{Read, Write};
+    use std::path::PathBuf;
 
     #[test]
     fn write_empty_zip() {
@@ -1787,6 +1786,22 @@ mod test {
     }
 
     #[test]
+    fn test_path_normalization() {
+        let mut path = PathBuf::new();
+        path.push("foo");
+        path.push("bar");
+        path.push("..");
+        path.push(".");
+        path.push("example.txt");
+        let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
+        writer
+            .start_file_from_path(path, SimpleFileOptions::default())
+            .unwrap();
+        let archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+        assert_eq!(Some("/foo/example.txt"), archive.name_for_index(0));
+    }
+
+    #[test]
     fn write_symlink_wonky_paths() {
         let mut writer = ZipWriter::new(io::Cursor::new(Vec::new()));
         writer
@@ -1845,18 +1860,14 @@ mod test {
         assert_eq!(result.get_ref(), &v);
     }
 
-    #[cfg(test)]
     const RT_TEST_TEXT: &str = "And I can't stop thinking about the moments that I lost to you\
                             And I can't stop thinking of things I used to do\
                             And I can't stop making bad decisions\
                             And I can't stop eating stuff you make me chew\
                             I put on a smile like you wanna see\
                             Another day goes by that I long to be like you";
-    #[cfg(test)]
     const RT_TEST_FILENAME: &str = "subfolder/sub-subfolder/can't_stop.txt";
-    #[cfg(test)]
     const SECOND_FILENAME: &str = "different_name.xyz";
-    #[cfg(test)]
     const THIRD_FILENAME: &str = "third_name.xyz";
 
     #[test]

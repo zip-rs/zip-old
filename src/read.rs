@@ -86,6 +86,7 @@ pub(crate) mod zip_archive {
 #[cfg(feature = "lzma")]
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::InvalidPassword;
+use crate::spec::path_to_string;
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -654,7 +655,22 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the index of a file entry by name, if it's present.
     #[inline(always)]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
-        self.shared.names_map.get(name).map(|index_ref| *index_ref)
+        self.shared.names_map.get(name).copied()
+    }
+
+    /// Get the index of a file entry by path, if it's present.
+    #[inline(always)]
+    pub fn index_for_path<T: AsRef<Path>>(&self, path: T) -> Option<usize> {
+        self.index_for_name(&path_to_string(path))
+    }
+
+    /// Get the name of a file entry, if it's present.
+    #[inline(always)]
+    pub fn name_for_index(&self, index: usize) -> Option<&str> {
+        self.shared
+            .files
+            .get(index)
+            .map(|file_data| &*file_data.file_name)
     }
 
     fn by_name_with_optional_password<'a>(

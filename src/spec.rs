@@ -1,7 +1,9 @@
 use crate::result::{ZipError, ZipResult};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
+use std::path::{Component, Path};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -209,4 +211,27 @@ impl Zip64CentralDirectoryEnd {
         writer.write_u64::<LittleEndian>(self.central_directory_offset)?;
         Ok(())
     }
+}
+
+/// Converts a path to the ZIP format (forward-slash-delimited and normalized).
+pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
+    let mut normalized_components = Vec::new();
+
+    // Empty element ensures the path has a leading slash, with no extra allocation after the join
+    normalized_components.push(Cow::Borrowed(""));
+
+    for component in path.as_ref().components() {
+        match component {
+            Component::Normal(os_str) => {
+                normalized_components.push(os_str.to_string_lossy());
+            }
+            Component::ParentDir => {
+                if normalized_components.len() > 1 {
+                    normalized_components.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+    normalized_components.join("/")
 }
