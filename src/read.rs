@@ -650,7 +650,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn by_name(&mut self, name: &str) -> ZipResult<ZipFile> {
         self.by_name_with_optional_password(name, None)
     }
-    
+
     /// Check for a file entry, but do not decrypt it or initialize metadata.
     pub fn contains_file_named(&self, name: &str) -> bool {
         self.shared.names_map.contains_key(name)
