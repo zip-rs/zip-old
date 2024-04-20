@@ -4,7 +4,7 @@ zip
 [![Build Status](https://github.com/Pr0methean/zip-next/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
 [![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 
-[Documentation](https://docs.rs/zip/1.1.0/zip/)
+[Documentation](https://docs.rs/zip/latest/zip/)
 
 Info
 ----
@@ -33,14 +33,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "1.1.0"
+zip = "1.1.1"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "1.1.0", default-features = false }
+zip = { version = "1.1.1", default-features = false }
 ```
 
 The features available are:
@@ -53,7 +53,8 @@ The features available are:
   This is the fastest `deflate` implementation available.
 * `deflate-zopfli`: Enables deflating files with the `zopfli` library (used when compression quality is 10..=264). This
   is the most effective `deflate` implementation available.
-* `deflate64`: Enables the deflate64 compression algorithm. Decompression is only supported.
+* `deflate64`: Enables the deflate64 compression algorithm. Only decompression is supported.
+* `lzma`: Enables the LZMA compression algorithm. Only decompression is supported.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
 * `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.

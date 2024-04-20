@@ -268,3 +268,10 @@
 
  - Eliminated a custom `AtomicU64` type by replacing it with `OnceLock` in the only place it's used.
  - `FileOptions` now has the subtype `SimpleFileOptions` which implements `Copy` but has no extra data.
+ 
+## [1.1.1]
+
+### Added
+
+ - `contains_file_named`: check whether a file entry exists in a zip file, without initializing the
+   metadata or needing to mutably borrow the `ZipArchive`.
