@@ -932,8 +932,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Starts a file, taking a Path as argument.
     ///
-    /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
-    /// Components, such as a starting '/' or '..' and '.'.
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
     pub fn start_file_from_path<E: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
         path: P,
@@ -1056,12 +1057,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Add a directory entry, taking a Path as argument.
     ///
-    /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
-    /// Components, such as a starting '/' or '..' and '.'.
-    #[deprecated(
-        since = "0.5.7",
-        note = "by stripping `..`s from the path, the meaning of paths can change. Use `add_directory` instead."
-    )]
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
     pub fn add_directory_from_path<T: FileOptionExtension, P: AsRef<Path>>(
         &mut self,
         path: P,
@@ -1123,8 +1121,9 @@ impl<W: Write + Seek> ZipWriter<W> {
 
     /// Add a symlink entry, taking Paths to the location and target as arguments.
     ///
-    /// This function ensures that the '/' path separator is used. It also ignores all non 'Normal'
-    /// Components, such as a starting '/' or '..' and '.'.
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
     pub fn add_symlink_from_path<P: AsRef<Path>, T: AsRef<Path>, E: FileOptionExtension>(
         &mut self,
         path: P,

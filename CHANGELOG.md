@@ -279,4 +279,5 @@
 
 ### Changed
 
- - `add_directory_from_path` and `start_file_from_path` are no longer deprecated.
+ - `add_directory_from_path` and `start_file_from_path` are no longer deprecated, and they now normalize `..` as well as
+   `.`.
