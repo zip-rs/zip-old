@@ -6,7 +6,7 @@ const MAX_BYTES_TO_READ: u64 = 1 << 24;
 
 fn decompress_all(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let reader = std::io::Cursor::new(data);
-    let mut zip = zip_next::ZipArchive::new(reader)?;
+    let mut zip = zip::ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?.take(MAX_BYTES_TO_READ);

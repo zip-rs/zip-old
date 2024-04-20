@@ -18,24 +18,24 @@
 // 000000c5
 
 use std::io::Cursor;
-use zip_next::result::ZipError;
+use zip::result::ZipError;
 
 #[test]
 fn encrypting_file() {
     use std::io::{Read, Write};
-    use zip_next::unstable::write::FileOptionsExt;
+    use zip::unstable::write::FileOptionsExt;
     let mut buf = vec![0; 2048];
-    let mut archive = zip_next::write::ZipWriter::new(Cursor::new(&mut buf));
+    let mut archive = zip::write::ZipWriter::new(Cursor::new(&mut buf));
     archive
         .start_file(
             "name",
-            zip_next::write::SimpleFileOptions::default().with_deprecated_encryption(b"password"),
+            zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password"),
         )
         .unwrap();
     archive.write_all(b"test").unwrap();
     archive.finish().unwrap();
     drop(archive);
-    let mut archive = zip_next::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(&mut buf)).unwrap();
     let mut file = archive.by_index_decrypt(0, b"password").unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
@@ -61,7 +61,7 @@ fn encrypted_file() {
         0x00, 0x00,
     ]);
 
-    let mut archive = zip_next::ZipArchive::new(zip_file_bytes).unwrap();
+    let mut archive = zip::ZipArchive::new(zip_file_bytes).unwrap();
 
     assert_eq!(archive.len(), 1); //Only one file inside archive: `test.txt`
 
@@ -69,8 +69,8 @@ fn encrypted_file() {
         // No password
         let file = archive.by_index(0);
         match file {
-            Err(zip_next::result::ZipError::UnsupportedArchive(
-                zip_next::result::ZipError::PASSWORD_REQUIRED,
+            Err(zip::result::ZipError::UnsupportedArchive(
+                zip::result::ZipError::PASSWORD_REQUIRED,
             )) => (),
             Err(_) => panic!(
                 "Expected PasswordRequired error when opening encrypted file without password"

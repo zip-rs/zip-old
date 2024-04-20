@@ -1,6 +1,6 @@
 use anyhow::Context;
 use std::io::prelude::*;
-use zip_next::{result::ZipError, write::SimpleFileOptions};
+use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
 use std::path::Path;
@@ -10,8 +10,8 @@ fn main() {
     std::process::exit(real_main());
 }
 
-const METHOD_STORED: Option<zip_next::CompressionMethod> =
-    Some(zip_next::CompressionMethod::Stored);
+const METHOD_STORED: Option<zip::CompressionMethod> =
+    Some(zip::CompressionMethod::Stored);
 
 #[cfg(any(
     feature = "deflate",
@@ -19,8 +19,8 @@ const METHOD_STORED: Option<zip_next::CompressionMethod> =
     feature = "deflate-zlib",
     feature = "deflate-zlib-ng"
 ))]
-const METHOD_DEFLATED: Option<zip_next::CompressionMethod> =
-    Some(zip_next::CompressionMethod::Deflated);
+const METHOD_DEFLATED: Option<zip::CompressionMethod> =
+    Some(zip::CompressionMethod::Deflated);
 #[cfg(not(any(
     feature = "deflate",
     feature = "deflate-miniz",
@@ -28,17 +28,17 @@ const METHOD_DEFLATED: Option<zip_next::CompressionMethod> =
     feature = "deflate-zlib-ng",
     feature = "deflate-zopfli"
 )))]
-const METHOD_DEFLATED: Option<zip_next::CompressionMethod> = None;
+const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
 
 #[cfg(feature = "bzip2")]
-const METHOD_BZIP2: Option<zip_next::CompressionMethod> = Some(zip_next::CompressionMethod::Bzip2);
+const METHOD_BZIP2: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Bzip2);
 #[cfg(not(feature = "bzip2"))]
-const METHOD_BZIP2: Option<zip_next::CompressionMethod> = None;
+const METHOD_BZIP2: Option<zip::CompressionMethod> = None;
 
 #[cfg(feature = "zstd")]
-const METHOD_ZSTD: Option<zip_next::CompressionMethod> = Some(zip_next::CompressionMethod::Zstd);
+const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Zstd);
 #[cfg(not(feature = "zstd"))]
-const METHOD_ZSTD: Option<zip_next::CompressionMethod> = None;
+const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
 
 fn real_main() -> i32 {
     let args: Vec<_> = std::env::args().collect();
@@ -69,12 +69,12 @@ fn zip_dir<T>(
     it: &mut dyn Iterator<Item = DirEntry>,
     prefix: &str,
     writer: T,
-    method: zip_next::CompressionMethod,
+    method: zip::CompressionMethod,
 ) -> anyhow::Result<()>
 where
     T: Write + Seek,
 {
-    let mut zip = zip_next::ZipWriter::new(writer);
+    let mut zip = zip::ZipWriter::new(writer);
     let options = SimpleFileOptions::default()
         .compression_method(method)
         .unix_permissions(0o755);
@@ -110,7 +110,7 @@ where
     Ok(())
 }
 
-fn doit(src_dir: &str, dst_file: &str, method: zip_next::CompressionMethod) -> anyhow::Result<()> {
+fn doit(src_dir: &str, dst_file: &str, method: zip::CompressionMethod) -> anyhow::Result<()> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }

@@ -10,12 +10,12 @@ use std::path::PathBuf;
 pub enum BasicFileOperation {
     WriteNormalFile {
         contents: Vec<Vec<u8>>,
-        options: zip_next::write::FullFileOptions,
+        options: zip::write::FullFileOptions,
     },
-    WriteDirectory(zip_next::write::FullFileOptions),
+    WriteDirectory(zip::write::FullFileOptions),
     WriteSymlinkWithTarget {
         target: Box<PathBuf>,
-        options: zip_next::write::FullFileOptions,
+        options: zip::write::FullFileOptions,
     },
     ShallowCopy(Box<FileOperation>),
     DeepCopy(Box<FileOperation>),
@@ -48,7 +48,7 @@ impl FileOperation {
 }
 
 fn do_operation<T>(
-    writer: &mut RefCell<zip_next::ZipWriter<T>>,
+    writer: &mut RefCell<zip::ZipWriter<T>>,
     operation: FileOperation,
     abort: bool,
     flush_on_finish_file: bool,
@@ -100,7 +100,7 @@ where
     if operation.reopen {
         let old_comment = writer.borrow().get_raw_comment().to_owned();
         let new_writer =
-            zip_next::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
+            zip::ZipWriter::new_append(writer.borrow_mut().finish().unwrap()).unwrap();
         assert_eq!(&old_comment, new_writer.get_raw_comment());
         *writer = new_writer.into();
     }
@@ -108,7 +108,7 @@ where
 }
 
 fuzz_target!(|test_case: FuzzTestCase| {
-    let mut writer = RefCell::new(zip_next::ZipWriter::new(Cursor::new(Vec::new())));
+    let mut writer = RefCell::new(zip::ZipWriter::new(Cursor::new(Vec::new())));
     writer.borrow_mut().set_raw_comment(test_case.comment);
     for (operation, abort) in test_case.operations {
         let _ = do_operation(
@@ -118,5 +118,5 @@ fuzz_target!(|test_case: FuzzTestCase| {
             test_case.flush_on_finish_file,
         );
     }
-    let _ = zip_next::ZipArchive::new(writer.borrow_mut().finish().unwrap());
+    let _ = zip::ZipArchive::new(writer.borrow_mut().finish().unwrap());
 });

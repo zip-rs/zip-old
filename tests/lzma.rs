@@ -1,7 +1,7 @@
 #![cfg(feature = "lzma")]
 
 use std::io::{self, Read};
-use zip_next::ZipArchive;
+use zip::ZipArchive;
 
 #[test]
 fn decompress_lzma() {

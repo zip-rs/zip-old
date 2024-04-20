@@ -2,11 +2,11 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::Cursor;
-use zip_next::result::ZipResult;
-use zip_next::write::ExtendedFileOptions;
-use zip_next::write::FileOptions;
-use zip_next::write::SimpleFileOptions;
-use zip_next::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
+use zip::result::ZipResult;
+use zip::write::ExtendedFileOptions;
+use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter, SUPPORTED_COMPRESSION_METHODS};
 
 // This test asserts that after creating a zip file, then reading its contents back out,
 // the extracted data will *always* be exactly the same as the original data.
@@ -41,7 +41,7 @@ fn copy() {
         let mut tgt_file = &mut Cursor::new(Vec::new());
 
         {
-            let mut src_archive = zip_next::ZipArchive::new(src_file).unwrap();
+            let mut src_archive = zip::ZipArchive::new(src_file).unwrap();
             let mut zip = ZipWriter::new(&mut tgt_file);
 
             {
@@ -62,7 +62,7 @@ fn copy() {
             }
         }
 
-        let mut tgt_archive = zip_next::ZipArchive::new(tgt_file).unwrap();
+        let mut tgt_archive = zip::ZipArchive::new(tgt_file).unwrap();
 
         check_archive_file_contents(&mut tgt_archive, ENTRY_NAME, LOREM_IPSUM);
         check_archive_file_contents(&mut tgt_archive, COPY_ENTRY_NAME, LOREM_IPSUM);
@@ -95,7 +95,7 @@ fn append() {
                 zip.finish().unwrap();
             }
 
-            let mut zip = zip_next::ZipArchive::new(&mut file).unwrap();
+            let mut zip = zip::ZipArchive::new(&mut file).unwrap();
             check_archive_file_contents(&mut zip, ENTRY_NAME, LOREM_IPSUM);
             check_archive_file_contents(&mut zip, COPY_ENTRY_NAME, LOREM_IPSUM);
             check_archive_file_contents(&mut zip, INTERNAL_COPY_ENTRY_NAME, LOREM_IPSUM);
@@ -138,8 +138,8 @@ fn write_test_archive(file: &mut Cursor<Vec<u8>>, method: CompressionMethod, sha
 }
 
 // Load an archive from buffer and check for test data.
-fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip_next::ZipArchive<R>> {
-    let mut archive = zip_next::ZipArchive::new(zip_file).unwrap();
+fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<R>> {
+    let mut archive = zip::ZipArchive::new(zip_file).unwrap();
 
     // Check archive contains expected file names.
     {
@@ -173,7 +173,7 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip_next::ZipArc
 
 // Read a file in the archive as a string.
 fn read_archive_file<R: Read + Seek>(
-    archive: &mut zip_next::ZipArchive<R>,
+    archive: &mut zip::ZipArchive<R>,
     name: &str,
 ) -> ZipResult<String> {
     let mut file = archive.by_name(name)?;
@@ -209,7 +209,7 @@ fn check_archive_file(
 
 // Check a file in the archive contains the given data.
 fn check_archive_file_contents<R: Read + Seek>(
-    archive: &mut zip_next::ZipArchive<R>,
+    archive: &mut zip::ZipArchive<R>,
     name: &str,
     expected: &[u8],
 ) {

@@ -1,4 +1,4 @@
-use zip_next::result::ZipError;
+use zip::result::ZipError;
 
 const BUF: &[u8] = &[
     0, 80, 75, 1, 2, 127, 120, 0, 3, 3, 75, 80, 232, 3, 0, 0, 0, 0, 0, 0, 3, 0, 1, 0, 7, 0, 0, 0,
@@ -23,7 +23,7 @@ const BUF: &[u8] = &[
 #[test]
 fn invalid_header() {
     let reader = std::io::Cursor::new(&BUF);
-    let archive = zip_next::ZipArchive::new(reader);
+    let archive = zip::ZipArchive::new(reader);
     match archive {
         Err(ZipError::InvalidArchive(_)) => {}
         value => panic!("Unexpected value: {value:?}"),

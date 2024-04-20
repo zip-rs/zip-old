@@ -63,8 +63,8 @@ pub(crate) mod zip_archive {
     ///
     /// ```no_run
     /// use std::io::prelude::*;
-    /// fn list_zip_contents(reader: impl Read + Seek) -> zip_next::result::ZipResult<()> {
-    ///     let mut zip = zip_next::ZipArchive::new(reader)?;
+    /// fn list_zip_contents(reader: impl Read + Seek) -> zip::result::ZipResult<()> {
+    ///     let mut zip = zip::ZipArchive::new(reader)?;
     ///
     ///     for i in 0..zip.len() {
     ///         let mut file = zip.by_index(i)?;

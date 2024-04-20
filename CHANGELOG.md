@@ -116,7 +116,7 @@
 
 ### Merged from upstream
 
- - Added experimental [`zip_next::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting
+ - Added experimental [`zip::unstable::write::FileOptions::with_deprecated_encryption`] API to enable encrypting
    files with PKWARE encryption.
 
 ## [0.7.5]
@@ -134,7 +134,7 @@
 
 ### Changed
 
- - Alignment and extra-data fields are now attributes of [`zip_next::unstable::write::FileOptions`], allowing them to be
+ - Alignment and extra-data fields are now attributes of [`zip::unstable::write::FileOptions`], allowing them to be
    specified for `add_directory` and `add_symlink`.
  - Extra-data fields are now formatted by the `FileOptions` method `add_extra_data`.
  - Improved performance, especially for `shallow_copy_file` and `deep_copy_file` on files with extra data.
@@ -197,7 +197,7 @@
 ### Added
 
  - `zlib-ng` for fast Deflate compression. This is now the default for compression levels 0-9.
- - `chrono` to convert zip_next::DateTime to and from chrono::NaiveDateTime
+ - `chrono` to convert zip::DateTime to and from chrono::NaiveDateTime
 
 ## [0.10.0]
 

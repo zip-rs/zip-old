@@ -15,7 +15,7 @@ fn real_main() -> i32 {
     let file = fs::File::open(fname).unwrap();
     let reader = BufReader::new(file);
 
-    let mut archive = zip_next::ZipArchive::new(reader).unwrap();
+    let mut archive = zip::ZipArchive::new(reader).unwrap();
 
     for i in 0..archive.len() {
         let file = archive.by_index(i).unwrap();

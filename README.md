@@ -1,10 +1,10 @@
-zip_next
+zip
 ========
 
 [![Build Status](https://github.com/Pr0methean/zip-next/actions/workflows/ci.yaml/badge.svg)](https://github.com/Pr0methean/zip-next/actions?query=branch%3Amaster+workflow%3ACI)
-[![Crates.io version](https://img.shields.io/crates/v/zip_next.svg)](https://crates.io/crates/zip_next)
+[![Crates.io version](https://img.shields.io/crates/v/zip.svg)](https://crates.io/crates/zip)
 
-[Documentation](https://docs.rs/zip_next/1.1.0/zip_next/)
+[Documentation](https://docs.rs/zip/1.1.0/zip/)
 
 Info
 ----
@@ -33,14 +33,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip_next = "1.1.0"
+zip = "1.1.0"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip_next = { version = "1.1.0", default-features = false }
+zip = { version = "1.1.0", default-features = false }
 ```
 
 The features available are:
@@ -56,7 +56,7 @@ The features available are:
 * `deflate64`: Enables the deflate64 compression algorithm. Decompression is only supported.
 * `bzip2`: Enables the BZip2 compression algorithm.
 * `time`: Enables features using the [time](https://github.com/rust-lang-deprecated/time) crate.
-* `chrono`: Enables converting last-modified `zip_next::DateTime` to and from `chrono::NaiveDateTime`.
+* `chrono`: Enables converting last-modified `zip::DateTime` to and from `chrono::NaiveDateTime`.
 * `zstd`: Enables the Zstandard compression algorithm.
 
 By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.

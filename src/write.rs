@@ -96,17 +96,17 @@ pub(crate) mod zip_writer {
     /// API to edit its contents.
     ///
     /// ```
-    /// # fn doit() -> zip_next::result::ZipResult<()>
+    /// # fn doit() -> zip::result::ZipResult<()>
     /// # {
-    /// # use zip_next::ZipWriter;
+    /// # use zip::ZipWriter;
     /// use std::io::Write;
-    /// use zip_next::write::SimpleFileOptions;
+    /// use zip::write::SimpleFileOptions;
     ///
     /// // We use a buffer here, though you'd normally use a `File`
     /// let mut buf = [0; 65536];
     /// let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf[..]));
     ///
-    /// let options = SimpleFileOptions::default().compression_method(zip_next::CompressionMethod::Stored);
+    /// let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     /// zip.start_file("hello_world.txt", options)?;
     /// zip.write(b"Hello, World!")?;
     ///
@@ -951,12 +951,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
-    /// use zip_next::{ZipArchive, ZipWriter};
+    /// use zip::{ZipArchive, ZipWriter};
     ///
     /// fn copy_rename<R, W>(
     ///     src: &mut ZipArchive<R>,
     ///     dst: &mut ZipWriter<W>,
-    /// ) -> zip_next::result::ZipResult<()>
+    /// ) -> zip::result::ZipResult<()>
     /// where
     ///     R: Read + Seek,
     ///     W: Write + Seek,
@@ -1005,9 +1005,9 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// ```no_run
     /// use std::fs::File;
     /// use std::io::{Read, Seek, Write};
-    /// use zip_next::{ZipArchive, ZipWriter};
+    /// use zip::{ZipArchive, ZipWriter};
     ///
-    /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip_next::result::ZipResult<()>
+    /// fn copy<R, W>(src: &mut ZipArchive<R>, dst: &mut ZipWriter<W>) -> zip::result::ZipResult<()>
     /// where
     ///     R: Read + Seek,
     ///     W: Write + Seek,

@@ -9,7 +9,7 @@
 //!
 //! ---
 //!
-//! [`zip_next`](`crate`) has support for the most common ZIP archives found in common use.
+//! [`zip`](`crate`) has support for the most common ZIP archives found in common use.
 //! However, in special cases,
 //! there are some zip archives that are difficult to read or write.
 //!
@@ -53,6 +53,6 @@ mod zipcrypto;
 ///
 /// ```toml
 /// [dependencies]
-/// zip_next = "=1.1.0"
+/// zip = "=1.1.0"
 /// ```
 pub mod unstable;
