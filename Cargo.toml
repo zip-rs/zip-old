@@ -8,7 +8,7 @@ authors = [
     "Chris Hennick <hennickc@amazon.com>",
 ]
 license = "MIT"
-repository = "https://github.com/Pr0methean/zip-next.git"
+repository = "https://github.com/Pr0methean/zip.git"
 keywords = ["zip", "archive"]
 rust-version = "1.70.0"
 description = """
