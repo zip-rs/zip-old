@@ -273,5 +273,5 @@
 
 ### Added
 
- - `contains_file_named`: check whether a file entry exists in a zip file, without initializing the
-   metadata or needing to mutably borrow the `ZipArchive`.
+ - `index_for_name`: get the index of a file given its name, without initializing metadata or needing to mutably borrow
+   the `ZipArchive`.

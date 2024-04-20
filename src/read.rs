@@ -651,9 +651,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         self.by_name_with_optional_password(name, None)
     }
 
-    /// Check for a file entry, but do not decrypt it or initialize metadata.
-    pub fn contains_file_named(&self, name: &str) -> bool {
-        self.shared.names_map.contains_key(name)
+    /// Get the index of a file entry by name, if it's present.
+    #[inline(always)]
+    pub fn index_for_name(&self, name: &str) -> Option<usize> {
+        self.shared.names_map.get(name).map(|index_ref| *index_ref)
     }
 
     fn by_name_with_optional_password<'a>(
@@ -661,11 +662,8 @@ impl<R: Read + Seek> ZipArchive<R> {
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'a>> {
-        let index = match self.shared.names_map.get(name) {
-            Some(index) => *index,
-            None => {
-                return Err(ZipError::FileNotFound);
-            }
+        let Some(index) = self.index_for_name(name) else {
+            return Err(ZipError::FileNotFound);
         };
         self.by_index_with_optional_password(index, password)
     }
