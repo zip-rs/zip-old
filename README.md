@@ -10,8 +10,8 @@ Info
 ----
 
 
-A zip library for rust which supports reading and writing of simple ZIP files. Forked from https://crates.io/crates/zip 
-to add more features and improve test coverage.
+A zip library for rust which supports reading and writing of simple ZIP files. Formerly hosted at 
+https://github.com/zip-rs/zip.
 
 Supported compression formats:
 
