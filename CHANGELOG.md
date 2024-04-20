@@ -275,7 +275,8 @@
 
  - `index_for_name`, `index_for_path`, `name_for_index`: get the index of a file given its path or vice-versa, without 
    initializing metadata from the local-file header or needing to mutably borrow the `ZipArchive`.
- - `add_symlink_from_path`: create a symlink using `AsRef<Path>` arguments
+ - `add_symlink_from_path`, `shallow_copy_file_from_path`, `deep_copy_file_from_path`, `raw_copy_file_to_path`: copy a 
+   file or create a symlink using `AsRef<Path>` arguments
 
 ### Changed
 

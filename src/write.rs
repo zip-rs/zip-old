@@ -594,6 +594,16 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
         }
         self.finish_file()
     }
+
+    /// Like `deep_copy_file`, but uses Path arguments.
+    ///
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
+    pub fn deep_copy_file_from_path<T: AsRef<Path>, U: AsRef<Path>>(&mut self, src_path: T, dest_path: U) -> ZipResult<()>
+    {
+        self.deep_copy_file(&*path_to_string(src_path), &*path_to_string(dest_path))
+    }
 }
 
 impl<W: Write + Seek> ZipWriter<W> {
@@ -997,6 +1007,15 @@ impl<W: Write + Seek> ZipWriter<W> {
         Ok(())
     }
 
+    /// Like `raw_copy_file_to_path`, but uses Path arguments.
+    ///
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
+    pub fn raw_copy_file_to_path<P: AsRef<Path>>(&mut self, file: ZipFile, path: P) -> ZipResult<()> {
+        self.raw_copy_file_rename(file, path_to_string(path))
+    }
+
     /// Add a new file using the already compressed data from a ZIP file being read, this allows faster
     /// copies of the `ZipFile` since there is no need to decompress and compress it again. Any `ZipFile`
     /// metadata is copied and not checked, for example the file CRC.
@@ -1218,6 +1237,16 @@ impl<W: Write + Seek> ZipWriter<W> {
         dest_data.file_name = dest_name.into();
         self.insert_file_data(dest_data)?;
         Ok(())
+    }
+
+    /// Like `shallow_copy_file`, but uses Path arguments.
+    ///
+    /// This function ensures that the '/' path separator is used and normalizes `.` and `..`. It
+    /// ignores any `..` or Windows drive letter that would produce a path outside the ZIP file's
+    /// root.
+    pub fn shallow_copy_file_from_path<T: AsRef<Path>, U: AsRef<Path>>(&mut self, src_path: T, dest_path: U) -> ZipResult<()>
+    {
+        self.shallow_copy_file(&*path_to_string(src_path), &*path_to_string(dest_path))
     }
 }
 

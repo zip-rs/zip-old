@@ -14,7 +14,7 @@ pub enum BasicFileOperation {
     },
     WriteDirectory(zip::write::FullFileOptions),
     WriteSymlinkWithTarget {
-        target: Box<PathBuf>,
+        target: PathBuf,
         options: zip::write::FullFileOptions,
     },
     ShallowCopy(Box<FileOperation>),
@@ -24,7 +24,7 @@ pub enum BasicFileOperation {
 #[derive(Arbitrary, Clone, Debug)]
 pub struct FileOperation {
     basic: BasicFileOperation,
-    name: String,
+    path: PathBuf,
     reopen: bool,
     // 'abort' flag is separate, to prevent trying to copy an aborted file
 }
@@ -36,20 +36,9 @@ pub struct FuzzTestCase {
     flush_on_finish_file: bool,
 }
 
-impl FileOperation {
-    fn referenceable_name(&self) -> String {
-        if let BasicFileOperation::WriteDirectory(_) = self.basic {
-            if !self.name.ends_with('\\') && !self.name.ends_with('/') {
-                return self.name.to_owned() + "/";
-            }
-        }
-        self.name.to_owned()
-    }
-}
-
 fn do_operation<T>(
     writer: &mut RefCell<zip::ZipWriter<T>>,
-    operation: FileOperation,
+    operation: &FileOperation,
     abort: bool,
     flush_on_finish_file: bool,
 ) -> Result<(), Box<dyn std::error::Error>>
@@ -59,39 +48,38 @@ where
     writer
         .borrow_mut()
         .set_flush_on_finish_file(flush_on_finish_file);
-    let name = operation.name;
-    match operation.basic {
+    let path = &operation.path;
+    match &operation.basic {
         BasicFileOperation::WriteNormalFile {
             contents,
-            mut options,
+            options,
             ..
         } => {
             let uncompressed_size = contents.iter().map(Vec::len).sum::<usize>();
+            let mut options = (*options).to_owned();
             if uncompressed_size >= u32::MAX as usize {
                 options = options.large_file(true);
             }
-            writer.borrow_mut().start_file(name, options)?;
+            writer.borrow_mut().start_file_from_path(path, options)?;
             for chunk in contents {
                 writer.borrow_mut().write_all(chunk.as_slice())?;
             }
         }
         BasicFileOperation::WriteDirectory(options) => {
-            writer.borrow_mut().add_directory(name, options)?;
+            writer.borrow_mut().add_directory_from_path(path, options.to_owned())?;
         }
         BasicFileOperation::WriteSymlinkWithTarget { target, options } => {
             writer
                 .borrow_mut()
-                .add_symlink(name, target.to_string_lossy(), options)?;
+                .add_symlink_from_path(&path, target, options.to_owned())?;
         }
         BasicFileOperation::ShallowCopy(base) => {
-            let base_name = base.referenceable_name();
-            do_operation(writer, *base, false, flush_on_finish_file)?;
-            writer.borrow_mut().shallow_copy_file(&base_name, &name)?;
+            do_operation(writer, &base, false, flush_on_finish_file)?;
+            writer.borrow_mut().shallow_copy_file_from_path(&base.path, &path)?;
         }
         BasicFileOperation::DeepCopy(base) => {
-            let base_name = base.referenceable_name();
-            do_operation(writer, *base, false, flush_on_finish_file)?;
-            writer.borrow_mut().deep_copy_file(&base_name, &name)?;
+            do_operation(writer, &base, false, flush_on_finish_file)?;
+            writer.borrow_mut().deep_copy_file_from_path(&base.path, &path)?;
         }
     }
     if abort {
@@ -113,7 +101,7 @@ fuzz_target!(|test_case: FuzzTestCase| {
     for (operation, abort) in test_case.operations {
         let _ = do_operation(
             &mut writer,
-            operation,
+            &operation,
             abort,
             test_case.flush_on_finish_file,
         );
