@@ -9,8 +9,7 @@ use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 fn generate_random_archive(size: usize) -> Vec<u8> {
     let data = Vec::new();
     let mut writer = ZipWriter::new(Cursor::new(data));
-    let options =
-        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     writer.start_file("random.dat", options).unwrap();
     let mut bytes = vec![0u8; size];

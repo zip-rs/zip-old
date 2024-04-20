@@ -10,8 +10,7 @@ fn main() {
     std::process::exit(real_main());
 }
 
-const METHOD_STORED: Option<zip::CompressionMethod> =
-    Some(zip::CompressionMethod::Stored);
+const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
 
 #[cfg(any(
     feature = "deflate",
@@ -19,8 +18,7 @@ const METHOD_STORED: Option<zip::CompressionMethod> =
     feature = "deflate-zlib",
     feature = "deflate-zlib-ng"
 ))]
-const METHOD_DEFLATED: Option<zip::CompressionMethod> =
-    Some(zip::CompressionMethod::Deflated);
+const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
 #[cfg(not(any(
     feature = "deflate",
     feature = "deflate-miniz",
