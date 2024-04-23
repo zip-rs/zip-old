@@ -2210,4 +2210,20 @@ mod test {
         writer.finish()?;
         Ok(())
     }
+    
+    #[test]
+    fn test_alignment() {
+        let page_size = 4096;
+        let options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .with_alignment(page_size);
+        let mut zip = ZipWriter::new(io::Cursor::new(Vec::new()));
+        let contents = b"sleeping";
+        let () = zip.start_file("sleep", options).unwrap();
+        let _count = zip.write(&contents[..]).unwrap();
+        let mut zip = ZipArchive::new(zip.finish().unwrap()).unwrap();
+        let file = zip.by_index(0).unwrap();
+        assert_eq!(file.name(), "sleep");
+        assert_eq!(file.data_start(), page_size.into());
+    }
 }
