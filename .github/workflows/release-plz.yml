@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - 'master'
+permissions:
+  pull-requests: write
+  contents: write
 jobs:
   release-plz:
     name: Release-plz
