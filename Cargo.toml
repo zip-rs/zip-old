@@ -18,7 +18,7 @@ edition = "2021"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**"]
 
 [workspace.dependencies]
-time = "0.3.36"
+time = { version = "0.3.36", default-features = false }
 
 [dependencies]
 aes = { version = "0.8.4", optional = true }
@@ -31,7 +31,7 @@ flate2 = { version = "1.0.28", default-features = false, optional = true }
 hmac = { version = "0.12.1", optional = true, features = ["reset"] }
 pbkdf2 = { version = "0.12.2", optional = true }
 sha1 = { version = "0.10.6", optional = true }
-time = { workspace = true, optional = true, default-features = false, features = [
+time = { workspace = true, optional = true, features = [
     "std",
 ] }
 zstd = { version = "0.13.1", optional = true, default-features = false }
