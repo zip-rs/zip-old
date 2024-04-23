@@ -153,15 +153,13 @@ impl ZipStreamFileMetadata {
     /// Rewrite the path, ignoring any path components with special meaning.
     ///
     /// - Absolute paths are made relative
-    /// - [`ParentDir`]s are ignored
+    /// - [std::path::Component::ParentDir]s are ignored
     /// - Truncates the filename at a NULL byte
     ///
     /// This is appropriate if you need to be able to extract *something* from
     /// any archive, but will easily misrepresent trivial paths like
     /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
-    ///
-    /// [`ParentDir`]: `Component::ParentDir`
     pub fn mangled_name(&self) -> PathBuf {
         self.0.file_name_sanitized()
     }
@@ -174,8 +172,7 @@ impl ZipStreamFileMetadata {
     /// - It can't be an absolute path
     ///
     /// This will read well-formed ZIP files correctly, and is resistant
-    /// to path-based exploits. It is recommended over
-    /// [`ZipFile::mangled_name`].
+    /// to path-based exploits.
     pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.0.enclosed_name()
     }

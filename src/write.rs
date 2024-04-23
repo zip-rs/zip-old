@@ -507,9 +507,9 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
     /// read previously-written files and not overwrite them.
     ///
     /// Note: when using an `inner` that cannot overwrite flushed bytes, do not wrap it in a
-    /// [std::io::BufWriter], because that has a [seek] method that implicitly calls [flush], and
-    /// ZipWriter needs to seek backward to update each file's header with the size and checksum
-    /// after writing the body.
+    /// [std::io::BufWriter], because that has a [Seek::seek] method that implicitly calls
+    /// [BufWriter::flush], and ZipWriter needs to seek backward to update each file's header with
+    /// the size and checksum after writing the body.
     ///
     /// This setting is false by default.
     pub fn set_flush_on_finish_file(&mut self, flush_on_finish_file: bool) {
@@ -519,7 +519,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
 impl<A: Read + Write + Seek> ZipWriter<A> {
     /// Adds another copy of a file already in this archive. This will produce a larger but more
-    /// widely-compatible archive compared to [shallow_copy_file]. Does not copy alignment.
+    /// widely-compatible archive compared to [Self::shallow_copy_file]. Does not copy alignment.
     pub fn deep_copy_file(&mut self, src_name: &str, dest_name: &str) -> ZipResult<()> {
         self.finish_file()?;
         let write_position = self.inner.get_plain().stream_position()?;

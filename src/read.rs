@@ -1002,43 +1002,12 @@ impl<'a> ZipFile<'a> {
         &self.data.file_name_raw
     }
 
-    /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
-    /// removes a leading '/' and removes '..' parts.
-    #[deprecated(
-        since = "0.5.7",
-        note = "by stripping `..`s from the path, the meaning of paths can change.
-                `mangled_name` can be used if this behaviour is desirable"
-    )]
-    pub fn sanitized_name(&self) -> PathBuf {
-        self.mangled_name()
-    }
-
-    /// Rewrite the path, ignoring any path components with special meaning.
-    ///
-    /// - Absolute paths are made relative
-    /// - [`ParentDir`]s are ignored
-    /// - Truncates the filename at a NULL byte
-    ///
-    /// This is appropriate if you need to be able to extract *something* from
-    /// any archive, but will easily misrepresent trivial paths like
-    /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
-    /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
-    ///
-    /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> PathBuf {
-        self.data.file_name_sanitized()
-    }
-
     /// Ensure the file path is safe to use as a [`Path`].
     ///
     /// - It can't contain NULL bytes
     /// - It can't resolve to a path outside the current directory
     ///   > `foo/../bar` is fine, `foo/../../bar` is not.
     /// - It can't be an absolute path
-    ///
-    /// This will read well-formed ZIP files correctly, and is resistant
-    /// to path-based exploits. It is recommended over
-    /// [`ZipFile::mangled_name`].
     pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.data.enclosed_name()
     }
