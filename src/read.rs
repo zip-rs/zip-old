@@ -1448,6 +1448,12 @@ mod test {
         ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
     }
 
+    #[cfg(any(
+        feature = "deflate",
+        feature = "deflate-miniz",
+        feature = "deflate-zlib",
+        feature = "deflate-zlib-ng"
+    ))]
     #[test]
     fn test_read_with_data_descriptor() {
         let mut v = Vec::new();
