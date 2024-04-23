@@ -1,3 +1,5 @@
+{% assign version = "1.1.1" %}
+
 zip
 ========
 
@@ -33,14 +35,14 @@ With all default features:
 
 ```toml
 [dependencies]
-zip = "1.1.1"
+zip = "{{version}}"
 ```
 
 Without the default features:
 
 ```toml
 [dependencies]
-zip = { version = "1.1.1", default-features = false }
+zip = { version = "{{version}}", default-features = false }
 ```
 
 The features available are:
@@ -70,8 +72,7 @@ we will follow these guidelines:
 
 - We will always support the latest four minor Rust versions. This gives you a 6
   month window to upgrade your compiler.
-- Any change to the MSRV will be accompanied with a **minor** version bump
-   - While the crate is pre-1.0, this will be a change to the PATCH version.
+- Any change to the MSRV will be accompanied with a **minor** version bump.
 
 Examples
 --------
