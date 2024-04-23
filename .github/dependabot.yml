@@ -3,16 +3,25 @@ updates:
   - package-ecosystem: cargo
     directory: "/"
     schedule:
-      interval: daily
+      interval: "daily"
     open-pull-requests-limit: 10
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "test(deps)"
       include: "scope"
+  - package-ecosystem: cargo
+    directory: "/fuzz"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "test(deps,fuzz)"
+      include: "scope"
   - package-ecosystem: "github-actions" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
+    open-pull-requests-limit: 10
     commit-message:
-      prefix: "ci"
+      prefix: "ci(deps)"
       include: "scope"
