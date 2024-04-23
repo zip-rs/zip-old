@@ -1005,8 +1005,8 @@ impl<'a> ZipFile<'a> {
     /// Get the name of the file in a sanitized form. It truncates the name to the first NULL byte,
     /// removes a leading '/' and removes '..' parts.
     #[deprecated(
-    since = "0.5.7",
-    note = "by stripping `..`s from the path, the meaning of paths can change.
+        since = "0.5.7",
+        note = "by stripping `..`s from the path, the meaning of paths can change.
                 `mangled_name` can be used if this behaviour is desirable"
     )]
     pub fn sanitized_name(&self) -> PathBuf {
