@@ -268,14 +268,6 @@ jobs:
 
   release-plz:
     name: Release-plz
-    needs:
-      - build_and_test
-      - clippy
-      - check_fmt_and_docs
-      - fuzz_read
-      - fuzz_read_with_no_features
-      - fuzz_write
-      - fuzz_write_with_no_features
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
