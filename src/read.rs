@@ -1447,7 +1447,7 @@ mod test {
         v.extend_from_slice(include_bytes!("../tests/data/deflate64_issue_25.zip"));
         ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
     }
-    
+
     #[test]
     fn test_read_with_data_descriptor() {
         let mut v = Vec::new();

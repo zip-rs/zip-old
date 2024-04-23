@@ -761,25 +761,36 @@ impl<W: Write + Seek> ZipWriter<W> {
             let mut header_end = writer.stream_position()?;
             if options.alignment > 1 {
                 let align = options.alignment as u64;
-                if header_end % align != 0 {
-                    let pad_length = (align - (header_end + 4) % align) % align;
-                    if pad_length + extra_field_length as u64 > u16::MAX as u64 {
+                let unaligned_header_bytes = header_end % align;
+                if unaligned_header_bytes != 0 {
+                    let pad_length = (align - unaligned_header_bytes) as usize;
+                    let Some(new_extra_field_length) =
+                        (pad_length as u16).checked_add(extra_field_length)
+                    else {
                         let _ = self.abort_file();
                         return Err(InvalidArchive(
                             "Extra data field would be larger than allowed after aligning",
                         ));
+                    };
+                    if pad_length >= 4 {
+                        // Add an extra field to the extra_data
+                        let pad_body = vec![0; pad_length - 4];
+                        writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
+                        writer
+                            .write_u16::<LittleEndian>(pad_body.len() as u16)
+                            .map_err(ZipError::from)?;
+                        writer.write_all(&pad_body).map_err(ZipError::from)?;
+                    } else {
+                        // extra_data padding is too small for an extra field header, so pad with
+                        // zeroes
+                        let pad = vec![0; pad_length];
+                        writer.write_all(&pad).map_err(ZipError::from)?;
                     }
-                    let pad = vec![0; pad_length as usize];
-                    writer.write_all(b"za").map_err(ZipError::from)?; // 0x617a
-                    writer
-                        .write_u16::<LittleEndian>(pad.len() as u16)
-                        .map_err(ZipError::from)?;
-                    writer.write_all(&pad).map_err(ZipError::from)?;
                     header_end = writer.stream_position()?;
 
                     // Update extra field length in local file header.
                     writer.seek(SeekFrom::Start(file.header_start + 28))?;
-                    writer.write_u16::<LittleEndian>(pad_length as u16 + extra_field_length)?;
+                    writer.write_u16::<LittleEndian>(new_extra_field_length)?;
                     writer.seek(SeekFrom::Start(header_end))?;
                     debug_assert_eq!(header_end % align, 0);
                 }
@@ -2210,7 +2221,7 @@ mod test {
         writer.finish()?;
         Ok(())
     }
-    
+
     #[test]
     fn test_alignment() {
         let page_size = 4096;
