@@ -1265,7 +1265,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 #[cfg(test)]
 mod test {
     use crate::ZipArchive;
-    use std::io::{Cursor, Read};
+    use std::io::Cursor;
 
     #[test]
     fn invalid_offset() {
@@ -1456,6 +1456,8 @@ mod test {
     ))]
     #[test]
     fn test_read_with_data_descriptor() {
+        use std::io::Read;
+
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/data_descriptor.zip"));
         let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
