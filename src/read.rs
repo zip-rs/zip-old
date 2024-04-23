@@ -1265,7 +1265,7 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
 #[cfg(test)]
 mod test {
     use crate::ZipArchive;
-    use std::io::Cursor;
+    use std::io::{Cursor, Read};
 
     #[test]
     fn invalid_offset() {
@@ -1446,5 +1446,15 @@ mod test {
         let mut v = Vec::new();
         v.extend_from_slice(include_bytes!("../tests/data/deflate64_issue_25.zip"));
         ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
+    }
+    
+    #[test]
+    fn test_read_with_data_descriptor() {
+        let mut v = Vec::new();
+        v.extend_from_slice(include_bytes!("../tests/data/data_descriptor.zip"));
+        let mut reader = ZipArchive::new(Cursor::new(v)).unwrap();
+        let mut decompressed = [0u8; 16];
+        let mut file = reader.by_index(0).unwrap();
+        assert_eq!(file.read(&mut decompressed).unwrap(), 12);
     }
 }
