@@ -1,5 +1,3 @@
-{% assign version = "1.1.1" %}
-
 zip
 ========
 
@@ -28,22 +26,8 @@ Currently unsupported zip extensions:
 * Encryption
 * Multi-disk
 
-Usage
------
-
-With all default features:
-
-```toml
-[dependencies]
-zip = "{{version}}"
-```
-
-Without the default features:
-
-```toml
-[dependencies]
-zip = { version = "{{version}}", default-features = false }
-```
+Features
+--------
 
 The features available are:
 
