@@ -12,7 +12,7 @@ fn main() {
 
 const METHOD_STORED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Stored);
 
-#[cfg(any(feature = "_deflate-any"))]
+#[cfg(feature = "_deflate-any")]
 const METHOD_DEFLATED: Option<zip::CompressionMethod> = Some(zip::CompressionMethod::Deflated);
 #[cfg(not(feature = "_deflate-any"))]
 const METHOD_DEFLATED: Option<zip::CompressionMethod> = None;
