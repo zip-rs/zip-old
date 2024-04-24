@@ -123,13 +123,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --all-features fuzz_read -- fuzz/corpus/seed
+          args: cmin --all-features fuzz_readfuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_corpus
-          path: fuzz/corpus/seed/*
+          path: fuzz/corpus/new_seed/*
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
@@ -168,13 +168,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --no-default-features fuzz_read -- fuzz/corpus/seed
+          args: cmin --no-default-features fuzz_readfuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_read_no_features_corpus
-          path: fuzz/corpus/seed/*
+          path: fuzz/corpus/new_seed/*
 
   fuzz_write:
     runs-on: ubuntu-latest
@@ -213,13 +213,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --all-features fuzz_write -- fuzz/corpus/seed
+          args: cmin --all-features fuzz_writefuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_corpus
-          path: fuzz/corpus/seed/*
+          path: fuzz/corpus/new_seed/*
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
@@ -258,10 +258,10 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --no-default-features fuzz_write -- fuzz/corpus/seed
+          args: cmin --no-default-features fuzz_writefuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz_write_no_features_corpus
-          path: fuzz/corpus/seed/*
+          path: fuzz/corpus/new_seed/*
