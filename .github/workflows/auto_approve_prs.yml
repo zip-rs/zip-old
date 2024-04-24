@@ -8,7 +8,7 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'Pr0methean' }}
+    if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions' || github.actor == 'Pr0methean' }}
     steps:
       - name: Dependabot metadata
         id: metadata
