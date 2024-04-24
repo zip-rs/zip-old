@@ -2,7 +2,11 @@ name: CI
 
 on:
   pull_request:
+    branches:
+      - 'master'
   push:
+    branches-ignore:
+      - 'release-plz-**'
   workflow_dispatch:
 
 env:
