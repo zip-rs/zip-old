@@ -123,7 +123,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --all-features fuzz_readfuzz/corpus/seed -- fuzz/corpus/new_seed
+          args: cmin --all-features fuzz_read fuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -168,7 +168,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --no-default-features fuzz_readfuzz/corpus/seed -- fuzz/corpus/new_seed
+          args: cmin --no-default-features fuzz_read fuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -213,7 +213,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --all-features fuzz_writefuzz/corpus/seed -- fuzz/corpus/new_seed
+          args: cmin --all-features fuzz_write fuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
@@ -258,7 +258,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
-          args: cmin --no-default-features fuzz_writefuzz/corpus/seed -- fuzz/corpus/new_seed
+          args: cmin --no-default-features fuzz_write fuzz/corpus/seed -- fuzz/corpus/new_seed
       - name: Upload updated seed corpus
         if: always()
         uses: actions/upload-artifact@v4
