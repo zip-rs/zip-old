@@ -20,7 +20,6 @@ use std::sync::{Arc, OnceLock};
 
 #[cfg(any(
     feature = "deflate",
-    feature = "deflate-miniz",
     feature = "deflate-zlib",
     feature = "deflate-zlib-ng"
 ))]
@@ -141,12 +140,7 @@ pub(crate) enum ZipFileReader<'a> {
     NoReader,
     Raw(io::Take<&'a mut dyn Read>),
     Stored(Crc32Reader<CryptoReader<'a>>),
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng"
-    ))]
+    #[cfg(feature = "_deflate-any")]
     Deflated(Crc32Reader<DeflateDecoder<CryptoReader<'a>>>),
     #[cfg(feature = "deflate64")]
     Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
@@ -164,12 +158,7 @@ impl<'a> Read for ZipFileReader<'a> {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r.read(buf),
             ZipFileReader::Stored(r) => r.read(buf),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "_deflate-any")]
             ZipFileReader::Deflated(r) => r.read(buf),
             #[cfg(feature = "deflate64")]
             ZipFileReader::Deflate64(r) => r.read(buf),
@@ -190,12 +179,7 @@ impl<'a> ZipFileReader<'a> {
             ZipFileReader::NoReader => panic!("ZipFileReader was in an invalid state"),
             ZipFileReader::Raw(r) => r,
             ZipFileReader::Stored(r) => r.into_inner().into_inner(),
-            #[cfg(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng"
-            ))]
+            #[cfg(feature = "_deflate-any")]
             ZipFileReader::Deflated(r) => r.into_inner().into_inner().into_inner(),
             #[cfg(feature = "deflate64")]
             ZipFileReader::Deflate64(r) => r.into_inner().into_inner().into_inner().into_inner(),
@@ -310,12 +294,7 @@ pub(crate) fn make_reader(
         CompressionMethod::Stored => {
             ZipFileReader::Stored(Crc32Reader::new(reader, crc32, ae2_encrypted))
         }
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib",
-            feature = "deflate-zlib-ng"
-        ))]
+        #[cfg(feature = "_deflate-any")]
         CompressionMethod::Deflated => {
             let deflate_reader = DeflateDecoder::new(reader);
             ZipFileReader::Deflated(Crc32Reader::new(deflate_reader, crc32, ae2_encrypted))
@@ -1448,12 +1427,7 @@ mod test {
         ZipArchive::new(Cursor::new(v)).expect_err("Invalid file");
     }
 
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng"
-    ))]
+    #[cfg(feature = "_deflate-any")]
     #[test]
     fn test_read_with_data_descriptor() {
         use std::io::Read;

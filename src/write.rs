@@ -6,15 +6,7 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
 use byteorder::{LittleEndian, WriteBytesExt};
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng",
-    feature = "zopfli",
-    feature = "bzip2",
-    feature = "zstd",
-))]
+#[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
 use std::collections::HashMap;
@@ -28,7 +20,6 @@ use std::sync::{Arc, OnceLock};
 
 #[cfg(any(
     feature = "deflate",
-    feature = "deflate-miniz",
     feature = "deflate-zlib",
     feature = "deflate-zlib-ng"
 ))]
@@ -73,7 +64,6 @@ enum GenericZipWriter<W: Write + Seek> {
     Storer(MaybeEncrypted<W>),
     #[cfg(any(
         feature = "deflate",
-        feature = "deflate-miniz",
         feature = "deflate-zlib",
         feature = "deflate-zlib-ng"
     ))]
@@ -1311,20 +1301,15 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                 }
                 #[cfg(any(
                     feature = "deflate",
-                    feature = "deflate-miniz",
                     feature = "deflate-zlib",
                     feature = "deflate-zlib-ng",
                     feature = "deflate-zopfli"
                 ))]
                 CompressionMethod::Deflated => {
-                    let default = if cfg!(feature = "deflate")
-                        || cfg!(feature = "deflate-miniz")
-                        || cfg!(feature = "deflate-zlib")
-                        || cfg!(feature = "deflate-zlib-ng")
-                    {
-                        Compression::default().level() as i64
-                    } else {
+                    let default = if cfg!(feature = "deflate-zopfli") {
                         24
+                    } else {
+                        Compression::default().level() as i64
                     };
 
                     let level = clamp_opt(
@@ -1366,7 +1351,6 @@ impl<W: Write + Seek> GenericZipWriter<W> {
 
                     #[cfg(any(
                         feature = "deflate",
-                        feature = "deflate-miniz",
                         feature = "deflate-zlib",
                         feature = "deflate-zlib-ng",
                     ))]
@@ -1432,7 +1416,6 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             Storer(w) => w,
             #[cfg(any(
                 feature = "deflate",
-                feature = "deflate-miniz",
                 feature = "deflate-zlib",
                 feature = "deflate-zlib-ng"
             ))]
@@ -1462,7 +1445,6 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             Storer(ref mut w) => Some(w as &mut dyn Write),
             #[cfg(any(
                 feature = "deflate",
-                feature = "deflate-miniz",
                 feature = "deflate-zlib",
                 feature = "deflate-zlib-ng"
             ))]
@@ -1498,16 +1480,9 @@ impl<W: Write + Seek> GenericZipWriter<W> {
     }
 }
 
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng",
-    feature = "deflate-zopfli"
-))]
+#[cfg(feature = "_deflate-any")]
 fn deflate_compression_level_range() -> std::ops::RangeInclusive<i64> {
     let min = if cfg!(feature = "deflate")
-        || cfg!(feature = "deflate-miniz")
         || cfg!(feature = "deflate-zlib")
         || cfg!(feature = "deflate-zlib-ng")
     {
@@ -1533,15 +1508,7 @@ fn bzip2_compression_level_range() -> std::ops::RangeInclusive<i64> {
     min..=max
 }
 
-#[cfg(any(
-    feature = "deflate",
-    feature = "deflate-miniz",
-    feature = "deflate-zlib",
-    feature = "deflate-zlib-ng",
-    feature = "deflate-zopfli",
-    feature = "bzip2",
-    feature = "zstd"
-))]
+#[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd"))]
 fn clamp_opt<T: Ord + Copy, U: Ord + Copy + TryFrom<T>>(
     value: T,
     range: std::ops::RangeInclusive<U>,

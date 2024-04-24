@@ -19,7 +19,6 @@ pub enum CompressionMethod {
     /// Compress the file using Deflate
     #[cfg(any(
         feature = "deflate",
-        feature = "deflate-miniz",
         feature = "deflate-zlib",
         feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
@@ -63,7 +62,6 @@ impl CompressionMethod {
     pub const IMPLODE: Self = CompressionMethod::Unsupported(6);
     #[cfg(any(
         feature = "deflate",
-        feature = "deflate-miniz",
         feature = "deflate-zlib",
         feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
@@ -71,7 +69,6 @@ impl CompressionMethod {
     pub const DEFLATE: Self = CompressionMethod::Deflated;
     #[cfg(not(any(
         feature = "deflate",
-        feature = "deflate-miniz",
         feature = "deflate-zlib",
         feature = "deflate-zlib-ng",
         feature = "deflate-zopfli"
@@ -119,7 +116,6 @@ impl CompressionMethod {
             0 => CompressionMethod::Stored,
             #[cfg(any(
                 feature = "deflate",
-                feature = "deflate-miniz",
                 feature = "deflate-zlib",
                 feature = "deflate-zlib-ng",
                 feature = "deflate-zopfli"
@@ -151,7 +147,6 @@ impl CompressionMethod {
             CompressionMethod::Stored => 0,
             #[cfg(any(
                 feature = "deflate",
-                feature = "deflate-miniz",
                 feature = "deflate-zlib",
                 feature = "deflate-zlib-ng",
                 feature = "deflate-zopfli"
@@ -175,49 +170,19 @@ impl CompressionMethod {
 
 impl Default for CompressionMethod {
     fn default() -> Self {
-        #[cfg(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib",
-            feature = "deflate-zlib-ng",
-            feature = "deflate-zopfli"
-        ))]
+        #[cfg(feature = "_deflate-any")]
         return CompressionMethod::Deflated;
 
-        #[cfg(all(
-            not(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng",
-                feature = "deflate-zopfli"
-            )),
-            feature = "bzip2"
-        ))]
+        #[cfg(all(not(any(feature = "_deflate-any")), feature = "bzip2"))]
         return CompressionMethod::Bzip2;
 
         #[cfg(all(
-            not(any(
-                feature = "deflate",
-                feature = "deflate-miniz",
-                feature = "deflate-zlib",
-                feature = "deflate-zlib-ng",
-                feature = "deflate-zopfli",
-                feature = "bzip2"
-            )),
+            not(any(feature = "_deflate-any", feature = "bzip2")),
             feature = "zstd"
         ))]
         return CompressionMethod::Zstd;
 
-        #[cfg(not(any(
-            feature = "deflate",
-            feature = "deflate-miniz",
-            feature = "deflate-zlib",
-            feature = "deflate-zlib-ng",
-            feature = "deflate-zopfli",
-            feature = "bzip2",
-            feature = "zstd"
-        )))]
+        #[cfg(not(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd")))]
         return CompressionMethod::Stored;
     }
 }
@@ -232,13 +197,7 @@ impl fmt::Display for CompressionMethod {
 /// The compression methods which have been implemented.
 pub const SUPPORTED_COMPRESSION_METHODS: &[CompressionMethod] = &[
     CompressionMethod::Stored,
-    #[cfg(any(
-        feature = "deflate",
-        feature = "deflate-miniz",
-        feature = "deflate-zlib",
-        feature = "deflate-zlib-ng",
-        feature = "deflate-zopfli"
-    ))]
+    #[cfg(feature = "_deflate-any")]
     CompressionMethod::Deflated,
     #[cfg(feature = "deflate64")]
     CompressionMethod::Deflate64,
