@@ -20,10 +20,10 @@ Supported compression formats:
 * deflate64 (decompression only)
 * bzip2
 * zstd
+* lzma (decompression only)
 
 Currently unsupported zip extensions:
 
-* Encryption
 * Multi-disk
 
 Features
