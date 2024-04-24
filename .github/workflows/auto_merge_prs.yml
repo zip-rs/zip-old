@@ -1,4 +1,4 @@
-name: Auto-approve and auto-merge owner-written and Dependabot PRs
+name: Auto-merge PRs from owner and trusted bots
 on: pull_request
 
 permissions:
