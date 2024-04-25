@@ -19,3 +19,6 @@ compression_method_zstd="]\x00"
 compression_method_aes="C\x00"
 compression_method_unsupported="\xFF\x00"
 "\xFF\xFF"
+/
+/./
+/../
