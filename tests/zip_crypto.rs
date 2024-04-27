@@ -102,3 +102,21 @@ fn encrypted_file() {
         assert_eq!(data, "abcdefghijklmnopqrstuvwxyz123456789".as_bytes());
     }
 }
+
+#[test]
+fn buffered_read() {
+    use std::io::{BufReader, Read};
+
+    // delibirately pick a buffer capacity in a way that when `ZipCryptoReaderValid` read happens, it's not going to take entire buffer,
+    // for this file it needs to be between 13..=46 bytes (with exception of 44 bytes)
+    let zip_file_bytes = &mut Cursor::new(ZIP_CRYPTO_FILE);
+    let buffered = BufReader::with_capacity(13, zip_file_bytes);
+    let mut archive = zip::ZipArchive::new(buffered).unwrap();
+
+    let mut file = archive.by_index_decrypt(0, b"test").unwrap();
+
+    // should not panic with `Custom { kind: Other, error: "Invalid checksum" }`
+    // or `Custom { kind: InvalidInput, error: "corrupt deflate stream" }`
+    let mut data = Vec::new();
+    file.read_to_end(&mut data).unwrap();
+}
