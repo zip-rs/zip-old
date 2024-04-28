@@ -1299,12 +1299,7 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         Ok(Box::new(|bare| Storer(bare)))
                     }
                 }
-                #[cfg(any(
-                    feature = "deflate",
-                    feature = "deflate-zlib",
-                    feature = "deflate-zlib-ng",
-                    feature = "deflate-zopfli"
-                ))]
+                #[cfg(feature = "_deflate-any")]
                 CompressionMethod::Deflated => {
                     let default = if cfg!(feature = "deflate-zopfli") {
                         24

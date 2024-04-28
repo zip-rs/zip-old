@@ -47,6 +47,10 @@ The features available are:
 
 By default `aes-crypto`, `deflate`, `deflate-zlib-ng`, `deflate-zopfli`, `bzip2`, `time` and `zstd` are enabled.
 
+The following feature flags are deprecated:
+
+* `deflate-miniz`: Use `flate2`'s default backend for compression. Currently the same as `deflate`.
+
 MSRV
 ----
 
