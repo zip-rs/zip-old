@@ -9,6 +9,8 @@ on:
       - 'release-plz-**'
       - 'dependabot/**'
   workflow_dispatch:
+  merge_group:
+    types: [checks_requested]
 
 env:
   RUSTFLAGS: -Dwarnings
