@@ -15,9 +15,10 @@ jobs:
         if: ${{ github.actor == 'dependabot[bot]' }}
         uses: dependabot/fetch-metadata@v2.1.0
         with:
-          github-token: "${{ secrets.RELEASE_PLZ_PAT }}"
+          github-token: "${{ github.token }}"
       - name: Enable auto-merge
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: "${{ secrets.RELEASE_PLZ_PAT }}"
+          OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: "${{ github.token }}"
