@@ -1,6 +1,6 @@
 [package]
 name = "zip"
-version = "1.1.1"
+version = "1.1.2"
 authors = [
     "Mathijs van de Nes <git@mathijs.vd-nes.nl>",
     "Marli Frost <marli@frost.red>",
@@ -56,6 +56,10 @@ aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1"]
 chrono = ["chrono/default"]
 _deflate-any = []
 deflate = ["flate2/rust_backend", "_deflate-any"]
+
+# DEPRECATED: previously enabled `flate2/miniz_oxide` which is equivalent to `flate2/rust_backend`
+deflate-miniz = ["deflate", "_deflate-any"]
+
 deflate-zlib = ["flate2/zlib", "_deflate-any"]
 deflate-zlib-ng = ["flate2/zlib-ng", "_deflate-any"]
 deflate-zopfli = ["zopfli", "_deflate-any"]
