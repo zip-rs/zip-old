@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.1.2]
+## [1.1.2](https://github.com/Pr0methean/zip/compare/v1.1.1...v1.1.2) - 2024-04-28
+
+### <!-- 1 -->🐛 Bug Fixes
+- Alignment was previously handled incorrectly ([#33](https://github.com/Pr0methean/zip/pull/33))
+
+### <!-- 2 -->🚜 Refactor
+- deprecate `deflate-miniz` feature since it's now equivalent to `deflate` ([#35](https://github.com/Pr0methean/zip/pull/35))
 
 ## [1.1.1]
 
