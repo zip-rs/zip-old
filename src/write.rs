@@ -1715,9 +1715,10 @@ mod test {
     use crate::result::ZipResult;
     use crate::types::DateTime;
     use crate::write::SimpleFileOptions;
+    use crate::CompressionMethod::Stored;
     use crate::ZipArchive;
     use std::io;
-    use std::io::{Read, Write};
+    use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;
 
     #[test]
@@ -2198,5 +2199,22 @@ mod test {
         let file = zip.by_index(0).unwrap();
         assert_eq!(file.name(), "sleep");
         assert_eq!(file.data_start(), page_size.into());
+    }
+
+    #[test]
+    fn test_crash_short_read() {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let comment: Vec<u8> = vec![
+            1, 80, 75, 5, 6, 237, 237, 237, 237, 237, 237, 237, 237, 44, 255, 191, 255, 255, 255,
+            255, 255, 255, 255, 255, 16,
+        ];
+        writer.set_raw_comment(comment);
+        let options = SimpleFileOptions::default()
+            .compression_method(Stored)
+            .with_alignment(11823);
+        writer.start_file("", options).unwrap();
+        writer.write_all(&[255, 255, 44, 255, 0]).unwrap();
+        let written = writer.finish().unwrap();
+        let new_writer = ZipWriter::new_append(written).unwrap();
     }
 }

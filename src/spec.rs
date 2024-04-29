@@ -70,7 +70,9 @@ impl CentralDirectoryEnd {
                     BYTES_BETWEEN_MAGIC_AND_COMMENT_SIZE as i64,
                 ))?;
                 let cde_start_pos = reader.seek(io::SeekFrom::Start(pos))?;
-                return CentralDirectoryEnd::parse(reader).map(|cde| (cde, cde_start_pos));
+                if let Ok(end_header) = CentralDirectoryEnd::parse(reader) {
+                    return Ok((end_header, cde_start_pos));
+                }
             }
             pos = match pos.checked_sub(1) {
                 Some(p) => p,
