@@ -2215,6 +2215,6 @@ mod test {
         writer.start_file("", options).unwrap();
         writer.write_all(&[255, 255, 44, 255, 0]).unwrap();
         let written = writer.finish().unwrap();
-        let new_writer = ZipWriter::new_append(written).unwrap();
+        let _ = ZipWriter::new_append(written).unwrap();
     }
 }
