@@ -57,7 +57,7 @@ jobs:
         command: test
         args: --all --no-default-features
 
-  clippy:
+  style_and_docs:
     runs-on: ubuntu-latest
 
     steps:
@@ -68,34 +68,22 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: clippy
-
+          components: rustfmt, clippy
+      - name: fmt
+        run: cargo fmt --all -- --check
       - name: clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
           args: --all-targets --all-features -- -D warnings
-
-  check_fmt_and_docs:
-    name: Checking fmt and docs
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@master
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        components: rustfmt, clippy
-        override: true
-
-    - name: fmt
-      run: cargo fmt --all -- --check
-
-    - name: Docs
-      run: cargo doc --no-deps
+      - name: Docs
+        run: cargo doc --no-deps
 
   fuzz_read:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -140,7 +128,9 @@ jobs:
 
   fuzz_read_with_no_features:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -185,7 +175,9 @@ jobs:
 
   fuzz_write:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -230,7 +222,9 @@ jobs:
 
   fuzz_write_with_no_features:
     runs-on: ubuntu-latest
-
+    needs:
+      - build_and_test
+      - style_and_docs
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
