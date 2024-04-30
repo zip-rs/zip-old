@@ -16,6 +16,7 @@ Library to support the reading and writing of zip files.
 """
 edition = "2021"
 exclude = ["tests/**", "examples/**", ".github/**", "fuzz/**"]
+build = "src/build.rs"
 
 [workspace.dependencies]
 time = { version = "0.3.36", default-features = false }
