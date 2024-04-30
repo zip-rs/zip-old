@@ -11,7 +11,7 @@ Info
 
 
 A zip library for rust which supports reading and writing of simple ZIP files. Formerly hosted at 
-https://github.com/zip-rs/zip.
+https://github.com/zip-rs/zip2.
 
 Supported compression formats:
 
