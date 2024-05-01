@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.3](https://github.com/zip-rs/zip2/compare/v1.1.2...v1.1.3) - 2024-04-30
+
+### <!-- 1 -->🐛 Bug Fixes
+- Rare bug where find_and_parse would give up prematurely on detecting a false end-of-CDR header
+
 ## [1.1.2](https://github.com/Pr0methean/zip/compare/v1.1.1...v1.1.2) - 2024-04-28
 
 ### <!-- 1 -->🐛 Bug Fixes
