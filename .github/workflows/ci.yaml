@@ -101,7 +101,7 @@ jobs:
           command: fuzz
           args: build --all-features fuzz_read
       - name: run fuzz
-        timeout-minutes: 181
+        timeout-minutes: 331
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
@@ -148,7 +148,7 @@ jobs:
           command: fuzz
           args: build --no-default-features fuzz_read
       - name: run fuzz
-        timeout-minutes: 181
+        timeout-minutes: 331
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
@@ -195,7 +195,7 @@ jobs:
           command: fuzz
           args: build --all-features fuzz_write
       - name: run fuzz
-        timeout-minutes: 181
+        timeout-minutes: 331
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
@@ -242,7 +242,7 @@ jobs:
           command: fuzz
           args: build --no-default-features fuzz_write
       - name: run fuzz
-        timeout-minutes: 181
+        timeout-minutes: 331
         uses: actions-rs/cargo@v1
         with:
           command: fuzz
