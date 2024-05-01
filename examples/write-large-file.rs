@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use zip::write::FileOptions;
+use zip::write::{SimpleFileOptions};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
@@ -18,7 +18,7 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let file = std::fs::File::create(filename)?;
     let mut zip = zip::ZipWriter::new(file);
 
-    let options = FileOptions::default()
+    let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         // files over u32::MAX require this flag set.
         .large_file(true)
