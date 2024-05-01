@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use zip::write::{SimpleFileOptions};
+use zip::write::SimpleFileOptions;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
@@ -33,4 +33,3 @@ fn doit(filename: &str) -> zip::result::ZipResult<()> {
     zip.finish()?;
     Ok(())
 }
-
