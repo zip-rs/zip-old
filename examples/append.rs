@@ -1,6 +1,5 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -47,7 +46,7 @@ fn real_main() -> i32 {
 
     for file in files {
         append_zip
-            .start_file(file.to_string_lossy(), Default::default())
+            .start_file_from_path(file, Default::default())
             .unwrap();
 
         let mut f = File::open(file).unwrap();
