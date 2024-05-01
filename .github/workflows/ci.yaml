@@ -7,7 +7,6 @@ on:
   push:
     branches-ignore:
       - 'release-plz-**'
-      - 'dependabot/**'
   workflow_dispatch:
   merge_group:
     types: [checks_requested]
@@ -17,6 +16,7 @@ env:
 
 jobs:
   build_and_test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
@@ -58,6 +58,7 @@ jobs:
         args: --all --no-default-features
 
   style_and_docs:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
 
     steps:
