@@ -3,6 +3,7 @@
 use std::io::Write;
 
 use zip::write::SimpleFileOptions;
+#[cfg(feature = "_deflate-any")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
