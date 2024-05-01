@@ -34,7 +34,7 @@ fn real_main() -> i32 {
             }
         }
 
-        if (*file.name()).ends_with('/') {
+        if file.is_dir() {
             println!(
                 "Entry {} is a directory with name \"{}\"",
                 i,
