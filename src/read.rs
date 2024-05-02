@@ -1017,6 +1017,7 @@ impl<'a> Drop for ZipFile<'a> {
                 }
             };
 
+            #[allow(clippy::unused_io_amount)]
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
