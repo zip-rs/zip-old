@@ -45,6 +45,8 @@ mod spec;
 mod types;
 pub mod write;
 mod zipcrypto;
+pub mod extra_fields;
+pub use extra_fields::ExtraField;
 
 #[doc = "Unstable APIs\n\
 \
