@@ -1223,10 +1223,10 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn index_by_name(&self, name: &str) -> ZipResult<usize> {
-        Ok(self
+        self
             .files
             .get_index_of(name)
-            .ok_or(ZipError::FileNotFound)?)
+            .ok_or(ZipError::FileNotFound)
     }
 
     /// Adds another entry to the central directory referring to the same content as an existing
