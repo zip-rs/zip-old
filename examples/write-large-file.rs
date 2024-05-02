@@ -1,20 +1,25 @@
-#![cfg(feature = "_deflate-any")]
 //! Write a huge file with lots of zeros, that should compress perfectly.
 
 use std::io::Write;
 
 use zip::write::SimpleFileOptions;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if !cfg!(feature = "_deflate-any") {
+        return Err("Please enable one of the deflate features");
+    }
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
         return Err(format!("Usage: {} <filename>", args[0]).into());
     }
 
     let filename = &*args[1];
-    doit(filename)?;
+    #![] {
+        doit(filename)?;
+    }
     Ok(())
 }
 
+#[cfg(feature = "_deflate-any")]
 fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let file = std::fs::File::create(filename)?;
     let mut zip = zip::ZipWriter::new(file);
