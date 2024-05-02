@@ -17,7 +17,7 @@ pub struct ExtendedTimestamp {
 impl ExtendedTimestamp {
     /// creates an extended timestamp struct by reading the required bytes from the reader.
     ///
-    /// This method assumes that the length has already been read, therefore 
+    /// This method assumes that the length has already been read, therefore
     /// it must be passed as an argument
     pub fn try_from_reader<R>(reader: &mut R, len: u16) -> ZipResult<Self>
     where

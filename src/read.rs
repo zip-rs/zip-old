@@ -30,7 +30,7 @@ use flate2::read::DeflateDecoder;
 use deflate64::Deflate64Decoder;
 
 #[cfg(feature = "bzip2")]
-use bzip2::read::BzDecoder;
+use bzip2_rs::decoder::DecoderReader;
 
 #[cfg(feature = "zstd")]
 use zstd::stream::read::Decoder as ZstdDecoder;
@@ -146,7 +146,7 @@ pub(crate) enum ZipFileReader<'a> {
     #[cfg(feature = "deflate64")]
     Deflate64(Crc32Reader<Deflate64Decoder<io::BufReader<CryptoReader<'a>>>>),
     #[cfg(feature = "bzip2")]
-    Bzip2(Crc32Reader<BzDecoder<CryptoReader<'a>>>),
+    Bzip2(Crc32Reader<DecoderReader<CryptoReader<'a>>>),
     #[cfg(feature = "zstd")]
     Zstd(Crc32Reader<ZstdDecoder<'a, io::BufReader<CryptoReader<'a>>>>),
     #[cfg(feature = "lzma")]
@@ -307,7 +307,7 @@ pub(crate) fn make_reader(
         }
         #[cfg(feature = "bzip2")]
         CompressionMethod::Bzip2 => {
-            let bzip2_reader = BzDecoder::new(reader);
+            let bzip2_reader = DecoderReader::new(reader);
             ZipFileReader::Bzip2(Crc32Reader::new(bzip2_reader, crc32, ae2_encrypted))
         }
         #[cfg(feature = "zstd")]
@@ -1102,7 +1102,7 @@ impl<'a> ZipFile<'a> {
     }
 
     /// iterate through all extra fields
-    pub fn extra_data_fields(&self) -> impl Iterator<Item=&ExtraField> {
+    pub fn extra_data_fields(&self) -> impl Iterator<Item = &ExtraField> {
         self.data.extra_fields.iter()
     }
 }

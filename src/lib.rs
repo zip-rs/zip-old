@@ -39,13 +39,13 @@ mod aes_ctr;
 mod compression;
 mod cp437;
 mod crc32;
+pub mod extra_fields;
 pub mod read;
 pub mod result;
 mod spec;
 mod types;
 pub mod write;
 mod zipcrypto;
-pub mod extra_fields;
 pub use extra_fields::ExtraField;
 
 #[doc = "Unstable APIs\n\

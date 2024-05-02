@@ -23,7 +23,6 @@ pub use extended_timestamp::*;
 /// contains one extra field
 #[derive(Debug, Clone)]
 pub enum ExtraField {
-
     /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
-    ExtendedTimestamp(ExtendedTimestamp)
+    ExtendedTimestamp(ExtendedTimestamp),
 }
