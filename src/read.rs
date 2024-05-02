@@ -333,6 +333,67 @@ pub(crate) struct CentralDirectoryInfo {
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
+    pub(crate) fn merge_contents<W: Write + io::Seek>(
+        &mut self,
+        mut w: W,
+    ) -> ZipResult<Vec<ZipFileData>> {
+        let mut new_files = self.shared.files.clone();
+        if new_files.is_empty() {
+            return Ok(vec![]);
+        }
+        /* The first file header will probably start at the beginning of the file, but zip doesn't
+         * enforce that, and executable zips like PEX files will have a shebang line so will
+         * definitely be greater than 0.
+         *
+         * assert_eq!(0, new_files[0].header_start); // Avoid this.
+         */
+
+        let new_initial_header_start = w.stream_position()?;
+        /* Push back file header starts for all entries in the covered files. */
+        new_files.iter_mut().try_for_each(|f| {
+            /* This is probably the only really important thing to change. */
+            f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
+                ZipError::InvalidArchive("new header start from merge would have been too large"),
+            )?;
+            /* This is only ever used internally to cache metadata lookups (it's not part of the
+             * zip spec), and 0 is the sentinel value. */
+            f.central_header_start = 0;
+            /* This is an atomic variable so it can be updated from another thread in the
+             * implementation (which is good!). */
+            if let Some(old_data_start) = f.data_start.take() {
+                let new_data_start = old_data_start.checked_add(new_initial_header_start).ok_or(
+                    ZipError::InvalidArchive("new data start from merge would have been too large"),
+                )?;
+                f.data_start.get_or_init(|| new_data_start);
+            }
+            Ok::<_, ZipError>(())
+        })?;
+
+        /* Rewind to the beginning of the file.
+         *
+         * NB: we *could* decide to start copying from new_files[0].header_start instead, which
+         * would avoid copying over e.g. any pex shebangs or other file contents that start before
+         * the first zip file entry. However, zip files actually shouldn't care about garbage data
+         * in *between* real entries, since the central directory header records the correct start
+         * location of each, and keeping track of that math is more complicated logic that will only
+         * rarely be used, since most zips that get merged together are likely to be produced
+         * specifically for that purpose (and therefore are unlikely to have a shebang or other
+         * preface). Finally, this preserves any data that might actually be useful.
+         */
+        self.reader.rewind()?;
+        /* Find the end of the file data. */
+        let length_to_read = self.shared.dir_start;
+        /* Produce a Read that reads bytes up until the start of the central directory header.
+         * This "as &mut dyn Read" trick is used elsewhere to avoid having to clone the underlying
+         * handle, which it really shouldn't need to anyway. */
+        let mut limited_raw = (&mut self.reader as &mut dyn Read).take(length_to_read);
+        /* Copy over file data from source archive directly. */
+        io::copy(&mut limited_raw, &mut w)?;
+
+        /* Return the files we've just written to the data stream. */
+        Ok(new_files.into_vec())
+    }
+
     fn get_directory_info_zip32(
         footer: &spec::CentralDirectoryEnd,
         cde_start_pos: u64,
