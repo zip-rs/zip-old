@@ -1,6 +1,6 @@
 //! Types that specify what is contained in a ZIP.
-use path::{Component, Path, PathBuf};
 use num_enum::{FromPrimitive, IntoPrimitive};
+use path::{Component, Path, PathBuf};
 use std::path;
 use std::sync::{Arc, OnceLock};
 
