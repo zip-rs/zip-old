@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "_deflate-any")]
 fn doit(filename: &str) -> zip::result::ZipResult<()> {
     let file = std::fs::File::create(filename)?;
     let mut zip = zip::ZipWriter::new(file);
