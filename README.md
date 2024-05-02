@@ -70,6 +70,7 @@ See the [examples directory](examples) for:
    * How to extract a zip file.
    * How to extract a single file from a zip.
    * How to read a zip from the standard input.
+   * How to append a directory to an existing archive
 
 Fuzzing
 -------
