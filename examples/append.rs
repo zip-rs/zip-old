@@ -1,10 +1,8 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
-use zip;
 use zip::write::SimpleFileOptions;
 
 fn gather_files<'a, T: Into<&'a Path>>(path: T, files: &mut Vec<PathBuf>) {
@@ -39,7 +37,7 @@ fn real_main() -> i32 {
     let existing_zip = OpenOptions::new()
         .read(true)
         .write(true)
-        .open(&archive)
+        .open(archive)
         .unwrap();
     let mut append_zip = zip::ZipWriter::new_append(existing_zip).unwrap();
 
