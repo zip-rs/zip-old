@@ -1419,7 +1419,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::BufferedZopfliDeflater(w) => w.into_inner()?.finish()?,
+            GenericZipWriter::BufferedZopfliDeflater(w) => w
+                .into_inner()
+                .map_err(|e| ZipError::Io(e.into_error()))?
+                .finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]
