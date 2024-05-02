@@ -696,6 +696,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 external_attributes: permissions << 16,
                 large_file: options.large_file,
                 aes_mode: None,
+                extra_fields: Vec::new(),
             };
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
