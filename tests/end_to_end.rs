@@ -1,4 +1,3 @@
-use byteorder::{LittleEndian, WriteBytesExt};
 use std::collections::HashSet;
 use std::io::prelude::*;
 use std::io::Cursor;
@@ -159,8 +158,8 @@ fn check_test_archive<R: Read + Seek>(zip_file: R) -> ZipResult<zip::ZipArchive<
     {
         let file_with_extra_data = archive.by_name("test_with_extra_data/🐢.txt")?;
         let mut extra_data = Vec::new();
-        extra_data.write_u16::<LittleEndian>(0xbeef)?;
-        extra_data.write_u16::<LittleEndian>(EXTRA_DATA.len() as u16)?;
+        extra_data.write_u16(0xbeef)?;
+        extra_data.write_u16(EXTRA_DATA.len() as u16)?;
         extra_data.write_all(EXTRA_DATA)?;
         assert_eq!(
             file_with_extra_data.extra_data(),
