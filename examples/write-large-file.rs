@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() < 2 {
         return Err(format!("Usage: {} <filename>", args[0]).into());
     }
-    
+
     #[cfg(feature = "_deflate-any")]
     {
         let filename = &*args[1];
