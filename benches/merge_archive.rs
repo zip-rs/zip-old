@@ -1,3 +1,5 @@
+#![cfg(feature = "_deflate-any")]
+
 use bencher::{benchmark_group, benchmark_main};
 
 use std::io::{Cursor, Read, Seek, Write};
