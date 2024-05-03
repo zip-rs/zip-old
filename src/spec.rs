@@ -218,7 +218,7 @@ impl Zip64CentralDirectoryEnd {
 /// Converts a path to the ZIP format (forward-slash-delimited and normalized).
 pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
     let original = path.as_ref().to_str();
-    let mut recreate = original.is_some();
+    let mut recreate = original.is_none();
     let mut normalized_components = Vec::new();
 
     // Empty element ensures the path has a leading slash, with no extra allocation after the join
@@ -234,7 +234,7 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
                         normalized_components.push(os_str.to_string_lossy());
                     }
                 }
-                
+
             }
             Component::ParentDir => {
                 recreate = true;
@@ -248,7 +248,7 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
         }
     }
     if recreate {
-        normalized_components.join("/")   
+        normalized_components.join("/")
     } else {
         drop(normalized_components);
         let original = original.unwrap();
