@@ -343,7 +343,8 @@ impl<R> ZipArchive<R> {
             ));
         }
         /* This is where the whole file starts. */
-        let initial_offset = files.first().unwrap().1.header_start;
+        let (_, first_header) = files.first().unwrap();
+        let initial_offset = first_header.header_start;
         let shared = Arc::new(zip_archive::Shared {
             files,
             offset: initial_offset,
