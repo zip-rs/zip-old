@@ -4,9 +4,9 @@
 //! different byte order (little endian) than NIST (big endian).
 //! See [AesCtrZipKeyStream] for more information.
 
+use crate::unstable::LittleEndianWriteExt;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockEncrypt, KeyInit};
-use byteorder::WriteBytesExt;
 use std::{any, fmt};
 
 /// Internal block size of an AES cipher.
@@ -112,7 +112,7 @@ where
                 // Note: AES block size is always 16 bytes, same as u128.
                 self.buffer
                     .as_mut()
-                    .write_u128::<byteorder::LittleEndian>(self.counter)
+                    .write_u128_le(self.counter)
                     .expect("did not expect u128 le conversion to fail");
                 self.cipher
                     .encrypt_block(GenericArray::from_mut_slice(&mut self.buffer));
