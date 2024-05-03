@@ -13,7 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let filename = &*args[1];
-    #[cfg(feature = "_deflate-any")] {
+    #[cfg(feature = "_deflate-any")]
+    {
         doit(filename)?;
     }
     Ok(())
