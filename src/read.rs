@@ -332,7 +332,7 @@ pub(crate) struct CentralDirectoryInfo {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: Vec<ZipFileData>,
+        files: IndexMap<Box<str>, ZipFileData>,
         comment: Vec<u8>,
         reader: R,
         central_start: u64,
@@ -343,15 +343,10 @@ impl<R> ZipArchive<R> {
             ));
         }
         /* This is where the whole file starts. */
-        let initial_offset = files.first().unwrap().header_start;
-        let names_map: HashMap<Box<str>, usize> = files
-            .iter()
-            .enumerate()
-            .map(|(i, d)| (d.file_name.clone(), i))
-            .collect();
+        let (_, first_header) = files.first().unwrap();
+        let initial_offset = first_header.header_start;
         let shared = Arc::new(zip_archive::Shared {
-            files: files.into_boxed_slice(),
-            names_map,
+            files,
             offset: initial_offset,
             dir_start: central_start,
         });
@@ -367,10 +362,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + io::Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<Vec<ZipFileData>> {
+    ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
         let mut new_files = self.shared.files.clone();
         if new_files.is_empty() {
-            return Ok(vec![]);
+            return Ok(IndexMap::new());
         }
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
@@ -381,7 +376,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let new_initial_header_start = w.stream_position()?;
         /* Push back file header starts for all entries in the covered files. */
-        new_files.iter_mut().try_for_each(|f| {
+        new_files.iter_mut().try_for_each(|(_name, f)| {
             /* This is probably the only really important thing to change. */
             f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
                 ZipError::InvalidArchive("new header start from merge would have been too large"),
@@ -422,7 +417,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         io::copy(&mut limited_raw, &mut w)?;
 
         /* Return the files we've just written to the data stream. */
-        Ok(new_files.into_vec())
+        Ok(new_files)
     }
 
     fn get_directory_info_zip32(
