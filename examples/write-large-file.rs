@@ -5,7 +5,7 @@ use std::io::Write;
 use zip::write::SimpleFileOptions;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(feature = "_deflate-any") {
-        return Err("Please enable one of the deflate features");
+        return Err("Please enable one of the deflate features".into());
     }
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
