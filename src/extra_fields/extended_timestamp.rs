@@ -1,9 +1,6 @@
-use std::io::Read;
-
-use byteorder::LittleEndian;
-use byteorder::ReadBytesExt;
-
 use crate::result::{ZipError, ZipResult};
+use crate::unstable::LittleEndianReadExt;
+use std::io::Read;
 
 /// extended timestamp, as described in <https://libzip.org/specifications/extrafld.txt>
 
@@ -23,7 +20,9 @@ impl ExtendedTimestamp {
     where
         R: Read,
     {
-        let flags = reader.read_u8()?;
+        let mut flags = [0u8];
+        reader.read_exact(&mut flags)?;
+        let flags = flags[0];
 
         // the `flags` field refers to the local headers and might not correspond
         // to the len field. If the length field is 1+4, we assume that only
@@ -48,19 +47,19 @@ impl ExtendedTimestamp {
         }
 
         let mod_time = if (flags & 0b00000001u8 == 0b00000001u8) || len == 5 {
-            Some(reader.read_u32::<LittleEndian>()?)
+            Some(reader.read_u32_le()?)
         } else {
             None
         };
 
         let ac_time = if flags & 0b00000010u8 == 0b00000010u8 && len > 5 {
-            Some(reader.read_u32::<LittleEndian>()?)
+            Some(reader.read_u32_le()?)
         } else {
             None
         };
 
         let cr_time = if flags & 0b00000100u8 == 0b00000100u8 && len > 5 {
-            Some(reader.read_u32::<LittleEndian>()?)
+            Some(reader.read_u32_le()?)
         } else {
             None
         };

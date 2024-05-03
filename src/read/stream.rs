@@ -1,3 +1,4 @@
+use crate::unstable::LittleEndianReadExt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -6,8 +7,6 @@ use super::{
     central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
     ZipFileData, ZipResult,
 };
-
-use byteorder::{LittleEndian, ReadBytesExt};
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -28,7 +27,7 @@ impl<R: Read> ZipStreamReader<R> {
         let central_header_start = 0;
 
         // Parse central header
-        let signature = self.0.read_u32::<LittleEndian>()?;
+        let signature = self.0.read_u32_le()?;
         if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
             Ok(None)
         } else {

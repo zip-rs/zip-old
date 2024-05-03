@@ -11,7 +11,6 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
-use byteorder::{LittleEndian, ReadBytesExt};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::io::{self, prelude::*};
@@ -86,6 +85,7 @@ pub(crate) mod zip_archive {
 use crate::read::lzma::LzmaDecoder;
 use crate::result::ZipError::InvalidPassword;
 use crate::spec::path_to_string;
+use crate::unstable::LittleEndianReadExt;
 pub use zip_archive::ZipArchive;
 
 #[allow(clippy::large_enum_variant)]
@@ -209,15 +209,15 @@ pub(crate) fn find_content<'a>(
 ) -> ZipResult<io::Take<&'a mut dyn Read>> {
     // Parse local header
     reader.seek(io::SeekFrom::Start(data.header_start))?;
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
     if signature != spec::LOCAL_FILE_HEADER_SIGNATURE {
         return Err(ZipError::InvalidArchive("Invalid local file header"));
     }
     let data_start = match data.data_start.get() {
         None => {
             reader.seek(io::SeekFrom::Current(22))?;
-            let file_name_length = reader.read_u16::<LittleEndian>()? as u64;
-            let extra_field_length = reader.read_u16::<LittleEndian>()? as u64;
+            let file_name_length = reader.read_u16_le()? as u64;
+            let extra_field_length = reader.read_u16_le()? as u64;
             let magic_and_header = 4 + 22 + 2 + 2;
             let data_start =
                 data.header_start + magic_and_header + file_name_length + extra_field_length;
@@ -854,7 +854,7 @@ pub(crate) fn central_header_to_zip_file<R: Read + Seek>(
     let central_header_start = reader.stream_position()?;
 
     // Parse central header
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
     if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
         Err(ZipError::InvalidArchive("Invalid Central Directory header"))
     } else {
@@ -868,25 +868,25 @@ fn central_header_to_zip_file_inner<R: Read>(
     archive_offset: u64,
     central_header_start: u64,
 ) -> ZipResult<ZipFileData> {
-    let version_made_by = reader.read_u16::<LittleEndian>()?;
-    let _version_to_extract = reader.read_u16::<LittleEndian>()?;
-    let flags = reader.read_u16::<LittleEndian>()?;
+    let version_made_by = reader.read_u16_le()?;
+    let _version_to_extract = reader.read_u16_le()?;
+    let flags = reader.read_u16_le()?;
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
-    let compression_method = reader.read_u16::<LittleEndian>()?;
-    let last_mod_time = reader.read_u16::<LittleEndian>()?;
-    let last_mod_date = reader.read_u16::<LittleEndian>()?;
-    let crc32 = reader.read_u32::<LittleEndian>()?;
-    let compressed_size = reader.read_u32::<LittleEndian>()?;
-    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
-    let file_comment_length = reader.read_u16::<LittleEndian>()? as usize;
-    let _disk_number = reader.read_u16::<LittleEndian>()?;
-    let _internal_file_attributes = reader.read_u16::<LittleEndian>()?;
-    let external_file_attributes = reader.read_u32::<LittleEndian>()?;
-    let offset = reader.read_u32::<LittleEndian>()? as u64;
+    let compression_method = reader.read_u16_le()?;
+    let last_mod_time = reader.read_u16_le()?;
+    let last_mod_date = reader.read_u16_le()?;
+    let crc32 = reader.read_u32_le()?;
+    let compressed_size = reader.read_u32_le()?;
+    let uncompressed_size = reader.read_u32_le()?;
+    let file_name_length = reader.read_u16_le()? as usize;
+    let extra_field_length = reader.read_u16_le()? as usize;
+    let file_comment_length = reader.read_u16_le()? as usize;
+    let _disk_number = reader.read_u16_le()?;
+    let _internal_file_attributes = reader.read_u16_le()?;
+    let external_file_attributes = reader.read_u32_le()?;
+    let offset = reader.read_u32_le()? as u64;
     let mut file_name_raw = vec![0; file_name_length];
     reader.read_exact(&mut file_name_raw)?;
     let mut extra_field = vec![0; extra_field_length];
@@ -960,24 +960,24 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
     let mut reader = io::Cursor::new(extra_field.as_ref());
 
     while (reader.position() as usize) < extra_field.len() {
-        let kind = reader.read_u16::<LittleEndian>()?;
-        let len = reader.read_u16::<LittleEndian>()?;
+        let kind = reader.read_u16_le()?;
+        let len = reader.read_u16_le()?;
         let mut len_left = len as i64;
         match kind {
             // Zip64 extended information extra field
             0x0001 => {
                 if file.uncompressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
-                    file.uncompressed_size = reader.read_u64::<LittleEndian>()?;
+                    file.uncompressed_size = reader.read_u64_le()?;
                     len_left -= 8;
                 }
                 if file.compressed_size == spec::ZIP64_BYTES_THR {
                     file.large_file = true;
-                    file.compressed_size = reader.read_u64::<LittleEndian>()?;
+                    file.compressed_size = reader.read_u64_le()?;
                     len_left -= 8;
                 }
                 if file.header_start == spec::ZIP64_BYTES_THR {
-                    file.header_start = reader.read_u64::<LittleEndian>()?;
+                    file.header_start = reader.read_u64_le()?;
                     len_left -= 8;
                 }
             }
@@ -988,10 +988,12 @@ fn parse_extra_field(file: &mut ZipFileData) -> ZipResult<()> {
                         "AES extra data field has an unsupported length",
                     ));
                 }
-                let vendor_version = reader.read_u16::<LittleEndian>()?;
-                let vendor_id = reader.read_u16::<LittleEndian>()?;
-                let aes_mode = reader.read_u8()?;
-                let compression_method = reader.read_u16::<LittleEndian>()?;
+                let vendor_version = reader.read_u16_le()?;
+                let vendor_id = reader.read_u16_le()?;
+                let mut out = [0u8];
+                reader.read_exact(&mut out)?;
+                let aes_mode = out[0];
+                let compression_method = reader.read_u16_le()?;
 
                 if vendor_id != 0x4541 {
                     return Err(ZipError::InvalidArchive("Invalid AES vendor"));
@@ -1255,7 +1257,7 @@ impl<'a> Drop for ZipFile<'a> {
 /// * `data_start`: set to 0
 /// * `external_attributes`: `unix_mode()`: will return None
 pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Option<ZipFile<'_>>> {
-    let signature = reader.read_u32::<LittleEndian>()?;
+    let signature = reader.read_u32_le()?;
 
     match signature {
         spec::LOCAL_FILE_HEADER_SIGNATURE => (),
@@ -1263,20 +1265,20 @@ pub fn read_zipfile_from_stream<'a, R: Read>(reader: &'a mut R) -> ZipResult<Opt
         _ => return Err(ZipError::InvalidArchive("Invalid local file header")),
     }
 
-    let version_made_by = reader.read_u16::<LittleEndian>()?;
-    let flags = reader.read_u16::<LittleEndian>()?;
+    let version_made_by = reader.read_u16_le()?;
+    let flags = reader.read_u16_le()?;
     let encrypted = flags & 1 == 1;
     let is_utf8 = flags & (1 << 11) != 0;
     let using_data_descriptor = flags & (1 << 3) != 0;
     #[allow(deprecated)]
-    let compression_method = CompressionMethod::from_u16(reader.read_u16::<LittleEndian>()?);
-    let last_mod_time = reader.read_u16::<LittleEndian>()?;
-    let last_mod_date = reader.read_u16::<LittleEndian>()?;
-    let crc32 = reader.read_u32::<LittleEndian>()?;
-    let compressed_size = reader.read_u32::<LittleEndian>()?;
-    let uncompressed_size = reader.read_u32::<LittleEndian>()?;
-    let file_name_length = reader.read_u16::<LittleEndian>()? as usize;
-    let extra_field_length = reader.read_u16::<LittleEndian>()? as usize;
+    let compression_method = CompressionMethod::from_u16(reader.read_u16_le()?);
+    let last_mod_time = reader.read_u16_le()?;
+    let last_mod_date = reader.read_u16_le()?;
+    let crc32 = reader.read_u32_le()?;
+    let compressed_size = reader.read_u32_le()?;
+    let uncompressed_size = reader.read_u32_le()?;
+    let file_name_length = reader.read_u16_le()? as usize;
+    let extra_field_length = reader.read_u16_le()? as usize;
 
     let mut file_name_raw = vec![0; file_name_length];
     reader.read_exact(&mut file_name_raw)?;
