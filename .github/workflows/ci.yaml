@@ -90,7 +90,7 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: doc
-        args: --no-deps --all-targets ${{ matrix.feature_flag }} -- -D warnings
+        args: --no-deps ${{ matrix.feature_flag }} -- -D warnings
 
   fuzz_read:
     runs-on: ubuntu-latest
