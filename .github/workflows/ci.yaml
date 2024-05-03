@@ -52,33 +52,51 @@ jobs:
         command: test
         args: --all ${{ matrix.feature_flag }}
 
-  style_and_docs:
+  cargo_fmt:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           override: true
-          components: rustfmt, clippy
+          components: rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
-      - name: clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-targets --all-features -- -D warnings
-      - name: Docs
-        run: cargo doc --no-deps
+
+  style_and_docs:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    strategy:
+      matrix:
+        feature_flag: ["--all-features", "--no-default-features", ""]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
+        components: clippy
+    - name: clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-targets ${{ matrix.feature_flag }} -- -D warnings
+    - name: docs
+      uses: actions-rs/cargo@v1
+      with:
+        command: doc
+        args: --no-deps ${{ matrix.feature_flag }}
 
   fuzz_read:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - cargo_fmt
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - cargo_fmt
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
@@ -173,6 +192,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - cargo_fmt
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
@@ -220,6 +240,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_and_test
+      - cargo_fmt
       - style_and_docs
     steps:
       - uses: actions/checkout@v4
