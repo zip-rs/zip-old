@@ -250,6 +250,7 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
     if recreate {
         normalized_components.join("/")   
     } else {
+        drop(normalized_components);
         let original = original.unwrap();
         if !original.starts_with('/') {
             let mut slash_original = String::with_capacity(original.len() + 1);
