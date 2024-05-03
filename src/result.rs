@@ -1,65 +1,36 @@
+#![allow(unknown_lints)] // non_local_definitions isn't in Rust 1.70
+#![allow(non_local_definitions)]
 //! Error types that can be emitted from this library
+
+use displaydoc::Display;
+use thiserror::Error;
 
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::io::IntoInnerError;
 use std::num::TryFromIntError;
 
 /// Generic result type with ZipError as its error variant
 pub type ZipResult<T> = Result<T, ZipError>;
 
 /// Error type for Zip
-#[derive(Debug)]
+#[derive(Debug, Display, Error)]
 #[non_exhaustive]
 pub enum ZipError {
-    /// An Error caused by I/O
-    Io(io::Error),
+    /// i/o error: {0}
+    Io(#[from] io::Error),
 
-    /// This file is probably not a zip archive
+    /// invalid Zip archive: {0}
     InvalidArchive(&'static str),
 
-    /// This archive is not supported
+    /// unsupported Zip archive: {0}
     UnsupportedArchive(&'static str),
 
-    /// The requested file could not be found in the archive
+    /// specified file not found in archive
     FileNotFound,
 
     /// The password provided is incorrect
     InvalidPassword,
-}
-
-impl From<io::Error> for ZipError {
-    fn from(err: io::Error) -> ZipError {
-        ZipError::Io(err)
-    }
-}
-
-impl<W> From<IntoInnerError<W>> for ZipError {
-    fn from(value: IntoInnerError<W>) -> Self {
-        ZipError::Io(value.into_error())
-    }
-}
-
-impl fmt::Display for ZipError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ZipError::Io(err) => write!(fmt, "{err}"),
-            ZipError::InvalidArchive(err) => write!(fmt, "invalid Zip archive: {err}"),
-            ZipError::UnsupportedArchive(err) => write!(fmt, "unsupported Zip archive: {err}"),
-            ZipError::FileNotFound => write!(fmt, "specified file not found in archive"),
-            ZipError::InvalidPassword => write!(fmt, "incorrect password for encrypted file"),
-        }
-    }
-}
-
-impl Error for ZipError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            ZipError::Io(err) => Some(err),
-            _ => None,
-        }
-    }
 }
 
 impl ZipError {
