@@ -63,7 +63,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: rustfmt, clippy
+          components: rustfmt
       - name: fmt
         run: cargo fmt --all -- --check
 
@@ -74,16 +74,23 @@ jobs:
         feature_flag: ["--all-features", "--no-default-features", ""]
     runs-on: ubuntu-latest
     steps:
-     - name: clippy
-       uses: actions-rs/cargo@v1
-       with:
-         command: clippy
-         args: --all-targets ${{ matrix.feature_flag }} -- -D warnings
-     - name: docs
-       uses: actions-rs/cargo@v1
-       with:
-         command: doc
-         args: --no-deps --all-targets ${{ matrix.feature_flag }} -- -D warnings
+    - uses: actions/checkout@v4
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
+        components: clippy
+    - name: clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-targets ${{ matrix.feature_flag }} -- -D warnings
+    - name: docs
+      uses: actions-rs/cargo@v1
+      with:
+        command: doc
+        args: --no-deps --all-targets ${{ matrix.feature_flag }} -- -D warnings
 
   fuzz_read:
     runs-on: ubuntu-latest
