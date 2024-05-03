@@ -3,7 +3,7 @@ use crate::unstable::{LittleEndianReadExt, LittleEndianWriteExt};
 use std::borrow::Cow;
 use std::io;
 use std::io::prelude::*;
-use std::path::{Component, MAIN_SEPARATOR, Path};
+use std::path::{Component, Path, MAIN_SEPARATOR};
 
 pub const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 pub const CENTRAL_DIRECTORY_HEADER_SIGNATURE: u32 = 0x02014b50;
@@ -217,18 +217,17 @@ impl Zip64CentralDirectoryEnd {
 
 /// Converts a path to the ZIP format (forward-slash-delimited and normalized).
 pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
-    let mut recreate = MAIN_SEPARATOR != '/';
-    let original = if !recreate {
-        match path.as_ref().to_str() {
-            Some(original) => Some(original),
-            None => {
-                recreate = true;
-                None
+    let mut maybe_original = None;
+    if let Some(original) = path.as_ref().to_str() {
+        if MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR) {
+            if original.starts_with(MAIN_SEPARATOR) {
+                maybe_original = Some(&original[1..]);
+            } else {
+                maybe_original = Some(original);
             }
         }
-    } else {
-        None
-    };
+    }
+    let mut recreate = maybe_original.is_none();
     let mut normalized_components = Vec::new();
 
     // Empty element ensures the path has a leading slash, with no extra allocation after the join
@@ -236,16 +235,13 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
 
     for component in path.as_ref().components() {
         match component {
-            Component::Normal(os_str) => {
-                match os_str.to_str() {
-                    Some(valid_str) => normalized_components.push(Cow::Borrowed(valid_str)),
-                    None => {
-                        recreate = true;
-                        normalized_components.push(os_str.to_string_lossy());
-                    }
+            Component::Normal(os_str) => match os_str.to_str() {
+                Some(valid_str) => normalized_components.push(Cow::Borrowed(valid_str)),
+                None => {
+                    recreate = true;
+                    normalized_components.push(os_str.to_string_lossy());
                 }
-
-            }
+            },
             Component::ParentDir => {
                 recreate = true;
                 if normalized_components.len() > 1 {
@@ -261,7 +257,7 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
         normalized_components.join("/")
     } else {
         drop(normalized_components);
-        let original = original.unwrap();
+        let original = maybe_original.unwrap();
         if !original.starts_with('/') {
             let mut slash_original = String::with_capacity(original.len() + 1);
             slash_original.push('/');
