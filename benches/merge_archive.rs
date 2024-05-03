@@ -1,5 +1,3 @@
-#![cfg(feature = "_deflate-any")]
-
 use bencher::{benchmark_group, benchmark_main};
 
 use std::io::{Cursor, Read, Seek, Write};
@@ -67,6 +65,7 @@ fn merge_archive_stored(bench: &mut Bencher) {
     });
 }
 
+#[cfg(feature = "_deflate-any")]
 fn merge_archive_compressed(bench: &mut Bencher) {
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let (len, src) = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
@@ -97,6 +96,7 @@ fn merge_archive_raw_copy_file_stored(bench: &mut Bencher) {
     });
 }
 
+#[cfg(feature = "_deflate-any")]
 fn merge_archive_raw_copy_file_compressed(bench: &mut Bencher) {
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let (len, src) = generate_random_archive(NUM_ENTRIES, ENTRY_SIZE, options).unwrap();
@@ -112,6 +112,7 @@ fn merge_archive_raw_copy_file_compressed(bench: &mut Bencher) {
     });
 }
 
+#[cfg(feature = "_deflate-any")]
 benchmark_group!(
     benches,
     merge_archive_stored,
@@ -119,4 +120,12 @@ benchmark_group!(
     merge_archive_raw_copy_file_stored,
     merge_archive_raw_copy_file_compressed,
 );
+
+#[cfg(not(feature = "_deflate-any"))]
+benchmark_group!(
+    benches,
+    merge_archive_stored,
+    merge_archive_raw_copy_file_stored,
+);
+
 benchmark_main!(benches);
