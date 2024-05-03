@@ -696,6 +696,7 @@ impl<W: Write + Seek> ZipWriter<W> {
                 external_attributes: permissions << 16,
                 large_file: options.large_file,
                 aes_mode: None,
+                extra_fields: Vec::new(),
             };
             let index = self.insert_file_data(file)?;
             let file = &mut self.files[index];
@@ -1418,7 +1419,10 @@ impl<W: Write + Seek> GenericZipWriter<W> {
             #[cfg(feature = "deflate-zopfli")]
             GenericZipWriter::ZopfliDeflater(w) => w.finish()?,
             #[cfg(feature = "deflate-zopfli")]
-            GenericZipWriter::BufferedZopfliDeflater(w) => w.into_inner()?.finish()?,
+            GenericZipWriter::BufferedZopfliDeflater(w) => w
+                .into_inner()
+                .map_err(|e| ZipError::Io(e.into_error()))?
+                .finish()?,
             #[cfg(feature = "bzip2")]
             GenericZipWriter::Bzip2(w) => w.finish()?,
             #[cfg(feature = "zstd")]

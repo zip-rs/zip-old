@@ -45,6 +45,7 @@ mod atomic {
     }
 }
 
+use crate::extra_fields::ExtraField;
 use crate::result::DateTimeRangeError;
 #[cfg(feature = "time")]
 use time::{error::ComponentRange, Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
@@ -371,6 +372,9 @@ pub struct ZipFileData {
     pub large_file: bool,
     /// AES mode if applicable
     pub aes_mode: Option<(AesMode, AesVendorVersion)>,
+
+    /// extra fields, see <https://libzip.org/specifications/extrafld.txt>
+    pub extra_fields: Vec<ExtraField>,
 }
 
 impl ZipFileData {
@@ -544,6 +548,7 @@ mod test {
             external_attributes: 0,
             large_file: false,
             aes_mode: None,
+            extra_fields: Vec::new(),
         };
         assert_eq!(data.file_name_sanitized(), PathBuf::from("path/etc/passwd"));
     }
