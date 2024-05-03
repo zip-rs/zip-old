@@ -6,7 +6,6 @@ on:
       - 'master'
   push:
     branches-ignore:
-      - 'release-plz-**'
       - 'gh-readonly-queue/**'
   workflow_dispatch:
   merge_group:
