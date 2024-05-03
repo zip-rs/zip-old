@@ -220,7 +220,9 @@ pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
         if (MAIN_SEPARATOR == '/' || !original.contains(MAIN_SEPARATOR))
-        && !original.ends_with('.') && !original.contains("./") {
+        && !original.ends_with('.') 
+            && !original.contains([MAIN_SEPARATOR, MAIN_SEPARATOR]) 
+            && !original.contains(['.', MAIN_SEPARATOR]) {
             if original.starts_with(MAIN_SEPARATOR) {
                 maybe_original = Some(&original[1..]);
             } else {
