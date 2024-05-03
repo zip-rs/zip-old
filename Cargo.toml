@@ -30,7 +30,7 @@ crc32fast = "1.4.0"
 displaydoc = { version = "0.2.4", default-features = false }
 flate2 = { version = "1.0.28", default-features = false, optional = true }
 hmac = { version = "0.12.1", optional = true, features = ["reset"] }
-num_enum = "0.6.1"
+num_enum = "0.7.2"
 pbkdf2 = { version = "0.12.2", optional = true }
 sha1 = { version = "0.10.6", optional = true }
 thiserror = "1.0.48"
