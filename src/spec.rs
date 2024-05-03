@@ -219,7 +219,7 @@ impl Zip64CentralDirectoryEnd {
 pub(crate) fn path_to_string<T: AsRef<Path>>(path: T) -> String {
     let mut maybe_original = None;
     if let Some(original) = path.as_ref().to_str() {
-        if (MAIN_SEPARATOR == '/' || !original.contains(MAIN_SEPARATOR))
+        if (MAIN_SEPARATOR == '/' || !original[1..].contains(MAIN_SEPARATOR))
         && !original.ends_with('.')
             && !original.starts_with(['.', MAIN_SEPARATOR])
             && !original.starts_with(['.', '.', MAIN_SEPARATOR])
