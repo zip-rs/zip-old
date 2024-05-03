@@ -6,7 +6,6 @@ on:
       - 'master'
   push:
     branches-ignore:
-      - 'release-plz-**'
       - 'gh-readonly-queue/**'
   workflow_dispatch:
   merge_group:
@@ -22,6 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rustalias: [stable, nightly, msrv]
+        feature_flag: ["--all-features", "--no-default-features", ""]
         include:
         - rustalias: stable
           rust: stable
@@ -29,7 +29,7 @@ jobs:
           rust: '1.70'
         - rustalias: nightly
           rust: nightly
-    name: 'Build and test: ${{ matrix.os }}, ${{ matrix.rustalias }}'
+    name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@master
@@ -44,19 +44,13 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: check
-        args: --all --bins --examples
+        args: --all ${{ matrix.feature_flag }} --bins --examples
 
     - name: Tests
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all
-
-    - name: Tests (no features)
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all --no-default-features
+        args: --all ${{ matrix.feature_flag }}
 
   style_and_docs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
