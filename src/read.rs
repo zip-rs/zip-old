@@ -11,8 +11,8 @@ use crate::result::{ZipError, ZipResult};
 use crate::spec;
 use crate::types::{AesMode, AesVendorVersion, DateTime, System, ZipFileData};
 use crate::zipcrypto::{ZipCryptoReader, ZipCryptoReaderValid, ZipCryptoValidator};
-use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
+use indexmap::IndexMap;
+use std::borrow::Cow;
 use std::io::{self, prelude::*};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -47,8 +47,7 @@ pub(crate) mod zip_archive {
     /// Extract immutable data from `ZipArchive` to make it cheap to clone
     #[derive(Debug)]
     pub(crate) struct Shared {
-        pub(crate) files: Box<[super::ZipFileData]>,
-        pub(crate) names_map: super::HashMap<Box<str>, usize>,
+        pub(crate) files: super::IndexMap<Box<str>, super::ZipFileData>,
         pub(super) offset: u64,
         pub(super) dir_start: u64,
     }
@@ -333,7 +332,7 @@ pub(crate) struct CentralDirectoryInfo {
 
 impl<R> ZipArchive<R> {
     pub(crate) fn from_finalized_writer(
-        files: Vec<ZipFileData>,
+        files: IndexMap<Box<str>, ZipFileData>,
         comment: Vec<u8>,
         reader: R,
         central_start: u64,
@@ -344,15 +343,10 @@ impl<R> ZipArchive<R> {
             ));
         }
         /* This is where the whole file starts. */
-        let initial_offset = files.first().unwrap().header_start;
-        let names_map: HashMap<Box<str>, usize> = files
-            .iter()
-            .enumerate()
-            .map(|(i, d)| (d.file_name.clone(), i))
-            .collect();
+        let (_, first_header) = files.first().unwrap();
+        let initial_offset = first_header.header_start;
         let shared = Arc::new(zip_archive::Shared {
-            files: files.into_boxed_slice(),
-            names_map,
+            files,
             offset: initial_offset,
             dir_start: central_start,
         });
@@ -368,10 +362,10 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub(crate) fn merge_contents<W: Write + io::Seek>(
         &mut self,
         mut w: W,
-    ) -> ZipResult<Vec<ZipFileData>> {
+    ) -> ZipResult<IndexMap<Box<str>, ZipFileData>> {
         let mut new_files = self.shared.files.clone();
         if new_files.is_empty() {
-            return Ok(vec![]);
+            return Ok(IndexMap::new());
         }
         /* The first file header will probably start at the beginning of the file, but zip doesn't
          * enforce that, and executable zips like PEX files will have a shebang line so will
@@ -382,7 +376,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
         let new_initial_header_start = w.stream_position()?;
         /* Push back file header starts for all entries in the covered files. */
-        new_files.iter_mut().try_for_each(|f| {
+        new_files.values_mut().try_for_each(|f| {
             /* This is probably the only really important thing to change. */
             f.header_start = f.header_start.checked_add(new_initial_header_start).ok_or(
                 ZipError::InvalidArchive("new header start from merge would have been too large"),
@@ -423,7 +417,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         io::copy(&mut limited_raw, &mut w)?;
 
         /* Return the files we've just written to the data stream. */
-        Ok(new_files.into_vec())
+        Ok(new_files)
     }
 
     fn get_directory_info_zip32(
@@ -582,20 +576,17 @@ impl<R: Read + Seek> ZipArchive<R> {
                         } else {
                             dir_info.number_of_files
                         };
-                    let mut files = Vec::with_capacity(file_capacity);
-                    let mut names_map = HashMap::with_capacity(file_capacity);
+                    let mut files = IndexMap::with_capacity(file_capacity);
                     reader.seek(io::SeekFrom::Start(dir_info.directory_start))?;
                     for _ in 0..dir_info.number_of_files {
                         let file = central_header_to_zip_file(reader, dir_info.archive_offset)?;
-                        names_map.insert(file.file_name.clone(), files.len());
-                        files.push(file);
+                        files.insert(file.file_name.clone(), file);
                     }
                     if dir_info.disk_number != dir_info.disk_with_central_directory {
                         unsupported_zip_error("Support for multi-disk files is not implemented")
                     } else {
                         Ok(Shared {
-                            files: files.into(),
-                            names_map,
+                            files,
                             offset: dir_info.archive_offset,
                             dir_start: dir_info.directory_start,
                         })
@@ -699,7 +690,7 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Returns an iterator over all the file and directory names in this archive.
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
-        self.shared.names_map.keys().map(Box::borrow)
+        self.shared.files.keys().map(|s| s.as_ref())
     }
 
     /// Search for a file entry by name, decrypt with given password
@@ -727,7 +718,7 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get the index of a file entry by name, if it's present.
     #[inline(always)]
     pub fn index_for_name(&self, name: &str) -> Option<usize> {
-        self.shared.names_map.get(name).copied()
+        self.shared.files.get_index_of(name)
     }
 
     /// Get the index of a file entry by path, if it's present.
@@ -741,8 +732,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     pub fn name_for_index(&self, index: usize) -> Option<&str> {
         self.shared
             .files
-            .get(index)
-            .map(|file_data| &*file_data.file_name)
+            .get_index(index)
+            .map(|(name, _)| name.as_ref())
     }
 
     fn by_name_with_optional_password<'a>(
@@ -750,7 +741,7 @@ impl<R: Read + Seek> ZipArchive<R> {
         name: &str,
         password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'a>> {
-        let Some(index) = self.index_for_name(name) else {
+        let Some(index) = self.shared.files.get_index_of(name) else {
             return Err(ZipError::FileNotFound);
         };
         self.by_index_with_optional_password(index, password)
@@ -785,17 +776,16 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// Get a contained file by index without decompressing it
     pub fn by_index_raw(&mut self, file_number: usize) -> ZipResult<ZipFile<'_>> {
         let reader = &mut self.reader;
-        self.shared
+        let (_, data) = self
+            .shared
             .files
-            .get(file_number)
-            .ok_or(ZipError::FileNotFound)
-            .and_then(move |data| {
-                Ok(ZipFile {
-                    crypto_reader: None,
-                    reader: ZipFileReader::Raw(find_content(data, reader)?),
-                    data: Cow::Borrowed(data),
-                })
-            })
+            .get_index(file_number)
+            .ok_or(ZipError::FileNotFound)?;
+        Ok(ZipFile {
+            crypto_reader: None,
+            reader: ZipFileReader::Raw(find_content(data, reader)?),
+            data: Cow::Borrowed(data),
+        })
     }
 
     fn by_index_with_optional_password(
@@ -803,10 +793,10 @@ impl<R: Read + Seek> ZipArchive<R> {
         file_number: usize,
         mut password: Option<&[u8]>,
     ) -> ZipResult<ZipFile<'_>> {
-        let data = self
+        let (_, data) = self
             .shared
             .files
-            .get(file_number)
+            .get_index(file_number)
             .ok_or(ZipError::FileNotFound)?;
 
         match (password, data.encrypted) {

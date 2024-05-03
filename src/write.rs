@@ -8,7 +8,7 @@ use crate::types::{ffi, DateTime, System, ZipFileData, DEFAULT_VERSION};
 #[cfg(any(feature = "_deflate-any", feature = "bzip2", feature = "zstd",))]
 use core::num::NonZeroU64;
 use crc32fast::Hasher;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::default::Default;
 use std::io;
 use std::io::prelude::*;
@@ -110,8 +110,7 @@ pub(crate) mod zip_writer {
     /// ```
     pub struct ZipWriter<W: Write + Seek> {
         pub(super) inner: GenericZipWriter<W>,
-        pub(super) files: Vec<ZipFileData>,
-        pub(super) files_by_name: HashMap<Box<str>, usize>,
+        pub(super) files: IndexMap<Box<str>, ZipFileData>,
         pub(super) stats: ZipWriterStats,
         pub(super) writing_to_file: bool,
         pub(super) writing_raw: bool,
@@ -435,7 +434,7 @@ impl<W: Write + Seek> Write for ZipWriter<W> {
                 if let Ok(count) = write_result {
                     self.stats.update(&buf[0..count]);
                     if self.stats.bytes_written > spec::ZIP64_BYTES_THR
-                        && !self.files.last_mut().unwrap().large_file
+                        && !self.files.last_mut().unwrap().1.large_file
                     {
                         self.abort_file().unwrap();
                         return Err(io::Error::new(
@@ -479,8 +478,7 @@ impl<A: Read + Write + Seek> ZipWriter<A> {
 
         Ok(ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(readwriter)),
-            files: metadata.files.into(),
-            files_by_name: metadata.names_map,
+            files: metadata.files,
             stats: Default::default(),
             writing_to_file: false,
             comment: footer.zip_file_comment,
@@ -641,8 +639,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     pub fn new(inner: W) -> ZipWriter<W> {
         ZipWriter {
             inner: Storer(MaybeEncrypted::Unencrypted(inner)),
-            files: Vec::new(),
-            files_by_name: HashMap::new(),
+            files: IndexMap::new(),
             stats: Default::default(),
             writing_to_file: false,
             writing_raw: false,
@@ -842,15 +839,12 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn insert_file_data(&mut self, file: ZipFileData) -> ZipResult<usize> {
-        let name = &file.file_name;
-        if self.files_by_name.contains_key(name) {
+        if self.files.contains_key(&file.file_name) {
             return Err(InvalidArchive("Duplicate filename"));
         }
-        let name = name.to_owned();
-        self.files.push(file);
-        let index = self.files.len() - 1;
-        self.files_by_name.insert(name, index);
-        Ok(index)
+        let name = file.file_name.to_owned();
+        self.files.insert(name.clone(), file);
+        Ok(self.files.get_index_of(&name).unwrap())
     }
 
     fn finish_file(&mut self) -> ZipResult<()> {
@@ -871,7 +865,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         if !self.writing_raw {
             let file = match self.files.last_mut() {
                 None => return Ok(()),
-                Some(f) => f,
+                Some((_, f)) => f,
             };
             file.crc32 = self.stats.hasher.clone().finalize();
             file.uncompressed_size = self.stats.bytes_written;
@@ -911,8 +905,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     /// Removes the file currently being written from the archive if there is one, or else removes
     /// the file most recently written.
     pub fn abort_file(&mut self) -> ZipResult<()> {
-        let last_file = self.files.pop().ok_or(ZipError::FileNotFound)?;
-        self.files_by_name.remove(&last_file.file_name);
+        let (_, last_file) = self.files.pop().ok_or(ZipError::FileNotFound)?;
         let make_plain_writer = self.inner.prepare_next_writer(
             Stored,
             None,
@@ -925,7 +918,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         // overwrite a valid file and corrupt the archive
         let rewind_safe: bool = match last_file.data_start.get() {
             None => self.files.is_empty(),
-            Some(last_file_start) => self.files.iter().all(|file| {
+            Some(last_file_start) => self.files.values().all(|file| {
                 file.data_start
                     .get()
                     .is_some_and(|start| start < last_file_start)
@@ -1281,7 +1274,7 @@ impl<W: Write + Seek> ZipWriter<W> {
         let writer = self.inner.get_plain();
 
         let central_start = writer.stream_position()?;
-        for file in self.files.iter() {
+        for file in self.files.values() {
             write_central_directory_header(writer, file)?;
         }
         let central_size = writer.stream_position()? - central_start;
@@ -1327,7 +1320,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     }
 
     fn index_by_name(&self, name: &str) -> ZipResult<usize> {
-        Ok(*self.files_by_name.get(name).ok_or(ZipError::FileNotFound)?)
+        self.files.get_index_of(name).ok_or(ZipError::FileNotFound)
     }
 
     /// Adds another entry to the central directory referring to the same content as an existing
