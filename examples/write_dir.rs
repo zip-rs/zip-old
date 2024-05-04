@@ -1,4 +1,5 @@
 #![allow(unused_variables)]
+#![allow(dead_code)]
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use std::io::prelude::*;
@@ -65,7 +66,7 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "deflate")]
             zip::CompressionMethod::Deflated
-        },
+        }
         CompressionMethod::DeflatedMiniz => {
             #[cfg(not(feature = "deflate-miniz"))]
             {
@@ -74,7 +75,7 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "deflate-miniz")]
             zip::CompressionMethod::Deflated
-        },
+        }
         CompressionMethod::DeflatedZlib => {
             #[cfg(not(feature = "deflate-zlib"))]
             {
@@ -83,7 +84,7 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "deflate-zlib")]
             zip::CompressionMethod::Deflated
-        },
+        }
         CompressionMethod::Bzip2 => {
             #[cfg(not(feature = "bzip2"))]
             {
@@ -92,7 +93,7 @@ fn real_main() -> i32 {
             }
             #[cfg(feature = "bzip2")]
             zip::CompressionMethod::Bzip2
-        },
+        }
         CompressionMethod::Zstd => {
             #[cfg(not(feature = "zstd"))]
             {
