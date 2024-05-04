@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use std::io::prelude::*;
