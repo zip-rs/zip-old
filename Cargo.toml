@@ -55,6 +55,8 @@ getrandom = { version = "0.2.14", features = ["js"] }
 walkdir = "2.5.0"
 time = { workspace = true, features = ["formatting", "macros"] }
 anyhow = "1"
+clap = { version = "=4.4.18", features = ["derive"] }
+
 [features]
 aes-crypto = ["aes", "constant_time_eq", "hmac", "pbkdf2", "sha1"]
 chrono = ["chrono/default"]

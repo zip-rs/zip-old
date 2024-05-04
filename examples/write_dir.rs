@@ -1,10 +1,35 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
 use anyhow::Context;
+use clap::{Parser, ValueEnum};
 use std::io::prelude::*;
 use zip::{result::ZipError, write::SimpleFileOptions};
 
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
+
+#[derive(Parser)]
+#[command(about, long_about = None)]
+struct Args {
+    // Source directory
+    source: PathBuf,
+    // Destination zipfile
+    destination: PathBuf,
+    // Compression method
+    #[arg(value_enum)]
+    compression_method: CompressionMethod,
+}
+
+#[derive(Clone, ValueEnum)]
+enum CompressionMethod {
+    Stored,
+    Deflated,
+    DeflatedMiniz,
+    DeflatedZlib,
+    Bzip2,
+    Zstd,
+}
 
 fn main() {
     std::process::exit(real_main());
@@ -28,25 +53,60 @@ const METHOD_ZSTD: Option<zip::CompressionMethod> = Some(zip::CompressionMethod:
 const METHOD_ZSTD: Option<zip::CompressionMethod> = None;
 
 fn real_main() -> i32 {
-    let args: Vec<_> = std::env::args().collect();
-    if args.len() < 3 {
-        println!(
-            "Usage: {} <source_directory> <destination_zipfile>",
-            args[0]
-        );
-        return 1;
-    }
-
-    let src_dir = &*args[1];
-    let dst_file = &*args[2];
-    for &method in [METHOD_STORED, METHOD_DEFLATED, METHOD_BZIP2, METHOD_ZSTD].iter() {
-        if method.is_none() {
-            continue;
+    let args = Args::parse();
+    let src_dir = &args.source;
+    let dst_file = &args.destination;
+    let method = match args.compression_method {
+        CompressionMethod::Stored => zip::CompressionMethod::Stored,
+        CompressionMethod::Deflated => {
+            #[cfg(not(feature = "deflate"))]
+            {
+                println!("The `deflate` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "deflate")]
+            zip::CompressionMethod::Deflated
         }
-        match doit(src_dir, dst_file, method.unwrap()) {
-            Ok(_) => println!("done: {src_dir} written to {dst_file}"),
-            Err(e) => eprintln!("Error: {e:?}"),
+        CompressionMethod::DeflatedMiniz => {
+            #[cfg(not(feature = "deflate-miniz"))]
+            {
+                println!("The `deflate-miniz` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "deflate-miniz")]
+            zip::CompressionMethod::Deflated
         }
+        CompressionMethod::DeflatedZlib => {
+            #[cfg(not(feature = "deflate-zlib"))]
+            {
+                println!("The `deflate-zlib` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "deflate-zlib")]
+            zip::CompressionMethod::Deflated
+        }
+        CompressionMethod::Bzip2 => {
+            #[cfg(not(feature = "bzip2"))]
+            {
+                println!("The `bzip2` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "bzip2")]
+            zip::CompressionMethod::Bzip2
+        }
+        CompressionMethod::Zstd => {
+            #[cfg(not(feature = "zstd"))]
+            {
+                println!("The `zstd` feature is not enabled");
+                return 1;
+            }
+            #[cfg(feature = "zstd")]
+            zip::CompressionMethod::Zstd
+        }
+    };
+    match doit(src_dir, dst_file, method) {
+        Ok(_) => println!("done: {:?} written to {:?}", src_dir, dst_file),
+        Err(e) => eprintln!("Error: {e:?}"),
     }
 
     0
@@ -54,7 +114,7 @@ fn real_main() -> i32 {
 
 fn zip_dir<T>(
     it: &mut dyn Iterator<Item = DirEntry>,
-    prefix: &str,
+    prefix: &Path,
     writer: T,
     method: zip::CompressionMethod,
 ) -> anyhow::Result<()>
@@ -97,7 +157,7 @@ where
     Ok(())
 }
 
-fn doit(src_dir: &str, dst_file: &str, method: zip::CompressionMethod) -> anyhow::Result<()> {
+fn doit(src_dir: &Path, dst_file: &Path, method: zip::CompressionMethod) -> anyhow::Result<()> {
     if !Path::new(src_dir).is_dir() {
         return Err(ZipError::FileNotFound.into());
     }
