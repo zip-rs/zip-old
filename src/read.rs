@@ -357,7 +357,7 @@ impl<R> ZipArchive<R> {
         })
     }
 
-    /// Total size of the files in the archive, if it can be known. Doesn't include directories or 
+    /// Total size of the files in the archive, if it can be known. Doesn't include directories or
     /// metadata.
     pub fn decompressed_size(&self) -> Option<u128> {
         let mut total = 0u128;
