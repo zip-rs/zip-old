@@ -356,6 +356,19 @@ impl<R> ZipArchive<R> {
             comment: comment.into_boxed_slice().into(),
         })
     }
+
+    /// Total size of the files in the archive, if it can be known. Doesn't include directories or 
+    /// metadata.
+    pub fn decompressed_size(&self) -> Option<u128> {
+        let mut total = 0u128;
+        for file in self.shared.files.values() {
+            if file.using_data_descriptor {
+                return None;
+            }
+            total = total.checked_add(file.uncompressed_size as u128)?;
+        }
+        Some(total)
+    }
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
