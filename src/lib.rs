@@ -26,6 +26,7 @@
 //!
 //!
 #![warn(missing_docs)]
+#![allow(unexpected_cfgs)] /// Needed for cfg(fuzzing) on nightly as of 2024-05-06
 
 pub use crate::compression::{CompressionMethod, SUPPORTED_COMPRESSION_METHODS};
 pub use crate::read::ZipArchive;
