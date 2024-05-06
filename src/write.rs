@@ -1188,7 +1188,7 @@ impl<W: Write + Seek> ZipWriter<W> {
     ///
     /// This will return the writer, but one should normally not append any data to the end of the file.
     /// Note that the zipfile will also be finished on drop.
-    pub fn finish(&mut self) -> ZipResult<W> {
+    pub fn finish(mut self) -> ZipResult<W> {
         let _central_start = self.finalize()?;
         let inner = mem::replace(&mut self.inner, Closed);
         Ok(inner.unwrap())
@@ -1440,14 +1440,13 @@ impl<W: Write + Seek> GenericZipWriter<W> {
                         feature = "deflate-zlib-ng",
                     ))]
                     {
-                        return Ok(Box::new(move |bare| {
+                        Ok(Box::new(move |bare| {
                             GenericZipWriter::Deflater(DeflateEncoder::new(
                                 bare,
                                 Compression::new(level),
                             ))
-                        }));
+                        }))
                     }
-                    unreachable!()
                 }
                 #[cfg(feature = "deflate64")]
                 CompressionMethod::Deflate64 => Err(ZipError::UnsupportedArchive(
